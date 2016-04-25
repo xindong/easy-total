@@ -1,0 +1,9 @@
+Icon?
+.DS_Store
+.svn
+*.debug.php
+*.debug.config.php
+*.debug.runtime.php
+*~
+/.idea
+/.idea/*

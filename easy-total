@@ -1,0 +1,257 @@
+#!/usr/bin/env php
+<?php
+error_reporting(7);
+date_default_timezone_set('PRC');
+
+
+$shortOpts = '';
+$shortOpts .= 'c:';     // -c /etc/php-total/server.ini
+$shortOpts .= 'l:';     // -l /var/log/php-total/php-total.log
+$shortOpts .= 'vhd';    // -v debug模式.  -h : 帮助.  -d: 守护进程化
+
+$longOpts = [
+    'id::',         // --id=my_id
+    'debug',        // --debug
+    'help',         // --help
+                    // 以下参数为内部调用task进程用, 无需用户设置
+];
+
+$options = getOption($shortOpts, $longOpts);
+
+# 开启了debug
+define('IS_DEBUG', isset($options['debug']) || isset($options['v']));
+
+if (isset($options['help']) || isset($options['h']))
+{
+    goto help;
+}
+
+
+
+$red       = "\x1b[31m";
+$lightBlue = "\x1b[36m";
+$end       = "\x1b[39m";
+$error     = "{$red}✕{$end}";
+
+require __DIR__ . '/lib/FluentServer.php';
+$server = new FluentServer($options['c'], isset($options['d']), $options['l']);
+
+$server->start();
+
+return true;
+
+# 输出帮助内容
+help:
+$file = basename(__FILE__);
+echo <<<EOF
+Usage: {$file} [options]
+    -c PATH         config file path (default: /etc/php-total/server.ini)
+    -l PATH         log file path
+    -v, --debug     open debug mode
+
+EOF;
+exit;
+
+
+
+
+/**
+ * 获取shell命令下参数
+ *
+ * 与 `getopt()` 具体相似的功能，区别：在命令行中如果执行 `php index.php default test -a=1 -b=c` 这样的命令时，通过 `getopt()` 会获取参数失败，而这个方法可以正确获得相应的参数
+ *
+ * **示例：**<br/>
+ * 在默认项目Shell控制器中加入一个test控制器文件 ( `projects/default/controller_shell/test.controller.php` ) 内容为：
+ *
+
+ *             $shortopts  = "";
+ *             $shortopts .= "f:";  // 必须有值， 比如：-f myvalue，将会得到f=myvalue
+ *             $shortopts .= "v::"; // 可接受值， 比如：-v 则v=false,如果是-v=myvalue，则v=myvalue
+ *             $shortopts .= "abc"; // 不接受值， 比如：-a -v 则获取a=false,v=false，注意，这个并不是接受-abc的参数，而是分别可接受-a,-b,-c
+ *
+ *             $longopts  = array
+ *             (
+ *                 "required:",     // 可接受值， 比如：--required abc 或 --required 则获取 false
+ *                 "optional::",    // 必须有值， 比如：--optional=abc，获取 optional=abc
+ *                 "option",        // 不接受值， 比如：--option 则获取 option=false
+ *                 "opt",           // 同上
+ *             );
+ *
+ *             $options = getOption($shortopts, $longopts);
+ *             var_dump($options);
+ *
+ * **通过 `php index.php default test run -f "value for f" -v -a --required value --optional="optional value" --option` 运行以上脚本会输出**
+ *
+ *     array(6) {
+ *       ["f"]=> string(11) "value for f"
+ *       ["v"]=> bool(false)
+ *       ["a"]=> bool(false)
+ *       ["required"]=> string(5) "value"
+ *       ["optional"]=> string(14) "optional value"
+ *       ["option"]=> bool(false)
+ *     }
+ *
+ *
+ * @link   http://cn.php.net/getopt
+ * @param  string $options 单字符参数，只接受[a-zA-Z0-9]的参数，比如 -a, -h, -v=myvalue, -4 这样
+ * @param  array $global_options --参数，比如--test, --help, --v=abc 这样
+ * @return array 返回获取到的参数的数组
+ */
+function getOption($options, array $global_options = null)
+{
+    $argv = $_SERVER['argv'];
+    array_shift($argv);
+
+    foreach($argv as $key => $item)
+    {
+        if ($item[0] === '-')
+        {
+            # 读取到第一个带-参数的值
+            break;
+        }
+        unset($argv[$key]);
+    }
+    $argv = array_values($argv);
+
+
+    $len = strlen($options);
+    $my_options = array();
+
+    $sl = 0;
+    for($i = $len - 1; $i >= 0; $i--)
+    {
+        $key = $options[$i];
+        if ($key === ':')
+        {
+            $sl++;
+            continue;
+        }
+
+        # 只接受a-zA-Z0-9
+        if (preg_match('#[^a-zA-Z0-9]+#', $key))continue;
+
+        if ($sl === 0)
+        {
+            $my_options[$key] = 1;
+        }
+        elseif ($sl === 1)
+        {
+            $my_options[$key .':'] = 1;
+        }
+        else
+        {
+            $my_options[$key .'::'] = 1;
+        }
+
+        $sl = 0;
+    }
+
+    $my_global_options = array();
+    foreach($global_options as $item)
+    {
+        $my_global_options[$item] = 1;
+    }
+
+    $rs = array();
+
+    foreach($argv as $k => $item)
+    {
+        if (preg_match('#^\-(\-)?([a-z0-9\-]+)=(.*)$#i', $item, $m))
+        {
+            $key   = $m[2];
+            $value = $m[3];
+            if ($m[1] === '-')
+            {
+                if (!isset($my_global_options[$key .'::']))
+                {
+                    continue;
+                }
+            }
+            else
+            {
+                if (!isset($my_options[$key .'::']))
+                {
+                    continue;
+                }
+            }
+        }
+        elseif (preg_match('#^\-(\-)?([a-z0-9\-]+)$#i', $item, $m))
+        {
+            $key  = $m[2];
+            if ($m[1] === '-')
+            {
+                if (isset($my_global_options[$key]))
+                {
+                    $value = false;
+                }
+                elseif (isset($my_global_options[$key .':']))
+                {
+                    $value = $argv[$k+1];
+                }
+                else
+                {
+                    continue;
+                }
+            }
+            else
+            {
+                if (isset($my_options[$key]))
+                {
+                    $value = false;
+                }
+                elseif (isset($my_options[$key .':']))
+                {
+                    $value = $argv[$k + 1];
+                }
+                elseif (isset($my_options[$key .'::']))
+                {
+                    $value = false;
+                }
+                else
+                {
+                    continue;
+                }
+            }
+        }
+        else
+        {
+            continue;
+        }
+
+        if (isset($rs[$key]))
+        {
+            $rs[$key]   = (array)$rs[$key];
+            $rs[$key][] = $value;
+        }
+        else
+        {
+            # 赋值
+            $rs[$key] = $value;
+        }
+    }
+
+    return $rs;
+}
+
+function info($info)
+{
+    $beg = "\x1b[33m";
+    $end = "\x1b[39m";
+    echo $beg . date("[Y-m-d H:i:s]") . "[info]{$end} - " . $info . "\n";
+}
+
+function warn($info)
+{
+    $beg = "\x1b[31m";
+    $end = "\x1b[39m";
+    echo $beg . date("[Y-m-d H:i:s]") . "[warn]{$end} - " . $info . "\n";
+}
+
+function debug($info)
+{
+    if (!IS_DEBUG)return;
+
+    $beg = "\x1b[34m";
+    $end = "\x1b[39m";
+    echo $beg . date("[Y-m-d H:i:s]") . "[debug]{$end} - " . $info . "\n";
+}
