@@ -25,6 +25,8 @@ if (isset($options['help']) || isset($options['h']))
     goto help;
 }
 
+define('LOG_PATH', $options['l'] ?: null);
+
 
 
 $red       = "\x1b[31m";
@@ -236,14 +238,32 @@ function info($info)
 {
     $beg = "\x1b[33m";
     $end = "\x1b[39m";
-    echo $beg . date("[Y-m-d H:i:s]") . "[info]{$end} - " . $info . "\n";
+    $str = $beg . date("[Y-m-d H:i:s]") . "[info]{$end} - " . $info . "\n";
+
+    if (LOG_PATH)
+    {
+        file_put_contents(LOG_PATH, $str, FILE_APPEND);
+    }
+    else
+    {
+        echo $str;
+    }
 }
 
 function warn($info)
 {
     $beg = "\x1b[31m";
     $end = "\x1b[39m";
-    echo $beg . date("[Y-m-d H:i:s]") . "[warn]{$end} - " . $info . "\n";
+    $str = $beg . date("[Y-m-d H:i:s]") . "[warn]{$end} - " . $info . "\n";
+
+    if (LOG_PATH)
+    {
+        file_put_contents(LOG_PATH, $str, FILE_APPEND);
+    }
+    else
+    {
+        echo $str;
+    }
 }
 
 function debug($info)
@@ -252,5 +272,14 @@ function debug($info)
 
     $beg = "\x1b[34m";
     $end = "\x1b[39m";
-    echo $beg . date("[Y-m-d H:i:s]") . "[debug]{$end} - " . $info . "\n";
+    $str = $beg . date("[Y-m-d H:i:s]") . "[debug]{$end} - " . $info . "\n";
+
+    if (LOG_PATH)
+    {
+        file_put_contents(LOG_PATH, $str, FILE_APPEND);
+    }
+    else
+    {
+        echo $str;
+    }
 }
