@@ -10,7 +10,6 @@ $shortOpts .= 'l:';     // -l /var/log/php-total/php-total.log
 $shortOpts .= 'vhd';    // -v debug模式.  -h : 帮助.  -d: 守护进程化
 
 $longOpts = [
-    'id::',         // --id=my_id
     'debug',        // --debug
     'help',         // --help
                     // 以下参数为内部调用task进程用, 无需用户设置

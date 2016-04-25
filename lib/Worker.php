@@ -281,12 +281,7 @@ class Worker
 
             if (!is_array($arr))
             {
-                for ($i = 0; $i < strlen($data); $i++)
-                {
-                    echo ord($data[$i])."\n";
-                }
-                debug('msgpack error data: '. $data);
-                #$server->close($fd);
+                $server->close($fd);
                 return false;
             }
 

@@ -224,7 +224,7 @@ class FluentServer
         # 实例化资源对象
         if ($server->taskworker)
         {
-//            self::setProcessName("php {$argv[0]} task worker");
+//            self::setProcessName("php ". implode(' ', $argv) ." [task]");
 //
 //            # 构造新对象
 //            $this->taskWorker = new TaskWorker($server, $workerId - $this->server->setting['worker_num']);
@@ -234,7 +234,7 @@ class FluentServer
         }
         else
         {
-            self::setProcessName("php {$argv[0]} event worker");
+            self::setProcessName("php ". implode(' ', $argv) ." [worker]");
 
             require (__DIR__ .'/Manager.php');
             require (__DIR__ .'/Worker.php');
@@ -292,23 +292,6 @@ class FluentServer
     public function onManagerStart(swoole_server $server)
     {
         debug('onManagerStart');
-
-# 处理信号
-//        swoole_process::signal(SIGINT, function($signo)
-//        {
-//            echo "====================";
-//            var_dump($signo);
-//            sleep(3);
-//            die(0);
-//        });
-//        swoole_process::signal(SIGTERM, function($signo)
-//        {
-//            echo "-------------";
-//            var_dump($signo);
-//            sleep(3);
-//            die(0);
-//        });
-
     }
 
     public function onManagerStop($server)

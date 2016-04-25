@@ -32,7 +32,7 @@ class Manager
         $data = [];
         switch ($uri = trim($request->server['request_uri'], ' /'))
         {
-            case 'job/add':
+            case 'task/add':
                 # 添加一个任务
                 $sql = $request->post['sql'];
 
@@ -93,8 +93,8 @@ class Manager
 
                     info("fork new sql($key): $sql");
 
-                    $data['status']  = 'ok';
-                    $data['message'] = "key: {$key}";
+                    $data['status']   = 'ok';
+                    $data['queryKey'] = $key;
                 }
                 else
                 {
@@ -104,7 +104,7 @@ class Manager
 
                 break;
 
-            case 'job/remove':
+            case 'task/remove':
                 # 添加一个任务
                 if (isset($request->post['sql']))
                 {
