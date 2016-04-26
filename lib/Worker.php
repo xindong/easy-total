@@ -237,19 +237,10 @@ class Worker
         if ($this->id == 0)
         {
             # 每分钟推送1次数据输出
-            require (__DIR__ .'/FluentClient.php');
-
             $limit = intval(FluentServer::$config['output']['output_time_ms'] ?: 60000);
             swoole_timer_tick($limit, function()
             {
-                try
-                {
-                    $this->outputToFluent();
-                }
-                catch (Exception $e)
-                {
-                    # 避免正好在处理数据时redis连接失败抛错导致程序终止, 系统会自动重连
-                }
+                $this->server->task('output');
             });
         }
 
@@ -918,162 +909,6 @@ class Worker
         return true;
     }
 
-    /**
-     * 将数据重新分发到 Fluent
-     *
-     * @return bool
-     */
-    protected function outputToFluent()
-    {
-        if (!$this->redis)
-        {
-            return false;
-        }
-
-        getLock:
-
-        $lockKey = 'output_lock';
-        if (!$this->redis->setNx($lockKey, microtime(1)))
-        {
-            # 抢锁失败
-            if (1==1 || microtime(1) - $this->redis->get($lockKey) > 600)
-            {
-                # 如果10分钟还没有释放的锁, 强制删除, 防止被死锁
-                $this->redis->delete($lockKey);
-
-                usleep(mt_rand(1, 1000));
-
-                debug("found and deleted timeout lock.");
-                goto getLock;
-            }
-            else
-            {
-                return false;
-            }
-        }
-
-        try
-        {
-            if ($this->isSSDB)
-            {
-                # 获取列表
-                $keys = $this->ssdb->hlist('list,', 'list,z' , 20);
-
-                if (!$keys)
-                {
-                    goto rt;
-                }
-            }
-            else
-            {
-                # 获取列表
-                $keys = $this->redis->keys('list,*');
-                if ($keys)
-                {
-                    $keys = array_slice($keys, 0, 20);
-                }
-                else
-                {
-                    # 没数据
-                    goto rt;
-                }
-            }
-
-            # 获取上30秒的时间序列
-            $currentLimit = date('YmdHi', time() - 30);
-            $outputPrefix = FluentServer::$config['output']['tag_prefix'] ?: '';
-
-            $outData = [];
-            sort($keys);
-            foreach ($keys as $key)
-            {
-                if (preg_match('#^list,(?<app>.+),(?<table>.+),(?<limit>\d+)$#', $key, $m))
-                {
-                    if ($m['limit'] < $currentLimit)
-                    {
-                        # 只有不在当前时间序列的数据才会处理
-                        $data = $this->redis->hGetAll($key);
-                        $tag = "{$outputPrefix}{$m['app']}.{$m['table']}";
-                        if (isset($outData[$tag]))
-                        {
-                            $outData[$tag]['data'] = array_merge($outData[$tag]['data'], $data);
-                        }
-                        else
-                        {
-                            $outData[$tag]['data'] = $data;
-                        }
-                        $outData[$tag]['keys'][] = $key;
-                    }
-                }
-                else
-                {
-                    # 将不符合格式的key重命名
-                    if ($this->isSSDB)
-                    {
-                        $rs = $this->redis->hGetAll($key);
-                        foreach ($rs as $k => $v)
-                        {
-                            $this->redis->hSet("bak.$key", $k, $v);
-                        }
-                        $this->ssdb->hclear($key);
-                    }
-                    else
-                    {
-                        $this->redis->rename($key, "bak.$key");
-                    }
-
-                    warn("can not match redis key $key, remove it to bak.list.{$key}");
-                }
-            }
-
-            if ($outData)
-            {
-                $fluent = new FluentClient(FluentServer::$config['output']['fluent']);
-                foreach ($outData as $tag => $data)
-                {
-                    # 生成内容
-                    $ack    = uniqid('fluent');
-                    $buffer =  '["'. $tag .'",[' .implode(',', $data['data']). '], {"chunk":"'. $ack .'"}]';
-
-                    if ($fluent->push_by_buffer($tag, $buffer, $ack))
-                    {
-                        if ($this->isSSDB)
-                        {
-                            # 清除成功的key
-                            foreach ($data['keys'] as $key)
-                            {
-                                $this->ssdb->hclear($key);
-                            }
-                        }
-                        else
-                        {
-                            # redis支持移除多个key
-                            $this->redis->delete($data['keys']);
-                        }
-                    }
-                    else
-                    {
-                        debug("push data to ". FluentServer::$config['output']['fluent'] . ' fail.');
-                    }
-                }
-            }
-
-        }
-        catch (Exception $e)
-        {
-            $this->redis->delete($lockKey);
-            warn($e->getMessage());
-
-            return false;
-        }
-
-        rt:
-        # 释放锁
-        $this->redis->delete($lockKey);
-
-        return true;
-    }
-
     protected function totalData($total, $current, $fun, $time)
     {
         if (isset($fun['sum']))
@@ -1244,6 +1079,11 @@ class Worker
                     # 子分组条件
                     $rs = self::checkWhere($opt, $data);
                 }
+                elseif ($item['typeM'] === 'func' && $item['fun'] === 'in')
+                {
+                    # in 条件
+                    $rs = in_array($item['arg'], $data[$item['field']]);
+                }
                 else
                 {
                     $value = $data[$item['field']];
@@ -1312,9 +1152,11 @@ class Worker
                                         $arg = str_replace(['%D', '%'], ['d', ''], $item['arg'] ?: 'Y-m-d');
                                         $value = @date($arg, $value);
                                         break;
+
                                     case 'unix_timestamp':
                                         $value = @strtotime($value);
                                         break;
+
                                     default:
                                         if (is_callable($item['fun']))
                                         {

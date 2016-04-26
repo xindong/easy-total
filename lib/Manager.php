@@ -712,7 +712,15 @@ class Manager
                 {
                     $option['arg']  = $opt['arg'];
                     $option['fun']  = $opt['fun'];
-                    $option['$sql'] = "{$opt['fun']}($field". ($opt['arg'] ? ', \''.$opt['arg'] ."'" : '') .") {$type} {$value}";
+
+                    if ($opt['fun'] === 'in')
+                    {
+                        $option['$sql'] = "$field in(". implode(',', $opt['arg']) .")";
+                    }
+                    else
+                    {
+                        $option['$sql'] = "{$opt['fun']}($field" . ($opt['arg'] ? ', \'' . $opt['arg'] . "'" : '') . ") {$type} {$value}";
+                    }
                 }
 
                 return $option;
@@ -721,10 +729,10 @@ class Manager
             return false;
         };
 
-        $where   = preg_replace('# and #i', ' && ', preg_replace('# or #i', ' || ', $where));
+        $where = preg_replace('# and #i', ' && ', preg_replace('# or #i', ' || ', $where));
 
         # 预处理函数
-        if (preg_match_all('#(?<fun>[a-z_0-9]+)\((?<field>[a-z0-9_"\'` ])(?:(?>[ ]+)?,(?>[ ]+)?(?<arg>[^\)]+))?\)#i', $where, $m))
+        if (preg_match_all('#(?<fun>[a-z_0-9]+)\((?<field>[a-z0-9_"\'` ])(?:(?>[ ]+)?,(?>[ ]+)?(?<arg>[^\)]+))?\)#Ui', $where, $m))
         {
             foreach ($m[0] as $k => $v)
             {
@@ -736,8 +744,29 @@ class Manager
                     'arg'   => self::deQuoteValue($m['arg'][$k]),
                 ];
 
-                $where = str_replace($v, "{$hash} func 0", $where);
-                var_dump($where);
+                $where = str_replace($v, "{$hash} func 0 = 0", $where);
+            }
+        }
+
+        # 解析in
+        if (preg_match_all('#(?<field>[a-z0-9]+)[ ]+in[ ]*\((?<arg>.+)\)#Ui', $where, $m))
+        {
+            foreach ($m[0] as $k => $v)
+            {
+                $hash = md5($v);
+
+                $arg  = explode(',', $m['arg'][$k]);
+                $arg  = array_map('self::deQuoteValue', $arg);
+                $arg  = array_unique($arg);
+                sort($arg);
+
+                $funHash[$hash] = [
+                    'fun'   => 'in',
+                    'field' => self::deQuoteValue($m['field'][$k]),
+                    'arg'   => $arg,
+                ];
+
+                $where = str_replace($v, "{$hash} func 0 = 0", $where);
             }
         }
 
@@ -975,7 +1004,7 @@ class Manager
         return $option;
     }
 
-    protected static function deQuoteValue($value)
+    public static function deQuoteValue($value)
     {
         return preg_replace('#^`(.*)`$#', '$1', preg_replace('#^"(.*)"$#', '$1', preg_replace("#^'(.*)'$#", '$1', trim($value))));
     }

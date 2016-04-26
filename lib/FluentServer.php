@@ -33,6 +33,13 @@ class FluentServer
     protected $worker;
 
     /**
+     * TaskWorker对象
+     *
+     * @var TaskWorker
+     */
+    protected $taskWorker;
+
+    /**
      * HttpServer constructor.
      */
     public function __construct($config_file, $daemonize = false, $logPath = null)
@@ -224,13 +231,14 @@ class FluentServer
         # 实例化资源对象
         if ($server->taskworker)
         {
-//            self::setProcessName("php ". implode(' ', $argv) ." [task]");
-//
-//            # 构造新对象
-//            $this->taskWorker = new TaskWorker($server, $workerId - $this->server->setting['worker_num']);
-//            $this->taskWorker->init();
-//
-//            info("Tasker Start, \$id = {$workerId}, \$pid = {$server->worker_pid}");
+            self::setProcessName("php ". implode(' ', $argv) ." [task]");
+
+            require (__DIR__ .'/TaskWorker.php');
+            # 构造新对象
+            $this->taskWorker = new TaskWorker($server, $workerId - $this->server->setting['worker_num']);
+            $this->taskWorker->init();
+
+            info("Tasker Start, \$id = {$workerId}, \$pid = {$server->worker_pid}");
         }
         else
         {
@@ -268,19 +276,12 @@ class FluentServer
 
     public function onFinish(swoole_server $server, $task_id, $data)
     {
-        if ($this->server->taskworker)
-        {
-//            return $this->taskWorker->onFinish($server, $task_id, $data);
-        }
-        else
-        {
-            return $this->worker->onFinish($server, $task_id, $data);
-        }
+        $this->worker->onFinish($server, $task_id, $data);
     }
 
     public function onTask(swoole_server $server, $taskId, $fromId, $data)
     {
-//        $this->taskWorker->onTask($server, $taskId, $fromId, $data);
+        return $this->taskWorker->onTask($server, $taskId, $fromId, $data);
     }
 
     public function onStart(swoole_server $server)

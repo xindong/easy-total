@@ -57,19 +57,22 @@ curl -d 'sql=select *,count(id) as count,dist(id) from test group by type' http:
 ```
 
 ## SQL支持的语法
-关键字:
 
-* select 
+语法关键字（按顺序）:
+
+* select
 * from
 * for
 * join on 暂不支持但在计划开发功能之列 
 * where
-* group time
 * group by
+* group time
 * save as
 
 例：
-`select field1,field2 as test from where type=1 and (statu = 2 or statu = 3) test group time 3m group by type save to newtable` 
+`select field1,field2 as test from test where type=1 and (statu = 2 or statu = 3) and tid in (1,3,5,7,9) group by type group time 3m save as newtable` 
+
+其中，select 和 from 为必须出现的关键字，其它为可选关键字，`group time` 不设置则默认为 1m，`save as` 不设置则默认和 `from` 相同
 
 ### select 
 **select** 部分支持 `*|count|sum|max|min|avg|first|last|dist|exclude|listcount|list` 等方法，除*外其它都支持as
@@ -96,7 +99,9 @@ curl -d 'sql=select *,count(id) as count,dist(id) from test group by type' http:
 
 和mysql语句相同，支持复合条件，比如 `where a=1 and (b=2 or b=3) and (d=1 or (e=2 and e = 3))`
 
-支持个别方法，比如
+支持 in 条件，比如：`where id = 3 and type in (2,4,6)`
+
+支持个别方法，比如：
 
 * `a % 10 = 1`
 * `a >> 10 = 1`
@@ -108,7 +113,7 @@ curl -d 'sql=select *,count(id) as count,dist(id) from test group by type' http:
 * `from_unixtime(a, '%Y-%m-%D %H:%i:%s') = 2016-10-10 10:10:01`
 * `unix_timestamp(a) >= 1234567890`
 
-匹配符支持
+匹配符支持：
 
 * `>`
 * `<`
