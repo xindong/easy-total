@@ -730,7 +730,7 @@ class Worker
                     {
                         foreach ($task['sql'] as $sql)
                         {
-                            debug("fork sql({$key}): {$sql}");
+                            info("fork sql({$key}): {$sql}");
                         }
                     }
                 }
