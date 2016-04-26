@@ -708,6 +708,7 @@ class Manager
                     'typeM' => $typeM,
                     'mValue'=> $mValue,
                 ];
+
                 if ($typeM === 'func' && isset($opt))
                 {
                     $option['arg']  = $opt['arg'];
@@ -715,7 +716,11 @@ class Manager
 
                     if ($opt['fun'] === 'in')
                     {
-                        $option['$sql'] = "$field in(". implode(',', $opt['arg']) .")";
+                        $option['$sql']  = "$field in(". implode(',', $opt['arg']) .")";
+                    }
+                    elseif ($opt['fun'] === 'not_in')
+                    {
+                        $option['$sql'] = "$field not in(". implode(',', $opt['arg']) .")";
                     }
                     else
                     {
@@ -748,8 +753,8 @@ class Manager
             }
         }
 
-        # 解析in
-        if (preg_match_all('#(?<field>[a-z0-9]+)[ ]+in[ ]*\((?<arg>.+)\)#Ui', $where, $m))
+        # 解析in, not in
+        if (preg_match_all('#(?<field>[a-z0-9]+)[ ]+(?<notIn>not[ ]+)?in[ ]*\((?<arg>.+)\)#Ui', $where, $m))
         {
             foreach ($m[0] as $k => $v)
             {
@@ -761,7 +766,7 @@ class Manager
                 sort($arg);
 
                 $funHash[$hash] = [
-                    'fun'   => 'in',
+                    'fun'   => $m['notIn'][$k] ? 'not_in' : 'in',
                     'field' => self::deQuoteValue($m['field'][$k]),
                     'arg'   => $arg,
                 ];

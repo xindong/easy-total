@@ -39,7 +39,7 @@ ln -s ./server.ini /etc/easy-total.conf
 #### 监听一个SQL处理语句
 
 ```
-curl -d 'sql=select *,count(id) as count,dist(id) from test group by type' http://127.0.0.1:9200/task/add
+curl -d 'sql=select *,count(id) as count,dist(id) from test group by type' 127.0.0.1:9200/task/add
 ```
 将会返回类似json，其中 queryKey 表示当前注册的新的sql的key
 
@@ -53,8 +53,17 @@ curl -d 'sql=select *,count(id) as count,dist(id) from test group by type' http:
 #### 移除一个SQL处理语句
 
 ```
-curl -d 'sql=select *,count(id) as count,dist(id) from test group by type' http://127.0.0.1:9200/task/remove
+curl -d 'sql=select *,count(id) as count,dist(id) from test group by type' 127.0.0.1:9200/task/remove
 ```
+
+
+#### 查看监听的SQL列表
+
+```
+curl 127.0.0.1:9200/task/list
+```
+
+
 
 ## SQL支持的语法
 
@@ -101,6 +110,8 @@ curl -d 'sql=select *,count(id) as count,dist(id) from test group by type' http:
 
 支持 in 条件，比如：`where id = 3 and type in (2,4,6)`
 
+支持 not in 条件，比如：`where id = 3 and type not in (2,4,6)`
+
 支持个别方法，比如：
 
 * `a % 10 = 1`
@@ -123,7 +134,7 @@ curl -d 'sql=select *,count(id) as count,dist(id) from test group by type' http:
 
 ### group by 
 
-根据字段分支，例如 `group by a,b` 表示按a和b两个字段同时进行分组
+根据字段分组，例如 `group by a,b` 表示按a和b两个字段同时进行分组
 
 ### group time
 

@@ -1079,13 +1079,10 @@ class Worker
                     # 子分组条件
                     $rs = self::checkWhere($opt, $data);
                 }
-                elseif ($item['typeM'] === 'func' && $item['fun'] === 'in')
-                {
-                    # in 条件
-                    $rs = in_array($item['arg'], $data[$item['field']]);
-                }
                 else
                 {
+                    $rs    = false;
+                    $isIn  = false;
                     $value = $data[$item['field']];
                     if ($item['typeM'])
                     {
@@ -1157,6 +1154,16 @@ class Worker
                                         $value = @strtotime($value);
                                         break;
 
+                                    case 'in':
+                                        $isIn = true;
+                                        $rs = in_array($item['arg'], $data[$item['field']]);
+                                        break;
+
+                                    case 'not_in':
+                                        $isIn = true;
+                                        $rs = !in_array($item['arg'], $data[$item['field']]);
+                                        break;
+
                                     default:
                                         if (is_callable($item['fun']))
                                         {
@@ -1175,7 +1182,10 @@ class Worker
                         }
                     }
 
-                    $rs = self::checkWhereEx($value, $item['value'], $item['type']);
+                    if (!$isIn)
+                    {
+                        $rs = self::checkWhereEx($value, $item['value'], $item['type']);
+                    }
                 }
 
                 if ($type === '&&')
