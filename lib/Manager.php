@@ -239,16 +239,16 @@ class Manager
                     $option['saveAs'][$saveAs]['allField'] = true;
                 }
 
-                if (preg_match_all('#,(?<field>[a-z0-9_ ]+)(?:[ ]+as[ ]+(?<as>[a-z0-9_]+))?(?:[ ]+)?,#i', ','. str_replace(',', ',,', $select) .',', $mSelect))
+                # 匹配 select abc, abc as def
+                foreach (explode(',', $select) as $s)
                 {
-                    # 匹配 select abc, abc as def
-                    foreach ($mSelect[0] as $k => $item)
+                    if (preg_match('#^(?<field>[a-z0-9_ ]+)(?:[ ]+as[ ]+(?<as>[a-z0-9_]+))?(?:[ ]+)?$#i', trim($s), $mSelect))
                     {
-                        $field = trim($mSelect['field'][$k]);
-                        $as    = trim($mSelect['as'][$k] ?: $field);
+                        $field = trim($mSelect['field']);
+                        $as    = trim($mSelect['as'] ?: $field);
 
                         $option['saveAs'][$saveAs]['field'][$as] = [
-                            'type'  => 'value',
+                            'type' => 'value',
                             'field' => $field,
                         ];
 
