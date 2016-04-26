@@ -118,7 +118,7 @@ class FluentServer
         # 设置分包协议
         $config = [
             'open_eof_check' => true,
-            'open_eof_split' => false,
+            'open_eof_split' => true,
             'package_eof'    => "\n",
         ];
         $this->serverPort->set($config);

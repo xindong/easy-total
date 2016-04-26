@@ -62,11 +62,11 @@ curl -d 'sql=select *,count(id) as count,dist(id) from test group by type' http:
 * select 
 * from
 * for
+* join on 暂不支持但在计划开发功能之列 
 * where
 * group time
 * group by
 * save as
-* join on 暂不支持但在计划开发功能之列 
 
 例：
 `select field1,field2 as test from where type=1 and (statu = 2 or statu = 3) test group time 3m group by type save to newtable` 

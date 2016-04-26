@@ -432,6 +432,12 @@ class Worker
         return true;
     }
 
+    /**
+     * @param swoole_server $server
+     * @param $fromWorkerId
+     * @param $message
+     * @return null
+     */
     public function onPipeMessage(swoole_server $server, $fromWorkerId, $message)
     {
         if (substr($message, 0, 1) === '{')
@@ -441,7 +447,8 @@ class Worker
             {
                 switch ($data['type'])
                 {
-                    case 'sql':
+                    case 'task.update':
+                        # 添加一个任务
                         $option = @unserialize($this->redis->hGet('queries', $data['key']));
                         if ($option)
                         {
@@ -449,11 +456,35 @@ class Worker
                             $this->tasks[$option['table']][$option['key']] = $option;
                         }
                         break;
+
+                    case 'task.remove':
+                        # 移除一个任务
+                        $key = $data['key'];
+                        foreach ($this->tasks as $table => $op)
+                        {
+                            foreach ($op  as $k => $st)
+                            {
+                                if ($k === $key)
+                                {
+                                    unset($this->tasks[$table][$k]);
+                                }
+                            }
+
+                            if (!$this->tasks[$table])
+                            {
+                                unset($this->tasks[$table]);
+                            }
+                        }
+
+                        $this->clearFlushDataByKey($key);
+
+                        break;
+
                 }
             }
         }
 
-        return true;
+        return;
     }
 
     public function onFinish($server, $task_id, $data)
@@ -524,9 +555,9 @@ class Worker
                 $groupValue[] = $item[$group];
             }
 
-            $id  = implode('_', $groupValue);
+            $id  = "{$table}_". implode('_', $groupValue);
             $fun = $job['function'];
-            $key = "{$jobKey}_{$app}_{$table}_{$id}";
+            $key = "{$jobKey}_{$app}_{$id}";
 
             if (strlen($key) > 160)
             {
@@ -585,6 +616,71 @@ class Worker
         }
     }
 
+    /**
+     * 清理redis中的数据
+     *
+     * @param $key
+     */
+    public function clearDataByKey($key)
+    {
+        var_dump('aaaaaaaaaaaaaaaaaaaaaa'.$key);
+        if ($this->isSSDB)
+        {
+            while ($keys = $this->ssdb->hlist("total,{$key},", "total,{$key},z", 100))
+            {
+                foreach ($keys as $k)
+                {
+                    $this->ssdb->hclear($k);
+                }
+            }
+
+            while ($keys = $this->ssdb->hlist("dist,{$key},", "dist,{$key},z", 100))
+            {
+                foreach ($keys as $k)
+                {
+                    $this->ssdb->hclear($k);
+                }
+            }
+
+            while ($keys = $this->ssdb->hlist("join,{$key},", "dist,{$key},z", 100))
+            {
+                foreach ($keys as $k)
+                {
+                    $this->ssdb->hclear($k);
+                }
+            }
+        }
+        else
+        {
+            $keys = $this->redis->keys("total,{$key},*");
+            if ($keys)
+            {
+                $this->redis->delete($keys);
+            }
+
+            $keys = $this->redis->keys("dist,{$key},*");
+            if ($keys)
+            {
+                $this->redis->delete($keys);
+            }
+
+            $keys = $this->redis->keys("join,{$key},*");
+            if ($keys)
+            {
+                $this->redis->delete($keys);
+            }
+        }
+    }
+
+    public function clearFlushDataByKey($key)
+    {
+        # 清理内存中的数据
+        unset($this->flushData['jobs'][$key]);
+        unset($this->flushData['value'][$key]);
+        unset($this->flushData['total'][$key]);
+        unset($this->flushData['dist'][$key]);
+    }
+
     protected function reloadTasks()
     {
         $tasks = [];
@@ -604,7 +700,7 @@ class Worker
                 }
 
                 # 旧版本兼容处理下
-                if (isset($opt['saveTo']))
+                if ($this->id == 0 && isset($opt['saveTo']))
                 {
                     $opt['saveAs'] = $opt['saveTo'];
                     unset($opt['saveTo']);
@@ -630,11 +726,11 @@ class Worker
             {
                 foreach ($this->tasks as $tasks)
                 {
-                    foreach ($tasks as $task)
+                    foreach ($tasks as $key => $task)
                     {
                         foreach ($task['sql'] as $sql)
                         {
-                            debug("fork sql: {$sql}");
+                            debug("fork sql({$key}): {$sql}");
                         }
                     }
                 }
@@ -781,8 +877,6 @@ class Worker
 
                             $saveKey = "list,{$app},{$table},{$limit}";
 
-                            echo '$data = ';
-                            print_r($data);
                             $saveData[$saveKey][$id] = json_encode([$time, $data], JSON_UNESCAPED_UNICODE);
                         }
 

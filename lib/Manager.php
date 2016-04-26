@@ -33,6 +33,7 @@ class Manager
         switch ($uri = trim($request->server['request_uri'], ' /'))
         {
             case 'task/add':
+            case 'task/merge':
                 # 添加一个任务
                 $sql = $request->post['sql'];
 
@@ -52,13 +53,40 @@ class Manager
 
                 if ($option = self::parseSql($sql))
                 {
-                    $key   = $option['key'];
-                    $save  = current($option['saveAs']);
-                    $table = $option['table'];
+                    $key    = $option['key'];
+                    $table  = $option['table'];
+                    $saveAs = key($option['saveAs']);
 
                     if (isset($this->worker->tasks[$table][$key]))
                     {
-                        $option = self::mergeOption($this->worker->tasks[$table][$key], $option);
+                        $oldOpt = $this->worker->tasks[$table][$key];
+
+                        if (isset($oldOpt['saveAs'][$saveAs]))
+                        {
+                            # 已经存在一个
+                            if ($uri === 'task/add')
+                            {
+                                $data['status']  = 'error';
+                                $data['message'] = "the task from {$table} and save as {$saveAs} already exists. you can use api task/merge update the exists task";
+
+                                goto send;
+                            }
+                            else
+                            {
+                                $oldSql = $oldOpt['sqlOrigin'][$saveAs];
+
+                                # 合并
+                                $option = self::mergeOption($oldOpt, $option);
+
+                                # 处理合并后的SQL
+                                $option['sql'][$saveAs]       = self::getSqlByOption($oldOpt);
+                                $option['sqlOrigin'][$saveAs] = "$oldSql;\n{$oldOpt['sqlOrigin'][$saveAs]}";
+                            }
+                        }
+                        else
+                        {
+                            $option = self::mergeOption($oldOpt, $option);
+                        }
                     }
 
                     if (false !== $this->worker->redis->hSet('queries', $key, serialize($option)))
@@ -70,7 +98,7 @@ class Manager
                             if ($i !== $this->workerId)
                             {
                                 $msg = [
-                                    'type' => 'sql',
+                                    'type' => 'task.update',
                                     'key'  => $key,
                                 ];
                                 $this->server->sendMessage(json_encode($msg), $i);
@@ -88,15 +116,16 @@ class Manager
 
                     if (IS_DEBUG)
                     {
-                        echo "jobs: ";
-                        print_r($this->worker->tasks);
+                        echo "new option: ";
+                        print_r($option);
                     }
-
-                    info("fork new sql($key): $sql");
 
                     $data['status']   = 'ok';
                     $data['queryKey'] = $key;
-                    $data['saveAs']    = $save;
+                    $data['saveAs']   = $saveAs;
+                    $data['sql']      = $option['sql'][$data['saveAs']];
+
+                    info("fork new sql($key): {$data['sql']}");
                 }
                 else
                 {
@@ -108,28 +137,174 @@ class Manager
 
             case 'task/remove':
                 # 添加一个任务
+                $option = null;
                 if (isset($request->post['sql']))
                 {
-                    $sql = $request->post['sql'];
+                    $sql    = $request->post['sql'];
+                    $option = self::parseSql($sql);
+                    if (!$option)
+                    {
+                        $data['status']  = 'error';
+                        $data['message'] = 'parse sql error';
+
+                        goto send;
+                    }
+
+                    $key   = $option['key'];
+                    $table = $option['table'];
+                    $save  = key($option['table']);
                 }
-                elseif (isset($request->post['key']))
+                elseif (isset($request->post['key']) && isset($request->post['table']))
                 {
-                    $key = $request->post['key'];
+                    $key   = $request->post['key'];
+                    $table = $request->post['table'];
+                    $save  = $request->post['saveAs'] ?: $table;
                 }
-                elseif (isset($request->get['key']))
+                elseif (isset($request->get['key']) && isset($request->post['table']))
                 {
-                    $key = $request->get['key'];
+                    $key   = $request->get['key'];
+                    $table = $request->get['table'];
+                    $save  = $request->get['saveAs'] ?: $table;
                 }
                 else
                 {
                     $data['status']  = 'error';
-                    $data['message'] = 'need parameter key or sql';
+                    $data['message'] = 'need parameter key,save or sql';
                     break;
+                }
+
+                if (isset($key) && isset($table))
+                {
+                    if (isset($this->worker->tasks[$table][$key]))
+                    {
+                        $option = $this->worker->tasks[$table][$key];
+                    }
+                    else
+                    {
+                        $data['status']  = 'error';
+                        $data['message'] = "can not found (key={$key},table={$table},saveAs={$save}) task";
+                        goto send;
+                    }
+                }
+
+                $sendType = 'task.update';
+                if ($option)
+                {
+                    unset($option['saveAs'][$save]);
+
+                    if (!$option['saveAs'])
+                    {
+                        # 没有其它任务, 可直接清除
+                        $rs       = $this->worker->redis->hDel('queries', $key);
+                        $sendType = 'task.remove';
+                    }
+                    else
+                    {
+                        unset($option['sql'][$save]);
+                        unset($option['sqlOrigin'][$save]);
+
+                        # 更新function
+                        $option['function'] = [];
+                        foreach ($option['saveAs'] as $opt)
+                        {
+                            foreach ($opt['field'] as $st)
+                            {
+                                $type  = $st['type'];
+                                $field = $st['field'];
+                                switch ($type)
+                                {
+                                    case 'avg':
+                                        $option['function']['sum'][$field]  = true;
+                                        $option['function']['count']['*']   = true;
+                                        break;
+
+                                    case 'dist':
+                                    case 'list':
+                                    case 'listcount':
+                                        $option['function']['dist'][$field] = true;
+                                        break;
+
+                                    case 'count':
+                                        $option['function']['count']['*'] = true;
+                                        break;
+
+                                    default:
+                                        $option['function'][$type][$field] = true;
+                                        break;
+                                }
+                            }
+                        }
+
+                        # 更新数据
+                        $rs = $this->worker->redis->hSet('queries', $key, serialize($option));
+                    }
+                }
+                else
+                {
+                    $rs = false;
+                }
+
+                if ($rs)
+                {
+                    $data['status'] = 'ok';
+
+                    # 通知所有进程清理数据
+                    for ($i = 0; $i < $this->server->setting['worker_num']; $i++)
+                    {
+                        # 通知更新
+                        $msg = [
+                            'type' => $sendType,
+                            'key'  => $key,
+                        ];
+
+                        if ($i == $this->workerId)
+                        {
+                            # 直接请求
+                            $this->worker->onPipeMessage($this->server, $this->workerId, json_encode($msg));
+                        }
+                        else
+                        {
+                            # 通知执行
+                            $this->server->sendMessage(json_encode($msg), $i);
+                        }
+                    }
+
+                    # 清理redis中的数据
+                    $this->worker->clearDataByKey($key);
+
+                }
+                else
+                {
+                    $data['status']  = 'error';
                 }
 
                 break;
 
-            case 'job/stop':
+            case 'task/list':
+                try
+                {
+                    $rs      = [];
+                    $queries = $this->worker->redis->hGetAll('queries');
+                    if ($queries)foreach ($queries as $key => $query)
+                    {
+                        $query = unserialize($query);
+                        foreach ($query['sql'] as $table => $sql)
+                        {
+                            $rs[] = $sql;
+                        }
+                    }
+
+                    $data['sql'] = $rs;
+                }
+                catch (Exception $e)
+                {
+                    $data['status']  = 'error';
+                    $data['message'] = 'please check redis server.';
+                }
+
+                break;
+
+            case 'task/pause':
                 # 暂停任务
                 if (isset($request->get['key']))
                 {
@@ -144,7 +319,7 @@ class Manager
 
                 break;
 
-            case 'job/start':
+            case 'task/start':
                 # 开启任务任务
                 if (isset($request->get['key']))
                 {
@@ -200,7 +375,6 @@ class Manager
      */
     protected static function parseSql($sql)
     {
-        // (?:(?! save to ).)+
         $preg = "#^select[ ]+(?<select>.+) from (?:(?<app>[a-z0-9_]+)\.)?(?<table>[a-z0-9_]+)(?:[ ]+for[ ]+(?<for>[a-z0-9,]+))?(?: where (?<where>(?:(?! group[ ]+time | group[ ]+by | save[ ]+as ).)+))?(?: group[ ]+by[ ]+(?<groupBy>[a-z0-9_,]+))?(?: group[ ]+time[ ]+(?<groupTime>\d+(?:d|h|m|s|W)))?(?: save[ ]+as (?<saveAs>[a-z0-9_]+))?$#i";
         if (preg_match($preg, $sql, $m))
         {
@@ -211,7 +385,6 @@ class Manager
             }
 
             $table     = trim($m['table']);
-            $key       = "table:{$table}";
             $select    = trim($m['select']);
             $for       = trim($m['for']);
             $where     = trim($m['where']);
@@ -222,7 +395,8 @@ class Manager
                 'key'   => null,
                 'table' => $table,
                 'use'   => true,
-                'sql'   => [
+                'sql'   => [],
+                'sqlOrigin' => [
                     $saveAs => $sql
                 ]
             ];
@@ -233,17 +407,16 @@ class Manager
             }
             else
             {
-                if (strpos(str_replace([' ', '.'], ['', ','], ','.$select.','), ',*,') !== false)
-                {
-                    # select *, count(*) as value ...
-                    $option['saveAs'][$saveAs]['allField'] = true;
-                }
-
-                # 匹配 select abc, abc as def
                 foreach (explode(',', $select) as $s)
                 {
-                    if (preg_match('#^(?<field>[a-z0-9_ ]+)(?:[ ]+as[ ]+(?<as>[a-z0-9_]+))?(?:[ ]+)?$#i', trim($s), $mSelect))
+                    $s = trim($s);
+                    if ($s === '*')
                     {
+                        $option['saveAs'][$saveAs]['allField'] = true;
+                    }
+                    elseif (preg_match('#^(?<field>[a-z0-9_]+)(?:[ ]+as[ ]+(?<as>[a-z0-9_]+))?(?:[ ]+)?$#i', $s, $mSelect))
+                    {
+                        # 匹配 select abc, abc as def
                         $field = trim($mSelect['field']);
                         $as    = trim($mSelect['as'] ?: $field);
 
@@ -254,16 +427,12 @@ class Manager
 
                         $option['function']['value'][$field] = true;
                     }
-                }
-
-                if (preg_match_all('#(?<type>count|sum|max|min|avg|first|last|dist|exclude|listcount|list|value)[ ]*\((?<field>[a-z0-9_ \*]*)\)(?:[ ]+as[ ]+(?<as>[a-z0-9_]+))?#i', $select, $mSelect))
-                {
-                    # 匹配 select sum(abc), sum(abc) as def
-                    foreach ($mSelect[0] as $k => $item)
+                    elseif (preg_match('#^(?<type>count|sum|max|min|avg|first|last|dist|exclude|listcount|list|value)[ ]*\((?<field>[a-z0-9_ \*]*)\)(?:[ ]+as[ ]+(?<as>[a-z0-9_]+))?$#i', $s, $mSelect))
                     {
-                        $field = trim($mSelect['field'][$k]);
-                        $type  = strtolower(trim($mSelect['type'][$k]));
-                        $as    = trim($mSelect['as'][$k] ?: $field);
+                        # 匹配 select sum(abc), sum(abc) as def
+                        $field = trim($mSelect['field']);
+                        $type  = strtolower(trim($mSelect['type']));
+                        $as    = trim($mSelect['as'] ?: $field);
 
                         if ($field === '*' && $type !== 'count')
                         {
@@ -305,12 +474,6 @@ class Manager
                 }
             }
 
-            # 标记成需要所有字段
-            if ($option['allField'])
-            {
-                $option['saveAs'][$saveAs]['allField'] = true;
-            }
-
             if ($for)
             {
                 foreach (explode(',', $for) as $item)
@@ -318,14 +481,11 @@ class Manager
                     $option['for'][$item] = $item;
                 }
                 ksort($option['for']);
-
-                $key .= '|for:'. implode(',', $option['for']);
             }
 
             if ($where)
             {
                 $option['where'] = self::parseWhere($where);
-                $key .= '|where:'. $option['where']['$sql'];
             }
 
             $GroupTimeSet = [
@@ -350,8 +510,6 @@ class Manager
 
             $option['groupTime'] = $GroupTimeSet;
 
-            $key .= "|group:{$GroupTimeSet['limit']}{$GroupTimeSet['type']}";
-
             if ($groupBy)
             {
                 foreach(explode(',', $groupBy) as $item)
@@ -367,14 +525,11 @@ class Manager
                 {
                     # 重新排序
                     sort($option['groupBy']);
-                    $key .= ','. implode(',', $option['groupBy']);
                 }
             }
 
-            # 生成一个唯一值
-            $key = substr(md5($key), 8, 16);
-
-            $option['key'] = $key;
+            $option['key']          = self::getKeyByOption($option);
+            $option['sql'][$saveAs] = self::getSqlByOption($option);
 
             return $option;
         }
@@ -383,6 +538,111 @@ class Manager
             warn("error sql: $sql");
             return false;
         }
+    }
+
+    /**
+     * 根据配置获取key
+     *
+     * @param $option
+     * @return string
+     */
+    protected static function getKeyByOption($option)
+    {
+        $key = "table:{$option['table']}";
+
+        if (isset($option['for']) && $option['for'])
+        {
+            $key .= '|for:' . implode(',', $option['for']);
+        }
+
+        if (isset($option['where']) && $option['where'])
+        {
+            $key .= '|where:' . $option['where']['$sql'];
+        }
+
+        if (isset($option['groupBy']) && $option['groupBy'])
+        {
+            $key .= ',' . implode(',', $option['groupBy']);
+        }
+
+        $key .= "|group:{$option['groupTime']['limit']}{$option['groupTime']['type']}";
+
+        $key = substr(md5($key), 8, 16);
+
+        return $key;
+    }
+
+    /**
+     * 根据配置生成格式化后的SQL语句
+     *
+     * @param $option
+     * @param null $table
+     * @return bool|string
+     */
+    protected static function getSqlByOption($option, $table = null)
+    {
+        if (null === $table)
+        {
+            $table = key($option['saveAs']);
+        }
+        elseif (!isset($option['saveAs'][$table]))
+        {
+            return false;
+        }
+
+        $save = $option['saveAs'][$table];
+
+
+        $select = [];
+        if ($save['allField'])
+        {
+            $select[] = '*';
+        }
+
+        foreach ($save['field'] as $as => $st)
+        {
+            if ($st['type'] === 'value')
+            {
+                $tmp = $st['field'];
+            }
+            else
+            {
+                $tmp = "{$st['type']}({$st['field']})";
+            }
+
+            if ($st['field'] !== $as)
+            {
+                $tmp .= " as {$as}";
+            }
+
+            $select[] = $tmp;
+        }
+
+        $sql = 'select '. implode(',', $select) . " from {$option['table']}";
+
+        if (isset($option['for']) && $option['for'])
+        {
+            $sql .= " for ". implode(',', $option['for']);
+        }
+
+        if (isset($option['where']) && $option['where'])
+        {
+            $sql .= " where {$option['where']['$sql']}";
+        }
+
+        if (isset($option['groupBy']) && $option['groupBy'])
+        {
+            $sql .= " group by ". implode(',', $option['groupBy']);
+        }
+
+        $sql .= " group time {$option['groupTime']['limit']}{$option['groupTime']['type']}";
+
+        if ($table !== $option['table'])
+        {
+            $sql .= " save as {$table}";
+        }
+
+        return $sql;
     }
 
     protected static function mergeOption($opt1, $opt2)
