@@ -116,6 +116,10 @@ curl -d 'sql=select *,count(id) as count,dist(id) from test group by type' http:
 * `>=`
 * `<=`
 
+### group by 
+
+根据字段分支，例如 `group by a,b` 表示按a和b两个字段同时进行分组
+
 ### group time
 
 这个是一个 *特有* 的关键词，不设置则默认是 group time 1m（1分钟）。它的用途是按时间戳将数据分组，在1组里数据将会和另外一组的数据隔离，也就意味着你去算dist，sum等时，是分开来的。
@@ -147,10 +151,6 @@ _id          | id   |  title  | time                 | count | dist_title | firs
 （ps: 以上 _id 是系统生成的，1d_1234567 只是一个列子，并不表示一定是它）
 鉴于实际的统计需要，可以对同一个数据重复添加相应的sql监听需求以满足业务需求。
 
-
-### group by 
-
-根据字段分支，例如 `group by a,b` 表示按a和b两个字段同时进行分组
 
 ### save as
 

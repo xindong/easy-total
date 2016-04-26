@@ -198,7 +198,7 @@ class Manager
     protected static function parseSql($sql)
     {
         // (?:(?! save to ).)+
-        $preg = "#^select[ ]+(?<select>.+) from (?:(?<app>[a-z0-9_]+)\.)?(?<table>[a-z0-9_]+)(?:[ ]+for[ ]+(?<for>[a-z0-9,]+))?(?: where (?<where>(?:(?! group[ ]+time | group[ ]+by | save[ ]+to ).)+))?(?: group[ ]+by[ ]+(?<groupBy>[a-z0-9_,]+))?(?: group[ ]+time[ ]+(?<groupTime>\d+(?:d|h|m|s|W)))?(?: save[ ]+to (?<saveTo>[a-z0-9_]+))?$#i";
+        $preg = "#^select[ ]+(?<select>.+) from (?:(?<app>[a-z0-9_]+)\.)?(?<table>[a-z0-9_]+)(?:[ ]+for[ ]+(?<for>[a-z0-9,]+))?(?: where (?<where>(?:(?! group[ ]+time | group[ ]+by | save[ ]+as ).)+))?(?: group[ ]+by[ ]+(?<groupBy>[a-z0-9_,]+))?(?: group[ ]+time[ ]+(?<groupTime>\d+(?:d|h|m|s|W)))?(?: save[ ]+as (?<saveTo>[a-z0-9_]+))?$#i";
         if (preg_match($preg, $sql, $m))
         {
             if (IS_DEBUG)
@@ -214,26 +214,26 @@ class Manager
             $where     = trim($m['where']);
             $groupBy   = trim($m['groupBy']);
             $groupTime = trim($m['groupTime']);
-            $saveTo    = trim($m['saveTo']) ?: $table;
+            $saveAs    = trim($m['saveTo']) ?: $table;
             $option    = [
                 'key'   => null,
                 'table' => $table,
                 'use'   => true,
                 'sql'   => [
-                    $saveTo => $sql
+                    $saveAs => $sql
                 ]
             ];
 
             if ($select === '*')
             {
-                $option['saveTo'][$saveTo]['allField'] = true;
+                $option['saveTo'][$saveAs]['allField'] = true;
             }
             else
             {
                 if (strpos(str_replace([' ', '.'], ['', ','], ','.$select.','), ',*,') !== false)
                 {
                     # select *, count(*) as value ...
-                    $option['saveTo'][$saveTo]['allField'] = true;
+                    $option['saveTo'][$saveAs]['allField'] = true;
                 }
 
                 if (preg_match_all('#,(?<field>[a-z0-9_ ]+)(?:[ ]+as[ ]+(?<as>[a-z0-9_]+))?(?:[ ]+)?,#i', ','. $select .',', $mSelect))
@@ -244,7 +244,7 @@ class Manager
                         $field = trim($mSelect['field'][$k]);
                         $as    = trim($mSelect['as'][$k] ?: $field);
 
-                        $option['saveTo'][$saveTo]['field'][$as] = [
+                        $option['saveTo'][$saveAs]['field'][$as] = [
                             'type'  => 'value',
                             'field' => $field,
                         ];
@@ -268,7 +268,7 @@ class Manager
                             continue;
                         }
 
-                        $option['saveTo'][$saveTo]['field'][$as] = [
+                        $option['saveTo'][$saveAs]['field'][$as] = [
                             'type'  => $type,
                             'field' => $field,
                         ];
@@ -287,7 +287,7 @@ class Manager
                                 break;
 
                             case 'count':
-                                $option['saveTo'][$saveTo]['field'][$as] = [
+                                $option['saveTo'][$saveAs]['field'][$as] = [
                                     'type'  => $type,
                                     'field' => '*',
                                 ];
@@ -305,7 +305,7 @@ class Manager
             # 标记成需要所有字段
             if ($option['allField'])
             {
-                $option['saveTo'][$saveTo]['allField'] = true;
+                $option['saveTo'][$saveAs]['allField'] = true;
             }
 
             if ($for)
