@@ -253,7 +253,7 @@ class Manager
                     }
                 }
 
-                if (preg_match_all('#(?<type>count|sum|max|min|avg|first|last|dist|exclude|listcount|list|value)[ ]*\((?<field>[a-z0-9_ ]*)\)(?:[ ]+as[ ]+(?<as>[a-z0-9_]+))?#i', $select, $mSelect))
+                if (preg_match_all('#(?<type>count|sum|max|min|avg|first|last|dist|exclude|listcount|list|value)[ ]*\((?<field>[a-z0-9_ \*]*)\)(?:[ ]+as[ ]+(?<as>[a-z0-9_]+))?#i', $select, $mSelect))
                 {
                     # 匹配 select sum(abc), sum(abc) as def
                     foreach ($mSelect[0] as $k => $item)
@@ -261,6 +261,12 @@ class Manager
                         $field = trim($mSelect['field'][$k]);
                         $type  = strtolower(trim($mSelect['type'][$k]));
                         $as    = trim($mSelect['as'][$k] ?: $field);
+
+                        if ($field === '*' && $type !== 'count')
+                        {
+                            # 只支持 count(*)
+                            continue;
+                        }
 
                         $option['saveTo'][$saveTo]['field'][$as] = [
                             'type'  => $type,
