@@ -40,9 +40,7 @@ class TaskWorker
 
             if (false === $redis->time())
             {
-                # 大部分用redis的操作, 部分不兼容的用这个对象来处理
                 require_once __DIR__ . '/SSDB.php';
-
                 $ssdb = new SimpleSSDB(FluentServer::$config['redis']['host'], FluentServer::$config['redis']['port']);
             }
 

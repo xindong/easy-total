@@ -120,10 +120,10 @@ class Manager
                         print_r($option);
                     }
 
-                    $data['status']   = 'ok';
-                    $data['queryKey'] = $key;
-                    $data['saveAs']   = $saveAs;
-                    $data['sql']      = $option['sql'][$data['saveAs']];
+                    $data['status'] = 'ok';
+                    $data['key']    = $key;
+                    $data['saveAs'] = $saveAs;
+                    $data['sql']    = $option['sql'][$data['saveAs']];
 
                     info("fork new sql($key): {$data['sql']}");
                 }
@@ -169,7 +169,7 @@ class Manager
                 else
                 {
                     $data['status']  = 'error';
-                    $data['message'] = 'need parameter key,save or sql';
+                    $data['message'] = 'need arguments [key and table] or [sql]';
                     break;
                 }
 
@@ -362,7 +362,7 @@ class Manager
 
         send:
         $response->header('Content-Type', 'application/json');
-        $response->end(json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+        $response->end(json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)."\n");
 
         return null;
     }

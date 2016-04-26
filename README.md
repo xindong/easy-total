@@ -45,10 +45,15 @@ curl -d 'sql=select *,count(id) as count,dist(id) from test group by type' 127.0
 
 ```json
 {
-    "status" : "ok",
-    "queryKey" : "703961d9b581471b"
+    "status": "ok",
+    "key": "31fa9231535a10ab",
+    "saveAs": "test_consume",
+    "sql": "select cid,count(*) as total,sum(value) as sum_value,last(time) as last_time from consume group by cid group time 1h save as test_consume"
 }
 ```
+
+其中 sql 是经过系统格式化后的新的SQL语句，未知的参数将会被过滤掉。
+
 
 #### 移除一个SQL处理语句
 
