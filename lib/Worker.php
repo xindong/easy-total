@@ -551,7 +551,7 @@ class Worker
                 $this->flushDataRunTime['total'][$key] = $total;
             }
 
-            if ($job['saveTo'][$table]['allField'])
+            if ($job['saveAs'][$table]['allField'])
             {
                 $this->flushDataRunTime['value'][$key] = $item;
             }
@@ -589,7 +589,7 @@ class Worker
     {
         $tasks = [];
         $opts  = $this->redis->hGetAll('queries');
-        foreach ($opts as $item)
+        foreach ($opts as $key => $item)
         {
             $opt = @unserialize($item);
             if ($opt)
@@ -601,6 +601,14 @@ class Worker
                         info("query not use, key: {$opt['key']}, table: {$opt['table']}");
                     }
                     continue;
+                }
+
+                # 旧版本兼容处理下
+                if (isset($opt['saveTo']))
+                {
+                    $opt['saveAs'] = $opt['saveTo'];
+                    unset($opt['saveTo']);
+                    $this->redis->hSet('queries', $key, serialize($item));
                 }
 
                 $tasks[$opt['table']][$opt['key']] = $opt;
@@ -712,7 +720,7 @@ class Worker
                         $distCache = [];
                         $value     = $this->flushData['value'][$key] ?: [];
 
-                        foreach ($job['saveTo'] as $table => $st)
+                        foreach ($job['saveAs'] as $table => $st)
                         {
                             $data = [
                                 '_id' => $id,

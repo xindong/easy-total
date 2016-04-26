@@ -40,19 +40,20 @@ class Manager
                 {
                     $data['status']  = 'error';
                     $data['message'] = 'redis server is not active';
-                    break;
+                    goto send;
                 }
 
                 if (!$sql)
                 {
                     $data['status']  = 'error';
                     $data['message'] = 'need parameter sql';
-                    break;
+                    goto send;
                 }
 
                 if ($option = self::parseSql($sql))
                 {
                     $key   = $option['key'];
+                    $save  = current($option['saveAs']);
                     $table = $option['table'];
 
                     if (isset($this->worker->tasks[$table][$key]))
@@ -82,7 +83,7 @@ class Manager
                     {
                         $data['status']  = 'error';
                         $data['message'] = 'update setting error, please check redis server.';
-                        break;
+                        goto send;
                     }
 
                     if (IS_DEBUG)
@@ -95,6 +96,7 @@ class Manager
 
                     $data['status']   = 'ok';
                     $data['queryKey'] = $key;
+                    $data['saveAs']    = $save;
                 }
                 else
                 {
@@ -183,6 +185,7 @@ class Manager
                 break;
         }
 
+        send:
         $response->header('Content-Type', 'application/json');
         $response->end(json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
 
@@ -198,7 +201,7 @@ class Manager
     protected static function parseSql($sql)
     {
         // (?:(?! save to ).)+
-        $preg = "#^select[ ]+(?<select>.+) from (?:(?<app>[a-z0-9_]+)\.)?(?<table>[a-z0-9_]+)(?:[ ]+for[ ]+(?<for>[a-z0-9,]+))?(?: where (?<where>(?:(?! group[ ]+time | group[ ]+by | save[ ]+as ).)+))?(?: group[ ]+by[ ]+(?<groupBy>[a-z0-9_,]+))?(?: group[ ]+time[ ]+(?<groupTime>\d+(?:d|h|m|s|W)))?(?: save[ ]+as (?<saveTo>[a-z0-9_]+))?$#i";
+        $preg = "#^select[ ]+(?<select>.+) from (?:(?<app>[a-z0-9_]+)\.)?(?<table>[a-z0-9_]+)(?:[ ]+for[ ]+(?<for>[a-z0-9,]+))?(?: where (?<where>(?:(?! group[ ]+time | group[ ]+by | save[ ]+as ).)+))?(?: group[ ]+by[ ]+(?<groupBy>[a-z0-9_,]+))?(?: group[ ]+time[ ]+(?<groupTime>\d+(?:d|h|m|s|W)))?(?: save[ ]+as (?<saveAs>[a-z0-9_]+))?$#i";
         if (preg_match($preg, $sql, $m))
         {
             if (IS_DEBUG)
@@ -207,14 +210,14 @@ class Manager
                 print_r($m);
             }
 
-            $key       = '';
             $table     = trim($m['table']);
+            $key       = "table:{$table}";
             $select    = trim($m['select']);
             $for       = trim($m['for']);
             $where     = trim($m['where']);
             $groupBy   = trim($m['groupBy']);
             $groupTime = trim($m['groupTime']);
-            $saveAs    = trim($m['saveTo']) ?: $table;
+            $saveAs    = trim($m['saveAs']) ?: $table;
             $option    = [
                 'key'   => null,
                 'table' => $table,
@@ -226,14 +229,14 @@ class Manager
 
             if ($select === '*')
             {
-                $option['saveTo'][$saveAs]['allField'] = true;
+                $option['saveAs'][$saveAs]['allField'] = true;
             }
             else
             {
                 if (strpos(str_replace([' ', '.'], ['', ','], ','.$select.','), ',*,') !== false)
                 {
                     # select *, count(*) as value ...
-                    $option['saveTo'][$saveAs]['allField'] = true;
+                    $option['saveAs'][$saveAs]['allField'] = true;
                 }
 
                 if (preg_match_all('#,(?<field>[a-z0-9_ ]+)(?:[ ]+as[ ]+(?<as>[a-z0-9_]+))?(?:[ ]+)?,#i', ','. $select .',', $mSelect))
@@ -244,7 +247,7 @@ class Manager
                         $field = trim($mSelect['field'][$k]);
                         $as    = trim($mSelect['as'][$k] ?: $field);
 
-                        $option['saveTo'][$saveAs]['field'][$as] = [
+                        $option['saveAs'][$saveAs]['field'][$as] = [
                             'type'  => 'value',
                             'field' => $field,
                         ];
@@ -268,7 +271,7 @@ class Manager
                             continue;
                         }
 
-                        $option['saveTo'][$saveAs]['field'][$as] = [
+                        $option['saveAs'][$saveAs]['field'][$as] = [
                             'type'  => $type,
                             'field' => $field,
                         ];
@@ -287,7 +290,7 @@ class Manager
                                 break;
 
                             case 'count':
-                                $option['saveTo'][$saveAs]['field'][$as] = [
+                                $option['saveAs'][$saveAs]['field'][$as] = [
                                     'type'  => $type,
                                     'field' => '*',
                                 ];
@@ -305,7 +308,7 @@ class Manager
             # 标记成需要所有字段
             if ($option['allField'])
             {
-                $option['saveTo'][$saveAs]['allField'] = true;
+                $option['saveAs'][$saveAs]['allField'] = true;
             }
 
             if ($for)
