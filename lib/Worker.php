@@ -704,7 +704,7 @@ class Worker
                 {
                     $opt['saveAs'] = $opt['saveTo'];
                     unset($opt['saveTo']);
-                    $this->redis->hSet('queries', $key, serialize($item));
+                    $this->redis->hSet('queries', $key, serialize($opt));
                 }
 
                 $tasks[$opt['table']][$opt['key']] = $opt;
@@ -738,7 +738,7 @@ class Worker
         }
         elseif (IS_DEBUG && $this->id == 0)
         {
-            debug("not found any task");
+            info("not found any task");
         }
     }
 
