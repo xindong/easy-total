@@ -716,11 +716,11 @@ class Worker
 
             if ($this->id == 0)
             {
-                foreach ($this->tasks as $tasks)
+                foreach ($this->tasks as $task)
                 {
-                    foreach ($tasks as $key => $task)
+                    foreach ($task as $key => $item)
                     {
-                        foreach ($task['sql'] as $sql)
+                        foreach ($item['sql'] as $sql)
                         {
                             info("fork sql({$key}): {$sql}");
                         }
