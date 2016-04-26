@@ -688,7 +688,7 @@ class Worker
         foreach ($opts as $key => $item)
         {
             $opt = @unserialize($item);
-            if ($opt)
+            if ($opt && is_array($opt))
             {
                 if (!$opt['use'])
                 {
@@ -697,14 +697,6 @@ class Worker
                         info("query not use, key: {$opt['key']}, table: {$opt['table']}");
                     }
                     continue;
-                }
-
-                # 旧版本兼容处理下
-                if ($this->id == 0 && isset($opt['saveTo']))
-                {
-                    $opt['saveAs'] = $opt['saveTo'];
-                    unset($opt['saveTo']);
-                    $this->redis->hSet('queries', $key, serialize($opt));
                 }
 
                 $tasks[$opt['table']][$opt['key']] = $opt;
@@ -722,7 +714,7 @@ class Worker
         {
             $this->tasks = $tasks;
 
-            if (IS_DEBUG && $this->id == 0)
+            if ($this->id == 0)
             {
                 foreach ($this->tasks as $tasks)
                 {
