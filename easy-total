@@ -27,6 +27,12 @@ if (isset($options['help']) || isset($options['h']))
 
 define('LOG_PATH', $options['l'] ?: null);
 
+# 移除较大的log
+if (LOG_PATH && is_file(LOG_PATH) && filesize(LOG_PATH) > 1024 * 1024 * 30)
+{
+    if (is_file(LOG_PATH.'.bak'))unlink(LOG_PATH.'.bak');
+    rename(LOG_PATH, LOG_PATH.'.bak');
+}
 
 
 $red       = "\x1b[31m";

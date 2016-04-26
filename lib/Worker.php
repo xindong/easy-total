@@ -73,6 +73,8 @@ class Worker
 
     protected $dumpFile = '';
 
+    protected $buffer = '';
+
     /**
      * 是否完成了初始化
      *
@@ -265,6 +267,19 @@ class Worker
      */
     public function onReceive(swoole_server $server, $fd, $fromId, $data)
     {
+        if (substr($data, -3) !== "==\n")
+        {
+            $this->buffer[$fromId] .= $data;
+            return true;
+        }
+        elseif (isset($this->buffer[$fromId]) && $this->buffer[$fromId])
+        {
+            # 拼接 buffer
+            $data = $this->buffer[$fromId] . $data;
+
+            unset($this->buffer[$fromId]);
+        }
+
         $delayParseRecords = false;
 
         if ($data[0] === '[')
