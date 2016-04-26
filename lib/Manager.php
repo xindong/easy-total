@@ -60,7 +60,7 @@ class Manager
                         $option = self::mergeOption($this->worker->tasks[$table][$key], $option);
                     }
 
-                    if ($this->worker->redis->hSet('queries', $key, serialize($option)))
+                    if (false !== $this->worker->redis->hSet('queries', $key, serialize($option)))
                     {
                         # 通知所有worker进程更新SQL
                         for ($i = 0; $i < $this->server->setting['worker_num']; $i++)
