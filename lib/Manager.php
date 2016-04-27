@@ -216,7 +216,7 @@ class Manager
 
                     $key   = $option['key'];
                     $table = $option['table'];
-                    $save  = key($option['table']);
+                    $save  = key($option['saveAs']);
                 }
                 elseif (isset($this->request->post['key']) && isset($this->request->post['table']))
                 {
