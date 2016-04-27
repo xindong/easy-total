@@ -18,6 +18,16 @@ class Manager
     protected $workerId = 0;
 
     /**
+     * @var swoole_http_request
+     */
+    protected $request;
+
+    /**
+     * @var swoole_http_response
+     */
+    protected $response;
+
+    /**
      * Manager constructor.
      */
     public function __construct($server, $worker, $workerId)
@@ -29,13 +39,67 @@ class Manager
 
     public function onManagerRequest(swoole_http_request $request, swoole_http_response $response)
     {
+        $this->request  = $request;
+        $this->response = $response;
+
+        $uri    = trim($request->server['request_uri'], ' /');
+        $uriArr = explode('/', $uri);
+        $type   = array_shift($uriArr);
+
+        switch ($type)
+        {
+            case 'api':
+                $this->api(implode('/', $uriArr));
+                break;
+
+            case 'admin':
+                $this->admin(implode('/', $uriArr));
+                break;
+
+            case 'assets':
+                $this->assets(implode('/', $uriArr));
+                break;
+
+            default:
+
+                $response->status(404);
+                $response->end('page not found');
+                break;
+        }
+
+        $this->request  = null;
+        $this->response = null;
+    }
+
+    protected function admin($uri)
+    {
+        switch ($uri)
+        {
+            case '':
+                # 首页面
+                $html = 'hello';
+                $this->response->end($html);
+                break;
+            case 'login':
+                break;
+
+            default:
+                $this->response->status(404);
+                $this->response->end('page not found');
+                break;
+        }
+    }
+
+    protected function api($uri)
+    {
         $data = [];
-        switch ($uri = trim($request->server['request_uri'], ' /'))
+
+        switch ($uri)
         {
             case 'task/add':
             case 'task/merge':
                 # 添加一个任务
-                $sql = $request->post['sql'];
+                $sql = $this->request->post['sql'];
 
                 if (!$this->worker->redis)
                 {
@@ -138,9 +202,9 @@ class Manager
             case 'task/remove':
                 # 添加一个任务
                 $option = null;
-                if (isset($request->post['sql']))
+                if (isset($this->request->post['sql']))
                 {
-                    $sql    = $request->post['sql'];
+                    $sql    = $this->request->post['sql'];
                     $option = self::parseSql($sql);
                     if (!$option)
                     {
@@ -154,23 +218,23 @@ class Manager
                     $table = $option['table'];
                     $save  = key($option['table']);
                 }
-                elseif (isset($request->post['key']) && isset($request->post['table']))
+                elseif (isset($this->request->post['key']) && isset($this->request->post['table']))
                 {
-                    $key   = $request->post['key'];
-                    $table = $request->post['table'];
-                    $save  = $request->post['saveAs'] ?: $table;
+                    $key   = $this->request->post['key'];
+                    $table = $this->request->post['table'];
+                    $save  = $this->request->post['saveAs'] ?: $table;
                 }
-                elseif (isset($request->get['key']) && isset($request->post['table']))
+                elseif (isset($this->request->get['key']) && isset($this->request->post['table']))
                 {
-                    $key   = $request->get['key'];
-                    $table = $request->get['table'];
-                    $save  = $request->get['saveAs'] ?: $table;
+                    $key   = $this->request->get['key'];
+                    $table = $this->request->get['table'];
+                    $save  = $this->request->get['saveAs'] ?: $table;
                 }
                 else
                 {
                     $data['status']  = 'error';
                     $data['message'] = 'need arguments [key and table] or [sql]';
-                    break;
+                    goto send;
                 }
 
                 if (isset($key) && isset($table))
@@ -205,8 +269,10 @@ class Manager
 
                         # 更新function
                         $option['function'] = [];
+                        $allField           = false;
                         foreach ($option['saveAs'] as $opt)
                         {
+                            if ($opt['allField'])$allField = true;
                             foreach ($opt['field'] as $st)
                             {
                                 $type  = $st['type'];
@@ -234,6 +300,8 @@ class Manager
                                 }
                             }
                         }
+                        # 是否全部字段
+                        $option['allField'] = $allField;
 
                         # 更新数据
                         $rs = $this->worker->redis->hSet('queries', $key, serialize($option));
@@ -306,9 +374,9 @@ class Manager
 
             case 'task/pause':
                 # 暂停任务
-                if (isset($request->get['key']))
+                if (isset($this->request->get['key']))
                 {
-                    $key = $request->get['key'];
+                    $key = $this->request->get['key'];
                 }
                 else
                 {
@@ -321,9 +389,9 @@ class Manager
 
             case 'task/start':
                 # 开启任务任务
-                if (isset($request->get['key']))
+                if (isset($this->request->get['key']))
                 {
-                    $key = $request->get['key'];
+                    $key = $this->request->get['key'];
                 }
                 else
                 {
@@ -334,17 +402,17 @@ class Manager
 
                 break;
 
-            case 'stats':
+            case 'server/stats':
                 $data['status'] = 'ok';
                 $data['data']   = $this->server->stats();
                 break;
 
-            case 'restart':
-            case 'reload':
+            case 'server/restart':
+            case 'server/reload':
                 # 重启所有进程
                 $data['status'] = 'ok';
 
-                debug('restart server by api from ip: '. $request->server['remote_addr']);
+                debug('restart server by api from ip: '. $this->request->server['remote_addr']);
 
                 # 200 毫秒后重启
                 swoole_timer_after(200, function()
@@ -361,10 +429,68 @@ class Manager
         }
 
         send:
-        $response->header('Content-Type', 'application/json');
-        $response->end(json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)."\n");
+        $this->response->header('Content-Type', 'application/json');
+        $this->response->end(json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)."\n");
 
         return null;
+    }
+
+    /**
+     * 输出静态文件
+     *
+     * @param $uri
+     */
+    protected function assets($uri)
+    {
+        $uri  = str_replace(['\\', '../'], ['/', '/'], $uri);
+        $rPos = strrpos($uri, '.');
+        if (false === $rPos)
+        {
+            # 没有任何后缀
+            $this->response->status(404);
+            $this->response->end('page not found');
+            return;
+        }
+
+        $type = strtolower(substr($uri, $rPos + 1));
+
+        $header = [
+            'js'    => 'application/x-javascript',
+            'css'   => 'text/css',
+            'png'   => 'image/png',
+            'jpg'   => 'image/jpeg',
+            'jpeg'  => 'image/jpeg',
+            'gif'   => 'image/gif',
+            'json'  => 'application/json',
+            'svg'   => 'image/svg+xml',
+            'woff2' => 'application/font-woff2',
+            'woff'  => 'application/font-woff',
+            'ttf'   => 'application/x-font-ttf',
+            'eot'   => 'application/vnd.ms-fontobject',
+        ];
+
+        if (isset($header[$type]))
+        {
+            $this->response->header('Content-Type', $header[$type]);
+        }
+
+        $file = __DIR__ .'/../assets/'. $uri;
+        if (is_file($file))
+        {
+            # 设置缓存头信息
+            $time = 86400;
+            $this->response->header('Cache-Control', 'max-age='. $time);
+            $this->response->header('Last-Modified', date('D, d M Y H:i:s \G\M\T', filemtime($file)));
+            $this->response->header('Expires'      , date('D, d M Y H:i:s \G\M\T', time() + $time));
+            $this->response->header('Pragma'       , 'cache');
+
+            $this->response->end(file_get_contents($file));
+        }
+        else
+        {
+            $this->response->status(404);
+            $this->response->end('assets not found');
+        }
     }
 
     /**
@@ -403,7 +529,7 @@ class Manager
 
             if ($select === '*')
             {
-                $option['saveAs'][$saveAs]['allField'] = true;
+                $option['allField'] = $option['saveAs'][$saveAs]['allField'] = true;
             }
             else
             {
@@ -412,7 +538,7 @@ class Manager
                     $s = trim($s);
                     if ($s === '*')
                     {
-                        $option['saveAs'][$saveAs]['allField'] = true;
+                        $option['allField'] = $option['saveAs'][$saveAs]['allField'] = true;
                     }
                     elseif (preg_match('#^(?<field>[a-z0-9_]+)(?:[ ]+as[ ]+(?<as>[a-z0-9_]+))?(?:[ ]+)?$#i', $s, $mSelect))
                     {

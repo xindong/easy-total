@@ -574,7 +574,7 @@ class Worker
                 $this->flushDataRunTime['total'][$key] = $total;
             }
 
-            if ($job['saveAs'][$table]['allField'])
+            if ($job['allField'])
             {
                 $this->flushDataRunTime['value'][$key] = $item;
             }
@@ -615,7 +615,6 @@ class Worker
      */
     public function clearDataByKey($key)
     {
-        var_dump('aaaaaaaaaaaaaaaaaaaaaa'.$key);
         if ($this->isSSDB)
         {
             while ($keys = $this->ssdb->hlist("total,{$key},", "total,{$key},z", 100))
