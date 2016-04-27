@@ -105,10 +105,11 @@ class Worker
             try
             {
                 $redis = new redis();
-                $redis->pconnect(FluentServer::$config['redis']['host'], FluentServer::$config['redis']['port']);
+                $host  = FluentServer::$config['redis']['host'];
+                $port  = FluentServer::$config['redis']['port'];
 
-                $this->redis  = $redis;
-
+                $redis->pconnect($host, $port);
+                $this->redis = $redis;
 
                 if (false === $redis->time())
                 {
@@ -116,7 +117,7 @@ class Worker
                     $this->isSSDB = true;
                     require_once __DIR__ . '/SSDB.php';
 
-                    $this->ssdb = new SimpleSSDB(FluentServer::$config['redis']['host'], FluentServer::$config['redis']['port']);
+                    $this->ssdb = new SimpleSSDB($host, $port);
                 }
 
                 swoole_timer_clear($id);
@@ -175,7 +176,7 @@ class Worker
         if ($this->id > 0)
         {
             # 将每个worker进程的刷新时间平均隔开
-            usleep(intval(1000 * $limit * $this->id / $this->server->setting['worker_num']));
+            usleep(min(10000, intval(1000 * $limit * $this->id / $this->server->setting['worker_num'])));
         }
 
         # 推送到task进行数据汇总处理
@@ -260,15 +261,15 @@ class Worker
     {
         if (substr($data, -3) !== "==\n")
         {
-            $this->buffer[$fromId] .= $data;
+            $this->buffer[$fd] .= $data;
             return true;
         }
-        elseif (isset($this->buffer[$fromId]) && $this->buffer[$fromId])
+        elseif (isset($this->buffer[$fd]) && $this->buffer[$fd])
         {
             # 拼接 buffer
-            $data = $this->buffer[$fromId] . $data;
+            $data = $this->buffer[$fd] . $data;
 
-            unset($this->buffer[$fromId]);
+            unset($this->buffer[$fd]);
         }
 
         $delayParseRecords = false;
