@@ -291,13 +291,7 @@ class Worker
      */
     public function onReceive(swoole_server $server, $fd, $fromId, $data)
     {
-        if (substr($data, -1) !== "\n")
-        {
-            # 大数据被分片发送过来的
-            $this->buffer[$fromId] .= $data;
-            return true;
-        }
-        elseif (substr($data, -3) !== "==\n")
+        if (substr($data, -3) !== "==\n")
         {
             $this->buffer[$fromId]    .= $data;
             $this->bufferTime[$fromId] = self::$timed;
@@ -325,6 +319,8 @@ class Worker
 
             unset($this->buffer[$fromId]);
             unset($this->bufferTime[$fromId]);
+
+            debug("accept data length ". strlen($data));
         }
 
         if ($data[0] === '[')
@@ -345,6 +341,7 @@ class Worker
 
             if (!is_array($arr))
             {
+                debug("close client {$fd}.");
                 $server->close($fd);
                 return false;
             }
