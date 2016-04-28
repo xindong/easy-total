@@ -37,6 +37,11 @@ class Manager
         $this->workerId = $workerId;
     }
 
+    /**
+     * @param swoole_http_request $request
+     * @param swoole_http_response $response
+     * @return mixed
+     */
     public function onManagerRequest(swoole_http_request $request, swoole_http_response $response)
     {
         $this->request  = $request;
@@ -254,6 +259,7 @@ class Manager
                 $sendType = 'task.update';
                 if ($option)
                 {
+                    $sql = $option['sql'][$save];
                     unset($option['saveAs'][$save]);
 
                     if (!$option['saveAs'])
@@ -340,6 +346,10 @@ class Manager
                     # 清理redis中的数据
                     $this->worker->clearDataByKey($key);
 
+                    if (isset($sql))
+                    {
+                        info("remove sql: {$sql}");
+                    }
                 }
                 else
                 {
@@ -463,8 +473,8 @@ class Manager
             'gif'   => 'image/gif',
             'json'  => 'application/json',
             'svg'   => 'image/svg+xml',
-            'woff2' => 'application/font-woff2',
             'woff'  => 'application/font-woff',
+            'woff2' => 'application/font-woff2',
             'ttf'   => 'application/x-font-ttf',
             'eot'   => 'application/vnd.ms-fontobject',
         ];

@@ -73,7 +73,19 @@ class Worker
 
     protected $dumpFile = '';
 
-    protected $buffer = '';
+    /**
+     * 记录数据的数组
+     *
+     * @var array
+     */
+    protected $buffer = [];
+
+    /**
+     * 记录数据的最后时间
+     *
+     * @var array
+     */
+    protected $bufferTime = [];
 
     /**
      * 是否完成了初始化
@@ -82,11 +94,20 @@ class Worker
      */
     private $isInit = false;
 
+    protected static $packKey;
+
     public function __construct(swoole_server $server, $id)
     {
         $this->server   = $server;
         $this->id       = $id;
         $this->dumpFile = (FluentServer::$config['server']['dump_path'] ?: '/tmp/') . 'total-dump-'. substr(md5(FluentServer::$configFile), 16, 8) . '-'. $id .'.txt';
+
+        # 包数据的key
+        self::$packKey  = [
+            chr(146).chr(206).chr(85) => 1,
+            chr(146).chr(206).chr(86) => 1,
+            chr(146).chr(206).chr(87) => 1,
+        ];
     }
 
     /**
@@ -228,6 +249,20 @@ class Worker
         # 每小时自动同步一次
         swoole_timer_tick(1000 * 60 * 60, function()
         {
+            # 清理老数据
+            if ($this->buffer)
+            {
+                $time = time();
+                foreach ($this->buffer as $fd => $v)
+                {
+                    if ($time - $this->bufferTime[$fd] > 30)
+                    {
+                        unset($this->buffer[$fd]);
+                        unset($this->bufferTime[$fd]);
+                    }
+                }
+            }
+
             if ($this->redis)
             {
                 $this->reloadTasks();
@@ -261,7 +296,23 @@ class Worker
     {
         if (substr($data, -3) !== "==\n")
         {
-            $this->buffer[$fd] .= $data;
+            $this->buffer[$fd]    .= $data;
+            $this->bufferTime[$fd] = time();
+
+            # 支持json格式
+            if ($this->buffer[$fd][0] === '[')
+            {
+                $arr = @json_decode($this->buffer[$fd], true);
+                if ($arr)
+                {
+                    # 能够解析出json, 直接跳转到处理json的地方
+                    unset($this->buffer[$fd]);
+                    unset($this->bufferTime[$fd]);
+
+                    goto jsonFormat;
+                }
+            }
+
             return true;
         }
         elseif (isset($this->buffer[$fd]) && $this->buffer[$fd])
@@ -270,21 +321,24 @@ class Worker
             $data = $this->buffer[$fd] . $data;
 
             unset($this->buffer[$fd]);
+            unset($this->bufferTime[$fd]);
         }
-
-        $delayParseRecords = false;
 
         if ($data[0] === '[')
         {
             # 解析数据
-            $msgPack = false;
-            $arr     = @json_decode(rtrim($data, "/=\n\r "), true);
+            $arr = @json_decode(rtrim($data, "/=\n\r "), true);
+
+            jsonFormat:
+            $msgPack           = false;
+            $delayParseRecords = false;
         }
         else
         {
-            # msgpack方式解析
-            $msgPack = true;
-            $arr = @msgpack_unpack($data);
+            # msgPack方式解析
+            $msgPack           = true;
+            $arr               = @msgpack_unpack($data);
+            $delayParseRecords = false;
 
             if (!is_array($arr))
             {
@@ -393,6 +447,11 @@ class Worker
                 {
                     $this->doJob($jobs, $app, $table, $record[0], $record[1]);
                 }
+
+                if ($table === 'charge')
+                {
+                    info("get charge count: ".count($records));
+                }
             }
         }
         else
@@ -484,25 +543,38 @@ class Worker
         return true;
     }
 
+    public function onConnect(swoole_server $server, $fd, $from_id)
+    {
+        # 清理数据
+        if (isset($this->buffer[$fd]))
+        {
+            unset($this->buffer[$fd]);
+            unset($this->bufferTime[$fd]);
+        }
+    }
+
+    public function onClose(swoole_server $server, $fd, $from_id)
+    {
+        # 清理数据
+        unset($this->buffer[$fd]);
+        unset($this->bufferTime[$fd]);
+    }
+
     protected function parseRecords(& $recordsData)
     {
         if (!is_array($recordsData))
         {
             # 解析里面的数据
             $tmpArr = [];
-            $tmp    = '';
+            $tmp    = $recordsData[0];
             $length = strlen($recordsData);
-            $key    = [
-                chr(146).chr(206).chr(85),
-                chr(146).chr(206).chr(86),
-                chr(146).chr(206).chr(87),
-            ];
 
-            for ($i = 0; $i < $length; $i++)
+            for ($i = 1; $i < $length; $i++)
             {
-                if ($length == $i + 1 || ($i !== 0 && in_array(substr($recordsData, $i, 3), $key)))
+                $isEnd = $length == $i + 1;
+                if ($isEnd || isset(self::$packKey[substr($recordsData, $i, 3)]))
                 {
-                    if ($length == $i + 1)
+                    if ($isEnd)
                     {
                         $tmp .= $recordsData[$i];
                     }

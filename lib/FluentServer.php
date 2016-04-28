@@ -125,7 +125,7 @@ class FluentServer
         # 设置分包协议
         $config = [
             'open_eof_check' => true,
-            'open_eof_split' => false,
+            'open_eof_split' => true,
             'package_eof'    => "\n",
         ];
         $this->serverPort->set($config);
@@ -186,6 +186,8 @@ class FluentServer
         $this->server->on('Finish',       [$this, 'onFinish']);
         $this->server->on('Task',         [$this, 'onTask']);
         $this->server->on('Start',        [$this, 'onStart']);
+        $this->server->on('Connect',      [$this, 'onConnect']);
+        $this->server->on('Close',        [$this, 'onClose']);
         $this->server->on('Request',      [$this, 'onManagerRequest']);
 
         return $this;
@@ -199,6 +201,16 @@ class FluentServer
     public function onShutdown($server)
     {
 
+    }
+
+    public function onConnect(swoole_server $server, $fd, $from_id)
+    {
+        $this->worker->onConnect($server, $fd, $from_id);
+    }
+
+    public function onClose(swoole_server $server, $fd, $from_id)
+    {
+        $this->worker->onClose($server, $fd, $from_id);
     }
 
     public function onWorkerStop(swoole_server $server, $workerId)
@@ -407,5 +419,8 @@ class FluentServer
                     break;
             }
         }
+
+        # 强制设置成2
+        $config['fluent']['dispatch_mode'] = 2;
     }
 }
