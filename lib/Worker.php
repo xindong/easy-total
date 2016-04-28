@@ -96,6 +96,8 @@ class Worker
 
     protected static $packKey;
 
+    protected static $timed;
+
     public function __construct(swoole_server $server, $id)
     {
         $this->server   = $server;
@@ -108,6 +110,8 @@ class Worker
             chr(146).chr(206).chr(86) => 1,
             chr(146).chr(206).chr(87) => 1,
         ];
+
+        self::$timed = time();
     }
 
     /**
@@ -159,9 +163,13 @@ class Worker
         # 标记成已经初始化过
         $this->isInit = true;
 
-        # 检查redis
-        swoole_timer_tick(10, function()
+        # 每3秒执行1次
+        swoole_timer_tick(3000, function()
         {
+            # 更新时间戳
+            self::$timed = time();
+
+            # 检查redis
             if (!$this->redis)return;
 
             try
@@ -210,6 +218,14 @@ class Worker
             catch (Exception $e)
             {
                 # 避免正好在处理数据时redis连接失败抛错导致程序终止, 系统会自动重连
+                if ($this->redis && false === @$this->redis->ping())
+                {
+                    $this->redis = null;
+                    if ($this->ssdb)
+                    {
+                        $this->ssdb = null;
+                    }
+                }
             }
         });
 
@@ -252,11 +268,11 @@ class Worker
             # 清理老数据
             if ($this->buffer)
             {
-                $time = time();
                 foreach ($this->buffer as $k => $v)
                 {
-                    if ($time - $this->bufferTime[$k] > 30)
+                    if (self::$timed - $this->bufferTime[$k] > 60)
                     {
+                        # 超过1分钟没有更新数据, 则移除
                         unset($this->buffer[$k]);
                         unset($this->bufferTime[$k]);
                     }
@@ -309,7 +325,7 @@ class Worker
         if (substr($data, -3) !== "==\n")
         {
             $this->buffer[$fromId]    .= $data;
-            $this->bufferTime[$fromId] = time();
+            $this->bufferTime[$fromId] = self::$timed;
 
             # 支持json格式
             if ($this->buffer[$fromId][0] === '[')
