@@ -259,8 +259,18 @@ class Worker
      */
     public function onReceive(swoole_server $server, $fd, $fromId, $data)
     {
-        $this->buffer[$fromId] .= $data;
-        $data = $this->buffer[$fromId];
+        if (substr($data, -3) !== "==\n")
+        {
+            $this->buffer[$fd] .= $data;
+            return true;
+        }
+        elseif (isset($this->buffer[$fd]) && $this->buffer[$fd])
+        {
+            # 拼接 buffer
+            $data = $this->buffer[$fd] . $data;
+
+            unset($this->buffer[$fd]);
+        }
 
         $delayParseRecords = false;
 
@@ -268,21 +278,7 @@ class Worker
         {
             # 解析数据
             $msgPack = false;
-            $arr     = @json_decode($data, true);
-            if (!is_array($arr))
-            {
-                if (substr($data, -2) === "]\n")
-                {
-                    # 数据还是不对则关闭连接
-                    unset($this->buffer[$fromId]);
-                    warn('error data: ' . $data);
-
-                    $server->close($fd);
-                }
-                return true;
-            }
-
-            unset($this->buffer[$fromId]);
+            $arr     = @json_decode(rtrim($data, "/=\n\r "), true);
         }
         else
         {
@@ -290,27 +286,26 @@ class Worker
             $msgPack = true;
             $arr = @msgpack_unpack($data);
 
-            if (!is_array($arr) || count($arr) < 3)
+            if (!is_array($arr))
             {
-                if (substr($data, -3) === "==\n")
-                {
-                    # 数据还是不对则关闭连接
-                    unset($this->buffer[$fromId]);
-                    warn('error data: ' . $data);
-
-                    $server->close($fd);
-                }
+                $server->close($fd);
                 return false;
             }
 
-            # 移除buffer中数据
-            unset($this->buffer[$fromId]);
-
-            if (!is_array($arr[1]))
+            if ($arr && is_array($arr) && !is_array($arr[1]))
             {
                 # 标记成需要再解析数据, 暂时不解析
                 $delayParseRecords = true;
             }
+        }
+
+        if (!$arr || !is_array($arr))
+        {
+            debug('error data: ' . $data);
+
+            # 把客户端关闭了
+            $server->close($fd);
+            return false;
         }
 
         $tag = $arr[0];
