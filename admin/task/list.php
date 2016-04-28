@@ -23,7 +23,7 @@ unset($item);
                     <tr>
                     <th>#</th>
                     <th>SQL</th>
-                    <th>操作</th>
+                    <th align="center">操作</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -34,7 +34,7 @@ unset($item);
                     foreach ($query['sql'] as $sql)
                     {
                         $i++;
-                        echo "<tr><td>{$i}</td><td>$sql</td><td><button type=\"button\" class=\"btn btn-danger btn-sm\">删除</button></td></tr>";
+                        echo "<tr><td>{$i}</td><td><pre>$sql</pre></td><td align=\"center\"><button type=\"button\" class=\"btn btn-danger btn-sm\">删除</button></td></tr>";
                     }
                 }
                 ?>
