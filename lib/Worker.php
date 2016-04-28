@@ -259,8 +259,8 @@ class Worker
      */
     public function onReceive(swoole_server $server, $fd, $fromId, $data)
     {
-        $this->buffer[$fd] .= $data;
-        $data = $this->buffer[$fd];
+        $this->buffer[$fromId] .= $data;
+        $data = $this->buffer[$fromId];
 
         $delayParseRecords = false;
 
@@ -274,7 +274,7 @@ class Worker
                 if (substr($data, -2) === "]\n")
                 {
                     # 数据还是不对则关闭连接
-                    unset($this->buffer[$fd]);
+                    unset($this->buffer[$fromId]);
                     warn('error data: ' . $data);
 
                     $server->close($fd);
@@ -282,7 +282,7 @@ class Worker
                 return true;
             }
 
-            unset($this->buffer[$fd]);
+            unset($this->buffer[$fromId]);
         }
         else
         {
@@ -295,7 +295,7 @@ class Worker
                 if (substr($data, -3) === "==\n")
                 {
                     # 数据还是不对则关闭连接
-                    unset($this->buffer[$fd]);
+                    unset($this->buffer[$fromId]);
                     warn('error data: ' . $data);
 
                     $server->close($fd);
@@ -304,7 +304,7 @@ class Worker
             }
 
             # 移除buffer中数据
-            unset($this->buffer[$fd]);
+            unset($this->buffer[$fromId]);
 
             if (!is_array($arr[1]))
             {
