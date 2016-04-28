@@ -246,8 +246,8 @@ class Worker
             unset($id);
         }
 
-        # 每小时自动同步一次
-        swoole_timer_tick(1000 * 60 * 60, function()
+        # 每10分钟处理1次
+        swoole_timer_tick(1000 * 600, function()
         {
             # 清理老数据
             if ($this->buffer)
@@ -278,6 +278,18 @@ class Worker
             {
                 $this->server->task('output');
             });
+
+
+            foreach ($this->tasks as $task)
+            {
+                foreach ($task as $key => $item)
+                {
+                    foreach ($item['sql'] as $sql)
+                    {
+                        info("fork sql({$key}): {$sql}");
+                    }
+                }
+            }
         }
 
         return true;
@@ -294,6 +306,7 @@ class Worker
      */
     public function onReceive(swoole_server $server, $fd, $fromId, $data)
     {
+        info("\$fd = {$fd}, \$fromId = {$fromId}, dataLen = ". strlen($data));
         if (substr($data, -3) !== "==\n")
         {
             $this->buffer[$fd]    .= $data;
@@ -759,20 +772,6 @@ class Worker
         if ($tasks)
         {
             $this->tasks = $tasks;
-
-            if ($this->id == 0)
-            {
-                foreach ($this->tasks as $task)
-                {
-                    foreach ($task as $key => $item)
-                    {
-                        foreach ($item['sql'] as $sql)
-                        {
-                            info("fork sql({$key}): {$sql}");
-                        }
-                    }
-                }
-            }
         }
         elseif (IS_DEBUG && $this->id == 0)
         {
