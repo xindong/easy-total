@@ -78,21 +78,32 @@ class Manager
 
     protected function admin($uri)
     {
-        switch ($uri)
+        if ($uri === '')
         {
-            case '':
-                # 首页面
-                $html = 'hello';
-                $this->response->end($html);
-                break;
-            case 'login':
-                break;
-
-            default:
-                $this->response->status(404);
-                $this->response->end('page not found');
-                break;
+            $uri = 'index';
         }
+        else
+        {
+            $uri  = str_replace(['\\', '../'], ['/', '/'], $uri);
+        }
+
+        $file = __DIR__ .'/../admin/'. $uri .'.php';
+        debug($file);
+
+        if (!is_file($file))
+        {
+            $this->response->status(404);
+            $this->response->end('page not found');
+            return;
+        }
+
+        ob_start();
+        include __DIR__ .'/../admin/_header.php';
+        include $file;
+        include __DIR__ .'/../admin/_footer.php';
+        $html = ob_get_clean();
+
+        $this->response->end($html);
     }
 
     protected function api($uri)

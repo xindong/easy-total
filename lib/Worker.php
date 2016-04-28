@@ -48,14 +48,14 @@ class Worker
      * @see http://ssdb.io/
      * @var bool
      */
-    protected $isSSDB = false;
+    public $isSSDB = false;
 
     /**
      * SimpleSSDB 对象
      *
      * @var SimpleSSDB
      */
-    protected $ssdb;
+    public $ssdb;
 
     /**
      * 需要刷新的任务数据
@@ -96,7 +96,9 @@ class Worker
 
     protected static $packKey;
 
-    protected static $timed;
+    public static $timed;
+
+    public static $serverName;
 
     public function __construct(swoole_server $server, $id)
     {
@@ -112,6 +114,8 @@ class Worker
         ];
 
         self::$timed = time();
+
+        self::$serverName = FluentServer::$config['server']['host'].':'.FluentServer::$config['server']['port'];
     }
 
     /**
@@ -250,6 +254,8 @@ class Worker
             if ($this->redis)
             {
                 $this->reloadTasks();
+                # 设置内存数
+                $this->redis->hSet('server.memory', self::$serverName.'_'.$this->id, serialize([memory_get_usage(true), self::$timed, self::$serverName]));
             }
         });
 
