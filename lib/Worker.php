@@ -306,7 +306,6 @@ class Worker
      */
     public function onReceive(swoole_server $server, $fd, $fromId, $data)
     {
-        info("\$fd = {$fd}, \$fromId = {$fromId}, dataLen = ". strlen($data));
         if (substr($data, -3) !== "==\n")
         {
             $this->buffer[$fromId]    .= $data;
