@@ -34,7 +34,7 @@ unset($item);
                     foreach ($query['sql'] as $sql)
                     {
                         $i++;
-                        echo "<tr><td>{$i}</td><td>$sql</td><td align=\"center\"><button type=\"button\" class=\"btn btn-danger btn-sm\">删除</button></td></tr>";
+                        echo "<tr><td>{$i}</td><td style='line-height:2em;'>$sql</td><td align=\"center\"><button type=\"button\" class=\"btn btn-danger btn-sm\">删除</button></td></tr>";
                     }
                 }
                 ?>

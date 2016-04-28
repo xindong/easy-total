@@ -7,7 +7,7 @@ if ($this->worker->isSSDB)
 {
   $info = [];
   $type = 'SSDB磁盘';
-  $info['used_memory'] = $this->worker->redis->dbSize();
+  $info['used_memory'] = $this->worker->ssdb->dbsize();
 }
 else
 {
