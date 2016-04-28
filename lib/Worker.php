@@ -253,12 +253,12 @@ class Worker
             if ($this->buffer)
             {
                 $time = time();
-                foreach ($this->buffer as $fd => $v)
+                foreach ($this->buffer as $k => $v)
                 {
-                    if ($time - $this->bufferTime[$fd] > 30)
+                    if ($time - $this->bufferTime[$k] > 30)
                     {
-                        unset($this->buffer[$fd]);
-                        unset($this->bufferTime[$fd]);
+                        unset($this->buffer[$k]);
+                        unset($this->bufferTime[$k]);
                     }
                 }
             }
@@ -309,18 +309,18 @@ class Worker
         info("\$fd = {$fd}, \$fromId = {$fromId}, dataLen = ". strlen($data));
         if (substr($data, -3) !== "==\n")
         {
-            $this->buffer[$fd]    .= $data;
-            $this->bufferTime[$fd] = time();
+            $this->buffer[$fromId]    .= $data;
+            $this->bufferTime[$fromId] = time();
 
             # 支持json格式
-            if ($this->buffer[$fd][0] === '[')
+            if ($this->buffer[$fromId][0] === '[')
             {
-                $arr = @json_decode($this->buffer[$fd], true);
+                $arr = @json_decode($this->buffer[$fromId], true);
                 if ($arr)
                 {
                     # 能够解析出json, 直接跳转到处理json的地方
-                    unset($this->buffer[$fd]);
-                    unset($this->bufferTime[$fd]);
+                    unset($this->buffer[$fromId]);
+                    unset($this->bufferTime[$fromId]);
 
                     goto jsonFormat;
                 }
@@ -328,13 +328,13 @@ class Worker
 
             return true;
         }
-        elseif (isset($this->buffer[$fd]) && $this->buffer[$fd])
+        elseif (isset($this->buffer[$fromId]) && $this->buffer[$fromId])
         {
             # 拼接 buffer
-            $data = $this->buffer[$fd] . $data;
+            $data = $this->buffer[$fromId] . $data;
 
-            unset($this->buffer[$fd]);
-            unset($this->bufferTime[$fd]);
+            unset($this->buffer[$fromId]);
+            unset($this->bufferTime[$fromId]);
         }
 
         if ($data[0] === '[')
