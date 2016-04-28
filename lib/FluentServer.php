@@ -42,44 +42,38 @@ class FluentServer
     /**
      * HttpServer constructor.
      */
-    public function __construct($config_file, $daemonize = false, $logPath = null)
+    public function __construct($configFile, $daemonize = false, $logPath = null)
     {
-        $red       = "\x1b[31m";
-        $lightBlue = "\x1b[36m";
-        $end       = "\x1b[39m";
-        $error     = "{$red}✕{$end}";
-
         if (!defined('SWOOLE_VERSION'))
         {
-            echo "{$error} {$red}必须安装swoole插件,see http://www.swoole.com/{$end}\n";
+            warn("必须安装swoole插件,see http://www.swoole.com/");
             exit;
         }
 
         if (version_compare(SWOOLE_VERSION, '1.8', '<'))
         {
-            echo "{$error} {$red}swoole插件必须>=1.8版本{$end}\n";
+            warn("swoole插件必须>=1.8版本");
             exit;
         }
 
-        if (!$config_file)
+        if (!$configFile)
         {
-            echo "{$error} {$red}缺少参数-c配置{$end}\n";
-            exit;
+            $configFile = '/etc/easy-total.ini';
         }
 
-        self::$configFile = realpath($config_file);
+        self::$configFile = realpath($configFile);
         if (!self::$configFile)
         {
-            echo "{$error} {$red}配置文件{$config_file}不存在{$end}\n";
+            warn("配置文件{$configFile}不存在");
             exit;
         }
 
         # 读取配置
-        $config = parse_ini_string(file_get_contents($config_file), true);
+        $config = parse_ini_string(file_get_contents($configFile), true);
 
         if (!$config)
         {
-            echo "{$error} {$red}config error.{$end}\n";
+            warn("config error");
             exit;
         }
 
@@ -107,6 +101,8 @@ class FluentServer
         # 更新配置
         self::formatConfig($config);
 
+        $lightBlue = "\x1b[36m";
+        $end       = "\x1b[39m";
         echo "{$lightBlue}======= Swoole Config ========\n", json_encode($config['conf'], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE), "{$end}\n";
 
         self::$config = $config;

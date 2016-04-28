@@ -291,7 +291,13 @@ class Worker
      */
     public function onReceive(swoole_server $server, $fd, $fromId, $data)
     {
-        if (substr($data, -3) !== "==\n")
+        if (substr($data, -1) !== "\n")
+        {
+            # 大数据被分片发送过来的
+            $this->buffer[$fromId] .= $data;
+            return true;
+        }
+        elseif (substr($data, -3) !== "==\n")
         {
             $this->buffer[$fromId]    .= $data;
             $this->bufferTime[$fromId] = self::$timed;
@@ -443,11 +449,6 @@ class Worker
                 foreach ($records as $record)
                 {
                     $this->doJob($jobs, $app, $table, $record[0], $record[1]);
-                }
-
-                if ($table === 'charge')
-                {
-                    info("get charge count: ".count($records));
                 }
             }
         }
