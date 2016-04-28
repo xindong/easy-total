@@ -124,41 +124,19 @@ class Worker
 //        $this->parseSql('select *,asdf, count(aaa) as value, sum(bbb), dist(fff),avg(ccc) from mytable for a,d,bb where (id =1 and c!=3) or d%3=33 group by def,abc group time 3m save to testtable');
 //        $this->parseSql('select *,count(abc), dist(value) as distTotal, last(value) as lastValue, first(value) as firstValue  from test where id > 3 group time 10m');
 
-        $id = null;
-        $id = swoole_timer_tick(1000, function() use (& $id)
+        if (!$this->reConnectRedis())
         {
-            try
+            # 如果没有连上, 则每秒重试一次
+            $id = null;
+            $id = swoole_timer_tick(1000, function() use (& $id)
             {
-                $redis = new redis();
-                $host  = FluentServer::$config['redis']['host'];
-                $port  = FluentServer::$config['redis']['port'];
-
-                $redis->pconnect($host, $port);
-                $this->redis = $redis;
-
-                if (false === $redis->time())
+                if ($this->reConnectRedis())
                 {
-                    # 大部分用redis的操作, 部分不兼容的用这个对象来处理
-                    $this->isSSDB = true;
-                    require_once __DIR__ . '/SSDB.php';
-
-                    $this->ssdb = new SimpleSSDB($host, $port);
+                    swoole_timer_clear($id);
                 }
-
-                swoole_timer_clear($id);
-
-                $id = null;
-                unset($id);
-            }
-            catch (Exception $e)
-            {
-                if ($this->id == 0 && time() % 10 == 0)
-                {
-                    info('redis server is not start, wait start redis://' . FluentServer::$config['redis']['host'] . ':' . FluentServer::$config['redis']['port']);
-                }
-            }
-        });
-        unset($id);
+            });
+            unset($id);
+        }
 
         # 标记成已经初始化过
         $this->isInit = true;
@@ -170,7 +148,11 @@ class Worker
             self::$timed = time();
 
             # 检查redis
-            if (!$this->redis)return;
+            if (!$this->redis)
+            {
+                # 重连
+                $this->reConnectRedis();
+            }
 
             try
             {
@@ -182,20 +164,6 @@ class Worker
             catch(Exception $e)
             {
                 $this->redis = null;
-
-                $redis = new Redis();
-                $rs = @$redis->pconnect(FluentServer::$config['redis']['host'], FluentServer::$config['redis']['port']);
-
-                if ($rs)
-                {
-                    $this->redis = $redis;
-                    if ($this->isSSDB)
-                    {
-                        $this->ssdb = new SimpleSSDB(FluentServer::$config['redis']['host'], FluentServer::$config['redis']['port']);
-                    }
-
-                    info('redis://'. FluentServer::$config['redis']['host'] .':'. FluentServer::$config['redis']['port'] .' recovered');
-                }
             }
         });
 
@@ -310,6 +278,7 @@ class Worker
 
         return true;
     }
+
 
     /**
      * 接受到数据
@@ -603,6 +572,43 @@ class Worker
             }
 
             $recordsData = $tmpArr;
+        }
+    }
+
+
+    protected function reConnectRedis()
+    {
+        try
+        {
+            $redis = new redis();
+            $host  = FluentServer::$config['redis']['host'];
+            $port  = FluentServer::$config['redis']['port'];
+
+            $redis->pconnect($host, $port);
+            $this->redis = $redis;
+
+            if (false === $redis->time())
+            {
+                # 大部分用redis的操作, 部分不兼容的用这个对象来处理
+                $this->isSSDB = true;
+                require_once __DIR__ . '/SSDB.php';
+
+                $this->ssdb = new SimpleSSDB($host, $port);
+            }
+
+            $id = null;
+            unset($id);
+
+            return true;
+        }
+        catch (Exception $e)
+        {
+            if ($this->id == 0 && time() % 10 == 0)
+            {
+                info('redis server is not start, wait start redis://' . FluentServer::$config['redis']['host'] . ':' . FluentServer::$config['redis']['port']);
+            }
+
+            return false;
         }
     }
 
