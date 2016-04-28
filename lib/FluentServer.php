@@ -186,8 +186,6 @@ class FluentServer
         $this->server->on('Finish',       [$this, 'onFinish']);
         $this->server->on('Task',         [$this, 'onTask']);
         $this->server->on('Start',        [$this, 'onStart']);
-        $this->server->on('Connect',      [$this, 'onConnect']);
-        $this->server->on('Close',        [$this, 'onClose']);
         $this->server->on('Request',      [$this, 'onManagerRequest']);
 
         return $this;
@@ -203,16 +201,6 @@ class FluentServer
 
     }
 
-    public function onConnect(swoole_server $server, $fd, $from_id)
-    {
-        $this->worker->onConnect($server, $fd, $from_id);
-    }
-
-    public function onClose(swoole_server $server, $fd, $from_id)
-    {
-        $this->worker->onClose($server, $fd, $from_id);
-    }
-
     public function onWorkerStop(swoole_server $server, $workerId)
     {
         if ($server->taskworker)
@@ -223,8 +211,11 @@ class FluentServer
         {
             $type = 'Worker';
 
-            # 保存数据
-            $this->worker->dumpData();
+            if ($this->worker)
+            {
+                # 保存数据
+                $this->worker->dumpData();
+            }
         }
 
         debug("{$type} Stop, \$id = {$workerId}, \$pid = {$server->worker_pid}");

@@ -543,23 +543,6 @@ class Worker
         return true;
     }
 
-    public function onConnect(swoole_server $server, $fd, $from_id)
-    {
-        # 清理数据
-        if (isset($this->buffer[$fd]))
-        {
-            unset($this->buffer[$fd]);
-            unset($this->bufferTime[$fd]);
-        }
-    }
-
-    public function onClose(swoole_server $server, $fd, $from_id)
-    {
-        # 清理数据
-        unset($this->buffer[$fd]);
-        unset($this->bufferTime[$fd]);
-    }
-
     protected function parseRecords(& $recordsData)
     {
         if (!is_array($recordsData))
