@@ -112,7 +112,7 @@ class TaskWorker
 
             # 获取上30秒的时间序列
             $currentLimit = date('YmdHi', time() - 30);
-            $outputPrefix = FluentServer::$config['output']['tag_prefix'] ?: '';
+            $outputPrefix = FluentServer::$config['output']['prefix'] ?: '';
 
             $outData = [];
             sort($keys);
@@ -159,7 +159,7 @@ class TaskWorker
 
             if ($outData)
             {
-                $fluent = new FluentClient(FluentServer::$config['output']['fluent']);
+                $fluent = new FluentClient(FluentServer::$config['output']['link']);
                 foreach ($outData as $tag => $data)
                 {
                     # 生成内容
