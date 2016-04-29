@@ -87,6 +87,8 @@ class Worker
      */
     protected $bufferTime = [];
 
+    protected $bufferLen = [];
+
     /**
      * 是否完成了初始化
      *
@@ -242,11 +244,14 @@ class Worker
             {
                 foreach ($this->buffer as $k => $v)
                 {
-                    if (self::$timed - $this->bufferTime[$k] > 60)
+                    if (self::$timed - $this->bufferTime[$k] > 180)
                     {
                         # 超过1分钟没有更新数据, 则移除
+                        info('clear expired data len: '. $this->bufferLen[$k]);
+
                         unset($this->buffer[$k]);
                         unset($this->bufferTime[$k]);
+                        unset($this->bufferLen[$k]);
                     }
                 }
             }
@@ -301,6 +306,7 @@ class Worker
         {
             $this->buffer[$fromId]    .= $data;
             $this->bufferTime[$fromId] = self::$timed;
+            $this->bufferLen[$fromId] += strlen($data);
 
             # 支持json格式
             if ($this->buffer[$fromId][0] === '[')
@@ -311,9 +317,20 @@ class Worker
                     # 能够解析出json, 直接跳转到处理json的地方
                     unset($this->buffer[$fromId]);
                     unset($this->bufferTime[$fromId]);
+                    unset($this->bufferLen[$fromId]);
 
                     goto jsonFormat;
                 }
+            }
+
+            if ($this->bufferLen[$fromId] > 10000000)
+            {
+                # 超过10MB
+                unset($this->buffer[$fromId]);
+                unset($this->bufferTime[$fromId]);
+                unset($this->bufferLen[$fromId]);
+
+                $server->close($fd);
             }
 
             return true;
@@ -325,6 +342,7 @@ class Worker
 
             unset($this->buffer[$fromId]);
             unset($this->bufferTime[$fromId]);
+            unset($this->bufferLen[$fromId]);
 
             debug("accept data length ". strlen($data));
         }
@@ -376,6 +394,11 @@ class Worker
             # 把客户端关闭了
             $server->close($fd);
             return false;
+        }
+
+        if (IS_DEBUG)
+        {
+            debug("worker: $this->id, tag: $tag, data length: " . strlen($data));
         }
 
         # example: xd.game.hsqj.consume : $app = hsqj, $table = consume
@@ -448,6 +471,11 @@ class Worker
             if ($jobs)
             {
                 $this->flushDataRunTime = $this->flushData;
+
+                if (IS_DEBUG)
+                {
+                    debug("worker: $this->id, tag: $tag, records count: " . count($records));
+                }
 
                 foreach ($records as $record)
                 {
