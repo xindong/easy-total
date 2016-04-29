@@ -12,9 +12,10 @@ if (!$queries)
 <div style="padding:0 15px;">
     <div class="row">
         <div class="col-md-12">
+            <div class="text-right" style="margin:-10px 0 10px 0"><a href="/admin/task/add/"><button type="button" class="btn btn-primary btn-sm">添加新任务</button></a></div>
             <table class="table table-bordered table-striped">
                 <thead>
-                    <tr>
+                    <tr style="white-space:nowrap">
                     <th style="text-align:center" width="50">#</th>
                     <th>名称</th>
                     <th>SQL</th>
@@ -42,7 +43,7 @@ if (!$queries)
 <td style='font-size:12px;'>$sql</td>
 <td style=\"text-align:center;white-space:nowrap\">{$saveAs}</td>
 <td style=\"text-align:center;\"><i style='font-size:9px;color:{$statsColor}' class=\"glyphicon glyphicon-{$stats}\"></i></td>
-<td style='font-size:12px;padding-top:11px'>".($setting['time'] ? date('Y-m-d H:i:s', $setting['time']) : '-')."</td>
+<td style='text-align:center;font-size:12px;padding-top:11px'>".($setting['time'] ? date('Y-m-d H:i:s', $setting['time']) : '-')."</td>
 <td align=\"center\">
 <a href=\"/admin/task/info/\"><button type=\"button\" class=\"btn btn-info btn-xs\">查看</button></a>
 <a href=\"/admin/task/pause/\"><button type=\"button\" class=\"btn btn-warning btn-xs\">暂停</button></a>
