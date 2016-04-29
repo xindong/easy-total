@@ -136,6 +136,13 @@ class Manager
                     $key    = $option['key'];
                     $table  = $option['table'];
                     $saveAs = key($option['saveAs']);
+                    $name   = trim($this->request->post['name']) ?: '';
+
+                    if ($name)
+                    {
+                        $option['setting'][$saveAs]['name'] = $name;
+                    }
+                    $option['setting'][$saveAs]['time'] = time();
 
                     if (isset($this->worker->tasks[$table][$key]))
                     {
@@ -155,7 +162,7 @@ class Manager
                             {
                                 $oldSql = $oldOpt['sqlOrigin'][$saveAs];
 
-                                # 合并
+                                # 合并所有配置
                                 $option = self::mergeOption($oldOpt, $option);
 
                                 # 处理合并后的SQL

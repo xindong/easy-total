@@ -8,22 +8,20 @@ if (!$queries)
     return;
 }
 
-foreach ($queries as & $item)
-{
-    $item = unserialize($item);
-}
-unset($item);
 ?>
-
 <div style="padding:0 15px;">
     <div class="row">
         <div class="col-md-12">
-            <table class="table table-bordered">
+            <table class="table table-bordered table-striped">
                 <thead>
                     <tr>
-                    <th>#</th>
+                    <th style="text-align:center" width="50">#</th>
+                    <th>名称</th>
                     <th>SQL</th>
-                    <th align="center">操作</th>
+                    <th width="120" style="text-align:center">输出</th>
+                    <th width="45" style="text-align:center">状态</th>
+                    <th width="130" style="text-align:center">创建时间</th>
+                    <th width="140" style="text-align:center">操作</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -31,10 +29,25 @@ unset($item);
                 $i = 0;
                 foreach ($queries as $query)
                 {
-                    foreach ($query['sql'] as $sql)
+                    $query = unserialize($query);
+                    foreach ($query['sql'] as $saveAs => $sql)
                     {
                         $i++;
-                        echo "<tr><td>{$i}</td><td style='line-height:2em;'>$sql</td><td align=\"center\"><button type=\"button\" class=\"btn btn-danger btn-sm\">删除</button></td></tr>";
+                        $setting    = $query['setting'][$saveAs] ?: [];
+                        $stats      = $query['use'] ? 'ok' : 'pause';
+                        $statsColor = $query['use'] ? '#d43f3a' : '#eea236';
+                        echo "<tr>
+<td style=\"text-align:center\">{$i}</td>
+<td>{$setting['name']}</td>
+<td style='font-size:12px;'>$sql</td>
+<td style=\"text-align:center;white-space:nowrap\">{$saveAs}</td>
+<td style=\"text-align:center;\"><i style='font-size:9px;color:{$statsColor}' class=\"glyphicon glyphicon-{$stats}\"></i></td>
+<td style='font-size:12px;padding-top:11px'>".($setting['time'] ? date('Y-m-d H:i:s', $setting['time']) : '-')."</td>
+<td align=\"center\">
+<a href=\"/admin/task/info/\"><button type=\"button\" class=\"btn btn-info btn-xs\">查看</button></a>
+<a href=\"/admin/task/pause/\"><button type=\"button\" class=\"btn btn-warning btn-xs\">暂停</button></a>
+<button data-key=\"{$query['key']}\" data-save-as=\"{$saveAs}\" type=\"button\" class=\"btn btn-danger btn-xs task-delete\">删除</button>
+</td></tr>";
                     }
                 }
                 ?>
@@ -43,3 +56,38 @@ unset($item);
         </div>
     </div>
 </div>
+
+<script type="text/javascript">
+    $('.task-delete').on('click', function()
+    {
+        var $this  = $(this);
+        var key    = $this.data('key');
+        var saveAs = $this.data('saveAs');
+        if (confirm('确定要删除?'))
+        {
+            $.ajax({
+                url: '/api/task/remove',
+                data: {
+                    key: key,
+                    table: saveAs
+                },
+                type: 'post',
+                dataType: 'json',
+                success: function(data, status, xhr)
+                {
+                    if (data.status == 'error')
+                    {
+                        alert(data.message || '删除失败');
+                        return;
+                    }
+                    alert('删除成功');
+                    window.location.reload();
+                },
+                error: function(xhr, status, err)
+                {
+                    alert('请求服务器失败');
+                }
+            });
+        }
+    });
+</script>
