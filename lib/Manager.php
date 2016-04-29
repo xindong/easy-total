@@ -151,7 +151,7 @@ class Manager
                         if (isset($oldOpt['saveAs'][$saveAs]))
                         {
                             # 已经存在一个
-                            if ($uri === 'task/add')
+                            if ($uri === 'task/add' && !(isset($this->request->post['merge']) && $this->request->post['merge'] == 'yes'))
                             {
                                 $data['status']  = 'error';
                                 $data['message'] = "the task from {$table} and save as {$saveAs} already exists. you can use api task/merge update the exists task";
@@ -530,7 +530,7 @@ class Manager
     protected static function parseSql($sql)
     {
         $preg = "#^select[ ]+(?<select>.+) from (?:(?<app>[a-z0-9_]+)\.)?(?<table>[a-z0-9_]+)(?:[ ]+for[ ]+(?<for>[a-z0-9,]+))?(?: where (?<where>(?:(?! group[ ]+time | group[ ]+by | save[ ]+as ).)+))?(?: group[ ]+by[ ]+(?<groupBy>[a-z0-9_,]+))?(?: group[ ]+time[ ]+(?<groupTime>\d+(?:d|h|m|s|W)))?(?: save[ ]+as (?<saveAs>[a-z0-9_]+))?$#i";
-        if (preg_match($preg, $sql, $m))
+        if (preg_match($preg, str_replace(["\r\n", "\r", "\n"], ' ', $sql), $m))
         {
             if (IS_DEBUG)
             {

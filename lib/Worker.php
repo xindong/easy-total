@@ -479,7 +479,7 @@ class Worker
 
                 foreach ($records as $record)
                 {
-                    $this->doJob($jobs, $app, $table, $record[0], $record[1]);
+                    $this->doJob($jobs, $app, $table, isset($record[1]['time']) && $record[1]['time'] > 0 ? $record[1]['time'] : $record[0], $record[1]);
                 }
             }
         }
