@@ -285,6 +285,64 @@ class Worker
                     }
                 }
             }
+
+            # 每天清理数据
+            swoole_timer_tick(86400000, function()
+            {
+
+                # 清理每天的统计数据, 只保留10天内的
+                self::$timed = $time = time();
+                $k1  = date('Y-m-d', $time - 86400 * 11);
+                $k2  = date('Y-m-d', $time - 86400 * 12);
+                if ($this->isSSDB)
+                {
+                    while ($keys = $this->ssdb->hlist("counter.total.$k1", "counter.total.$k2", 100))
+                    {
+                        # 列出key
+                        foreach ($keys as $k)
+                        {
+                            # 清除
+                            $this->ssdb->hclear($k);
+                        }
+                    }
+                    while ($keys = $this->ssdb->hlist("counter.time.$k1", "counter.time.$k2", 100))
+                    {
+                        # 列出key
+                        foreach ($keys as $k)
+                        {
+                            # 清除
+                            $this->ssdb->hclear($k);
+                        }
+                    }
+                }
+                else
+                {
+                    # 获取所有key
+                    $keys = $this->redis->keys("counter.total.$k1.*");
+                    if ($keys)foreach ($keys as $k)
+                    {
+                        $this->redis->delete($k);
+                    }
+
+                    $keys = $this->redis->keys("counter.time.$k1.*");
+                    if ($keys)foreach ($keys as $k)
+                    {
+                        $this->redis->delete($k);
+                    }
+
+                    $keys = $this->redis->keys("counter.total.$k2.*");
+                    if ($keys)foreach ($keys as $k)
+                    {
+                        $this->redis->delete($k);
+                    }
+
+                    $keys = $this->redis->keys("counter.time.$k2.*");
+                    if ($keys)foreach ($keys as $k)
+                    {
+                        $this->redis->delete($k);
+                    }
+                }
+            });
         }
 
         return true;
@@ -472,14 +530,26 @@ class Worker
             {
                 $this->flushDataRunTime = $this->flushData;
 
+                $count = count($records);
+
                 if (IS_DEBUG)
                 {
-                    debug("worker: $this->id, tag: $tag, records count: " . count($records));
+                    debug("worker: $this->id, tag: $tag, records count: " . $records);
                 }
 
-                foreach ($records as $record)
+                foreach ($jobs as $jobKey => $job)
                 {
-                    $this->doJob($jobs, $app, $table, isset($record[1]['time']) && $record[1]['time'] > 0 ? $record[1]['time'] : $record[0], $record[1]);
+                    $beginTime = microtime(1);
+
+                    # 处理数据
+                    foreach ($records as $record)
+                    {
+                        $this->doJob($jobKey, $job, $app, $table, isset($record[1]['time']) && $record[1]['time'] > 0 ? $record[1]['time'] : $record[0], $record[1]);
+                    }
+
+                    # 记录统计信息
+                    $this->flushDataRunTime['counter'][$jobKey]['total'] += $count;
+                    $this->flushDataRunTime['counter'][$jobKey]['time']  += microtime(1) - $beginTime;
                 }
             }
         }
@@ -507,6 +577,13 @@ class Worker
             # 发送成功, 数据置换
             $this->flushData = $this->flushDataRunTime;
             unset($this->flushDataRunTime);
+
+            # 计数器增加
+            $count = count($records);
+            if ($count > 0)
+            {
+                FluentServer::$counter->add($count);
+            }
         }
 
         return true;
@@ -644,72 +721,71 @@ class Worker
         }
     }
 
-    protected function doJob($jobs, $app, $table, $time, $item)
+    protected function doJob($jobKey, $job, $app, $table, $time, $item)
     {
-        foreach ($jobs as $jobKey => $job)
+        if ($job['where'])
         {
-            if ($job['where'])
+            if (false === self::checkWhere($job['where'], $item))
             {
-                if (false === self::checkWhere($job['where'], $item))
-                {
-                    # 不符合
-                    continue;
-                }
+                # 不符合
+                return;
             }
-
-            # 分组数据
-            $groupValue = [
-                $job['groupTime']['limit'] . $job['groupTime']['type'],
-                self::getTimeKey($time, $job['groupTime']['type'], $job['groupTime']['limit'])
-            ];
-
-            if ($job['groupBy'])foreach ($job['groupBy'] as $group)
-            {
-                $groupValue[] = $item[$group];
-            }
-
-            $id  = "{$table}_". implode('_', $groupValue);
-            $fun = $job['function'];
-            $key = "{$jobKey}_{$app}_{$id}";
-
-            if (strlen($key) > 160)
-            {
-                # 防止key太长
-                $key = substr($key, 0 , 120) .'_'. md5($key);
-            }
-
-            # 分组记录唯一值
-            if (isset($fun['dist']))
-            {
-                # 唯一数据
-                foreach ($fun['dist'] as $field => $t)
-                {
-                    $this->flushDataRunTime['dist']["dist,{$key},{$field}"][$item[$field]] = 1;
-                }
-            }
-
-            # 更新统计数据
-            $total = $this->totalData($this->flushDataRunTime['total'][$key], $item, $fun, isset($item['microtime']) && $item['microtime'] ? $item['microtime'] : $time);
-            if ($total)
-            {
-                $this->flushDataRunTime['total'][$key] = $total;
-            }
-
-            if ($job['allField'])
-            {
-                $this->flushDataRunTime['value'][$key] = $item;
-            }
-            elseif (isset($fun['value']))
-            {
-                foreach ($fun['value'] as $field => $t)
-                {
-                    $this->flushDataRunTime['value'][$key][$field] = $item[$field];
-                }
-            }
-
-            # 标记
-            $this->flushDataRunTime['jobs'][$key] = [$id, $time, $app, $table, $jobKey];
         }
+
+        # 分组数据
+        $groupValue = [
+            $job['groupTime']['limit'] . $job['groupTime']['type'],
+            self::getTimeKey($time, $job['groupTime']['type'], $job['groupTime']['limit'])
+        ];
+
+        if ($job['groupBy'])foreach ($job['groupBy'] as $group)
+        {
+            $groupValue[] = $item[$group];
+        }
+
+        $id  = "{$table}_". implode('_', $groupValue);
+        $fun = $job['function'];
+        $key = "{$jobKey}_{$app}_{$id}";
+
+        if (strlen($key) > 160)
+        {
+            # 防止key太长
+            $key = substr($key, 0 , 120) .'_'. md5($key);
+        }
+
+        # 分组记录唯一值
+        if (isset($fun['dist']))
+        {
+            # 唯一数据
+            foreach ($fun['dist'] as $field => $t)
+            {
+                $this->flushDataRunTime['dist']["dist,{$key},{$field}"][$item[$field]] = 1;
+            }
+        }
+
+        # 更新统计数据
+        $total = $this->totalData($this->flushDataRunTime['total'][$key], $item, $fun, isset($item['microtime']) && $item['microtime'] ? $item['microtime'] : $time);
+        if ($total)
+        {
+            $this->flushDataRunTime['total'][$key] = $total;
+        }
+
+        if ($job['allField'])
+        {
+            $this->flushDataRunTime['value'][$key] = $item;
+        }
+        elseif (isset($fun['value']))
+        {
+            foreach ($fun['value'] as $field => $t)
+            {
+                $this->flushDataRunTime['value'][$key][$field] = $item[$field];
+            }
+        }
+
+        # 标记
+        $this->flushDataRunTime['jobs'][$key] = [$id, $time, $app, $table, $jobKey];
+
+        return;
     }
 
     /**
@@ -791,6 +867,7 @@ class Worker
         unset($this->flushData['value'][$key]);
         unset($this->flushData['total'][$key]);
         unset($this->flushData['dist'][$key]);
+        unset($this->flushData['counter'][$key]);
     }
 
     protected function reloadTasks()
@@ -1010,6 +1087,25 @@ class Worker
                 {
                     break;
                 }
+            }
+        }
+
+        # 同步统计信息
+        if ($this->flushData['counter'])
+        {
+            # 按每分钟分开
+            $k1 = date('Y-m-d');
+            $k2 = date('H:s');
+            foreach ($this->flushData['counter'] as $key => $value)
+            {
+                # 更新任务总的统计信息
+                $this->redis->hIncrBy('counter', $key, $value['total']);
+
+                # 更新当前任务的当天统计信息
+                $this->redis->hIncrBy("counter.total.$k1.$key", $k2, $value['total']);
+                $this->redis->hIncrBy("counter.time.$k1.$key", $k2, $value['time']);
+
+                unset($this->flushData['counter'][$key]);
             }
         }
 

@@ -53,24 +53,84 @@ if ($allMemoryData)foreach ($allMemoryData as $item)
 }
 
 $stat = $this->server->stats();
+
+
+
+
+# 统计曲线 --------------------------
+$timeBegin = strtotime(date('Y-m-d 00:00:00'));
+$useTime   = [];
+$total     = [];
+for ($i = 0; $i < 1440; $i++)
+{
+  $timeLimit = $timeBegin + $i * 60;
+  $k = date('H:i', $timeLimit);
+  $useTime[$k] = 0;
+  $total[$k]   = 0;
+}
+$timeKey       = date('Y-m-d');
+$totalTotalAll = 0;
+
+if ($this->worker->isSSDB)
+{
+  $keys = [];
+  while ($tmp = $this->worker->ssdb->hlist("counter.total.$timeKey", "counter.total.$timeKey.z", 100))
+  {
+    $keys = array_merge($tmp);
+  }
+}
+else
+{
+  # 获取所有key
+  $keys = $this->worker->redis->keys("counter.total.$timeKey.*");
+}
+
+$keyLen = strlen('counter.total.');
+if ($keys)foreach ($keys as $k)
+{
+  $tmp           = $this->worker->redis->hGetAll($k) ?: [];
+  $total         = array_merge($total, $tmp);
+  $useTime       = array_merge($useTime, $this->worker->redis->hGetAll('counter.time.'. substr($k, $keyLen)) ?: []);
+  $totalTotalAll = array_sum($tmp);
+}
 ?>
 <div style="padding:0 15px;">
   <div class="row">
-    <div class="col-md-4">
-      <div id="container-server" style="height: 250px;"></div>
+    <div class="col-md-4" style="margin-bottom: 15px;">
+      <div id="container-server" style="height: 250px;border: 1px solid #ddd;"></div>
     </div>
-    <div class="col-md-4">
-      <div id="container-redis" style="height: 250px;"></div>
+    <div class="col-md-4" style="margin-bottom: 15px;">
+      <div id="container-redis" style="height: 250px;border: 1px solid #ddd;"></div>
     </div>
-    <div class="col-md-4">
+    <div class="col-md-4" style="margin-bottom: 15px;">
       <div style="height: 240px">
         <ul class="list-group">
           <li class="list-group-item list-group-item-warning">
             <h4 style="margin:2px 0">服务器信息</h4>
           </li>
           <li class="list-group-item">
-            <span class="badge">123,223,333</span>
-            数据执行请求数
+            <span class="badge"><?php echo $this->worker->redis->hLen('queries');?></span>
+            <a href="/admin/task/list/">任务数</a>
+          </li>
+          <li class="list-group-item">
+            <span class="badge"><?php
+              echo number_format($totalTotalAll, 0, '.', ',');
+              unset($tmp, $k1);
+              ?></span>
+            今日处理数据数
+          </li>
+          <li class="list-group-item">
+            <span class="badge"><?php
+              $allTotal = $this->worker->redis->hVals('counter') ?: [];
+              echo number_format(array_sum($allTotal), 0, '.', ',');
+              ?></span>
+            累计处理数据总数
+          </li>
+          <li class="list-group-item">
+            <span class="badge"><?php
+              echo number_format(FluentServer::getCount(), 0, '.', ',');
+            ?></span>
+            启动后处理数据数
           </li>
           <li class="list-group-item">
             <span class="badge"><?php echo date('Y-m-d H:i:s', $stat['start_time']);?></span>
@@ -80,10 +140,17 @@ $stat = $this->server->stats();
 
       </div>
     </div>
+
+    <div class="col-md-12">
+      <div id="container-total" style="border:1px solid #ddd"></div>
+    </div>
   </div>
 </div>
 <script>
   $(function () {
+    Highcharts.setOptions({global: {
+      timezoneOffset: 8
+    }});
 
     var gaugeOptions = {
 
@@ -196,27 +263,84 @@ $stat = $this->server->stats();
       }]
     }));
 
-    // Bring life to the dials
-//    setTimeout(function () {
-//      // Speed
-//      var chart = $('#container-speed').highcharts(),
-//        point,
-//        newVal,
-//        inc;
-//
-//      if (chart) {
-//        point = chart.series[0].points[0];
-//        inc = Math.round((Math.random() - 0.5) * 100);
-//        newVal = point.y + inc;
-//
-//        if (newVal < 0 || newVal > 200) {
-//          newVal = point.y - inc;
-//        }
-//
-//        point.update(newVal);
-//      }
-//    }, 2000);
+
+    $('#container-total').highcharts({
+      chart: {
+        zoomType: 'x',
+        marginBottom: 60
+      },
+      credits:{
+        enabled: false
+      },
+      title: {
+        text: '今日数据处理统计曲线',
+        y: 20
+      },
+      xAxis: [{
+        categories: <?php echo json_encode(array_keys($total));?>
+      }],
+      yAxis: [{ // Secondary yAxis
+        gridLineWidth: 0,
+        labels: {
+          style: {
+            color: Highcharts.getOptions().colors[0]
+          }
+        },
+        title: {
+          text: '累计请求数',
+          style: {
+            color: Highcharts.getOptions().colors[0]
+          }
+        }
+
+      }, { // Primary yAxis
+        labels: {
+          format: '{value}s',
+          style: {
+            color: Highcharts.getOptions().colors[1]
+          }
+        },
+        title: {
+          text: '累计耗时',
+          style: {
+            color: Highcharts.getOptions().colors[1]
+          }
+        },
+        opposite: true
+
+      }],
+      tooltip: {
+        shared: true
+      },
+      legend: {
+        align: 'center',
+        y: 15,
+        verticalAlign: 'bottom',
+        backgroundColor: (Highcharts.theme && Highcharts.theme.legendBackgroundColor) || '#FFFFFF'
+      },
+      series: [{
+        name: '累计请求数',
+        type: 'spline',
+        yAxis: 0,
+        data: <?php echo json_encode(array_values($total));?>,
+        marker: {
+          enabled: false
+        }
+      }, {
+        name: '累计耗时',
+        type: 'spline',
+        data: <?php echo json_encode(array_values($useTime));?>,
+        yAxis: 1,
+        dashStyle: 'shortdot',
+        tooltip: {
+          valueSuffix: 's'
+        },
+        marker: {
+          enabled: false
+        }
+      }]
+    });
 
 
-  });
+});
 </script>

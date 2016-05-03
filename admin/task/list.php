@@ -45,7 +45,7 @@ if (!$queries)
 <td style=\"text-align:center;\"><i style='font-size:9px;color:{$statsColor}' class=\"glyphicon glyphicon-{$stats}\"></i></td>
 <td style='text-align:center;font-size:12px;padding-top:11px'>".($setting['time'] ? date('Y-m-d H:i:s', $setting['time']) : '-')."</td>
 <td align=\"center\">
-<a href=\"/admin/task/info/\"><button type=\"button\" class=\"btn btn-info btn-xs\">查看</button></a>
+<a href=\"/admin/task/info/?key={$query['key']}\"><button type=\"button\" class=\"btn btn-info btn-xs\">查看</button></a>
 <a href=\"/admin/task/pause/\"><button type=\"button\" class=\"btn btn-warning btn-xs\">暂停</button></a>
 <button data-key=\"{$query['key']}\" data-save-as=\"{$saveAs}\" type=\"button\" class=\"btn btn-danger btn-xs task-delete\">删除</button>
 </td></tr>";

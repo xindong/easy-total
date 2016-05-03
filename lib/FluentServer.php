@@ -40,6 +40,28 @@ class FluentServer
     protected $taskWorker;
 
     /**
+     * 计数器
+     *
+     * 受计数器限制只能存42亿,所以本系统会自动在1亿以上重置
+     *
+     * 总访问量应该是 `$this->counterX->get() * 100000000 + $this->counter->get();`
+     * 或使用 `$this->getLogCount();` 获取
+     *
+     * @var swoole_atomic
+     */
+    public static $counter;
+
+    /**
+     * 计数器重置次数
+     *
+     * 每1亿重置1次, 所以总访问量应该是 `$this->counterX->get() * 100000000 + $this->counter->get()`;
+     * 或使用 `$this->getLogCount();` 获取
+     *
+     * @var swoole_atomic
+     */
+    public static $counterX;
+
+    /**
      * HttpServer constructor.
      */
     public function __construct($configFile, $daemonize = false, $logPath = null)
@@ -106,6 +128,11 @@ class FluentServer
         echo "{$lightBlue}======= Swoole Config ========\n", json_encode($config['conf'], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE), "{$end}\n";
 
         self::$config = $config;
+
+
+        # 初始化计数器
+        self::$counter  = new swoole_atomic();
+        self::$counterX = new swoole_atomic();
     }
 
     /**
@@ -251,6 +278,21 @@ class FluentServer
             $this->worker  = new Worker($server, $workerId);
             $this->worker->init();
             $this->manager = new Manager($server, $this->worker, $workerId);
+
+
+            if ($workerId == 0)
+            {
+                # 计数器只支持42亿的计数, 所以每小时检查计数器是否快溢出
+                swoole_timer_tick(1000 * 60 * 60, function()
+                {
+                    if (($count = self::$counter->get()) > 100000000)
+                    {
+                        # 将1亿的余数记录下来
+                        self::$counter->set($count % 100000000);
+                        self::$counterX->add(intval($count / 100000000));
+                    }
+                });
+            }
         }
     }
 
@@ -299,6 +341,15 @@ class FluentServer
         debug('onManagerStop');
     }
 
+    /**
+     * 获取已请求的所有log数量
+     *
+     * @return int
+     */
+    public static function getCount()
+    {
+        return self::$counterX->get() * 100000000 + self::$counter->get();
+    }
 
     /**
      * 设置进程的名称
