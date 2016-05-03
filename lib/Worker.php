@@ -534,7 +534,7 @@ class Worker
 
                 if (IS_DEBUG)
                 {
-                    debug("worker: $this->id, tag: $tag, records count: " . $records);
+                    debug("worker: $this->id, tag: $tag, records count: " . $count);
                 }
 
                 foreach ($jobs as $jobKey => $job)
