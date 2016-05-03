@@ -73,15 +73,10 @@ $totalTotalAll = 0;
 
 if ($this->worker->isSSDB)
 {
-  $keys = [];
-  while ($tmp = $this->worker->ssdb->hlist("counter.total.$timeKey", "counter.total.$timeKey.z", 100))
-  {
-    $keys = array_merge($tmp);
-  }
+  $keys = $this->worker->ssdb->hlist("counter.total.$timeKey", "counter.total.$timeKey.z", 9999);
 }
 else
 {
-  # 获取所有key
   $keys = $this->worker->redis->keys("counter.total.$timeKey.*");
 }
 
