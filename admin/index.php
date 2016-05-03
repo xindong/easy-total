@@ -5,12 +5,30 @@
 <?php
 if ($this->worker->isSSDB)
 {
+  $maxSize = 10000;
   $info = [];
   $type = 'SSDB磁盘';
-  $info['used_memory'] = $this->worker->ssdb->dbsize();
+
+
+  # 得到ssdb占用的硬盘空间
+  $rs = $this->worker->ssdb->info();
+  end($rs);
+  $data = current($rs);
+  $size = 0;
+  foreach(explode("\n", trim($data)) as $item)
+  {
+    $arr = preg_split('#[ ]+#', trim($item));
+    if (is_numeric($arr[0]) && isset($arr[2]))
+    {
+      $size += $arr[2];
+    }
+  }
+  $info['used_memory'] = $size * 1024 * 1024;
+  unset($data, $rs, $size);
 }
 else
 {
+  $maxSize = 2000;
   $type = 'Redis内存';
   $info = $this->worker->redis->info();
 }
@@ -126,7 +144,7 @@ $stat = $this->server->stats();
     $('#container-redis').highcharts(Highcharts.merge(gaugeOptions, {
       yAxis: {
         min: 0,
-        max: 500,
+        max: <?php echo $maxSize;?>,
         title: {
           text: '<?php echo $type;?>占用'
         }
