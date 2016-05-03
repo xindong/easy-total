@@ -64,7 +64,7 @@ if (!$query)
             <table class="table table-bordered">
                 <tr>
                     <td>
-                        <div id="container" style="height:280px"></div>
+                        <div id="container" style="height:300px"></div>
                     </td>
                 </tr>
             </table>
@@ -108,13 +108,14 @@ Highcharts.setOptions({global: {
 $('#container').highcharts({
     chart: {
         zoomType: 'x',
-        marginBottom: 60
+        marginBottom: 80
     },
     credits:{
         enabled: false
     },
     title: {
-        text: '数据处理统计曲线'
+        text: '数据处理统计曲线',
+        y: 20
     },
     scrollbar: {
         enabled: true,
@@ -159,7 +160,7 @@ $('#container').highcharts({
     },
     legend: {
         align: 'center',
-        y: 15,
+        y: 5,
         verticalAlign: 'bottom',
         backgroundColor: (Highcharts.theme && Highcharts.theme.legendBackgroundColor) || '#FFFFFF'
     },
