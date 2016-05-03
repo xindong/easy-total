@@ -83,11 +83,22 @@ else
 $keyLen = strlen('counter.total.');
 if ($keys)foreach ($keys as $k)
 {
-  $tmp           = $this->worker->redis->hGetAll($k) ?: [];
-  $total         = array_merge($total, $tmp);
-  $useTime       = array_merge($useTime, $this->worker->redis->hGetAll('counter.time.'. substr($k, $keyLen)) ?: []);
-  $totalTotalAll = array_sum($tmp);
+  $tmp            = $this->worker->redis->hGetAll($k) ?: [];
+  $totalTotalAll += array_sum($tmp);
+
+  foreach ($tmp as $k1 => $v1)
+  {
+    $total[$k1] += $v1;
+  }
+  $tmp = $this->worker->redis->hGetAll('counter.time.'. substr($k, $keyLen)) ?: [];
+  foreach ($tmp as $k1 => $v1)
+  {
+    $useTime[$k1] += $v1;
+  }
 }
+
+$total   = array_map('intval', $total);
+$useTime = array_map('intval', $useTime);
 ?>
 <div style="padding:0 15px;">
   <div class="row">
