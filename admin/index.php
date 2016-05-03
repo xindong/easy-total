@@ -62,13 +62,18 @@ $time      = time();
 $timeBegin = strtotime(date('Y-m-d 00:00:00'));
 $useTime   = [];
 $total     = [];
+$arrKeys   = [];
 for ($i = 0; $i < 1440; $i++)
 {
   $timeLimit = $timeBegin + $i * 60;
-  if ($timeLimit > $time)break;
-  $k = date('H:i', $timeLimit);
-  $useTime[$k] = 0;
-  $total[$k]   = 0;
+  $k         = date('H:i', $timeLimit);
+  $arrKeys[] = $k;
+  
+  if ($timeLimit < $time)
+  {
+    $useTime[$k] = 0;
+    $total[$k]   = 0;
+  }
 }
 $timeKey       = date('Y-m-d');
 $totalTotalAll = 0;
@@ -285,7 +290,7 @@ $useTime = array_map('intval', $useTime);
         y: 20
       },
       xAxis: [{
-        categories: <?php echo json_encode(array_keys($total));?>
+        categories: <?php echo json_encode($arrKeys);?>
       }],
       yAxis: [{ // Secondary yAxis
         gridLineWidth: 0,

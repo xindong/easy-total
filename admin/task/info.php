@@ -78,14 +78,18 @@ $time      = time() - 60;
 $timeBegin = strtotime(date('Y-m-d 00:00:00'));
 $useTime   = [];
 $total     = [];
+$arrKeys   = [];
 for ($i = 0; $i < 1440 ; $i++)
 {
     $timeLimit = $timeBegin + $i * 60;
-    if ($timeLimit > $time)break;
+    $k         = date('H:i', $timeLimit);
+    $arrKeys[] = $k;
 
-    $k = date('H:i', $timeLimit);
-    $useTime[$k] = 0;
-    $total[$k]   = 0;
+    if ($timeLimit < $time)
+    {
+        $useTime[$k] = 0;
+        $total[$k]   = 0;
+    }
 }
 $timeKey = date('Y-m-d');
 $useTime = array_merge($useTime, $this->worker->redis->hGetAll("counter.time.$timeKey.$key") ?: []);
