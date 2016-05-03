@@ -23,7 +23,7 @@ if (!$query)
     return;
 }
 ?>
-<script type="text/javascript" src="/assets/highcharts/highcharts.js"></script>
+<script type="text/javascript" src="/assets/highcharts/highstock.js"></script>
 
 <div style="padding:0 15px;margin-top:-15px">
     <div class="row">
@@ -116,8 +116,13 @@ $('#container').highcharts({
     title: {
         text: '数据处理统计曲线'
     },
+    scrollbar: {
+        enabled: true,
+        liveRedraw: true
+    },
     xAxis: [{
-        categories: <?php echo json_encode(array_keys($total));?>
+        categories: <?php echo json_encode(array_keys($total));?>,
+        range: 30
     }],
     yAxis: [{ // Secondary yAxis
         gridLineWidth: 0,

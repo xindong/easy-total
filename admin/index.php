@@ -1,4 +1,4 @@
-<script type="text/javascript" src="/assets/highcharts/highcharts.js"></script>
+<script type="text/javascript" src="/assets/highcharts/highstock.js"></script>
 <script type="text/javascript" src="/assets/highcharts/highcharts-more.js"></script>
 <script type="text/javascript" src="/assets/highcharts/modules/solid-gauge.js"></script>
 
@@ -68,7 +68,7 @@ for ($i = 0; $i < 1440; $i++)
   $timeLimit = $timeBegin + $i * 60;
   $k         = date('H:i', $timeLimit);
   $arrKeys[] = $k;
-  
+
   if ($timeLimit < $time)
   {
     $useTime[$k] = 0;
@@ -103,6 +103,27 @@ if ($keys)foreach ($keys as $k)
     $useTime[$k1] += $v1;
   }
 }
+
+//$i = 0;
+//$totalArr = [];
+//foreach ($total as $k => $v)
+//{
+//  $tmp        = ($timeBegin + $i * 60) * 1000;
+//  $totalArr[] = [$tmp, (int)$v];
+//  $i++;
+//}
+//$total = $totalArr;
+//
+//$i = 0;
+//$totalArr = [];
+//foreach ($useTime as $k => $v)
+//{
+//  $tmp        = ($timeBegin + $i * 60) * 1000;
+//  $totalArr[] = [$tmp, (int)$v];
+//  $i++;
+//}
+//$useTime = $totalArr;
+//unset($totalArr);
 
 $total   = array_map('intval', $total);
 $useTime = array_map('intval', $useTime);
@@ -162,6 +183,7 @@ $useTime = array_map('intval', $useTime);
 <script>
   $(function () {
     Highcharts.setOptions({global: {
+      useUTC: false,
       timezoneOffset: 8
     }});
 
@@ -280,7 +302,7 @@ $useTime = array_map('intval', $useTime);
     $('#container-total').highcharts({
       chart: {
         zoomType: 'x',
-        marginBottom: 60
+        marginBottom: 80
       },
       credits:{
         enabled: false
@@ -290,7 +312,8 @@ $useTime = array_map('intval', $useTime);
         y: 20
       },
       xAxis: [{
-        categories: <?php echo json_encode($arrKeys);?>
+        categories: <?php echo json_encode($arrKeys);?>,
+        range: 30
       }],
       yAxis: [{ // Secondary yAxis
         gridLineWidth: 0,
@@ -325,9 +348,14 @@ $useTime = array_map('intval', $useTime);
       tooltip: {
         shared: true
       },
+      scrollbar: {
+        enabled: true,
+        liveRedraw: true
+      },
+
       legend: {
         align: 'center',
-        y: 15,
+        y: 5,
         verticalAlign: 'bottom',
         backgroundColor: (Highcharts.theme && Highcharts.theme.legendBackgroundColor) || '#FFFFFF'
       },
