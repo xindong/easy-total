@@ -122,7 +122,7 @@ $('#container').highcharts({
     },
     xAxis: [{
         categories: <?php echo json_encode(array_keys($total));?>,
-        range: 30
+        range: 100
     }],
     yAxis: [{ // Secondary yAxis
         gridLineWidth: 0,

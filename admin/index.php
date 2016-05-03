@@ -313,7 +313,7 @@ $useTime = array_map('intval', $useTime);
       },
       xAxis: [{
         categories: <?php echo json_encode($arrKeys);?>,
-        range: 30
+        range: 100
       }],
       yAxis: [{ // Secondary yAxis
         gridLineWidth: 0,
