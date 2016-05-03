@@ -301,7 +301,7 @@ $useTime = array_map('intval', $useTime);
 
       }, { // Primary yAxis
         labels: {
-          format: '{value}s',
+          format: '{value}ms',
           style: {
             color: Highcharts.getOptions().colors[1]
           }
@@ -339,7 +339,7 @@ $useTime = array_map('intval', $useTime);
         yAxis: 1,
         dashStyle: 'shortdot',
         tooltip: {
-          valueSuffix: 's'
+          valueSuffix: 'ms'
         },
         marker: {
           enabled: false

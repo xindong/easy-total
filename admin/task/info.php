@@ -87,6 +87,9 @@ for ($i = 0; $i < 1440 ; $i++)
 $timeKey = date('Y-m-d');
 $useTime = array_merge($useTime, $this->worker->redis->hGetAll("counter.time.$timeKey.$key") ?: []);
 $total   = array_merge($total, $this->worker->redis->hGetAll("counter.total.$timeKey.$key") ?: []);
+
+$total   = array_map('intval', $total);
+$useTime = array_map('intval', $useTime);
 ?>
 
 <script type="text/javascript">
@@ -125,7 +128,7 @@ $('#container').highcharts({
 
     }, { // Primary yAxis
         labels: {
-            format: '{value}s',
+            format: '{value}ms',
             style: {
                 color: Highcharts.getOptions().colors[1]
             }
@@ -163,7 +166,7 @@ $('#container').highcharts({
         yAxis: 1,
         dashStyle: 'shortdot',
         tooltip: {
-            valueSuffix: 's'
+            valueSuffix: 'ms'
         },
         marker: {
             enabled: false
