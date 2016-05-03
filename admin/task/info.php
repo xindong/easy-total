@@ -74,12 +74,15 @@ if (!$query)
 
 <?php
 
+$time      = time() - 60;
 $timeBegin = strtotime(date('Y-m-d 00:00:00'));
 $useTime   = [];
 $total     = [];
 for ($i = 0; $i < 1440 ; $i++)
 {
     $timeLimit = $timeBegin + $i * 60;
+    if ($timeLimit > $time)break;
+
     $k = date('H:i', $timeLimit);
     $useTime[$k] = 0;
     $total[$k]   = 0;
