@@ -1095,7 +1095,7 @@ class Worker
         {
             # 按每分钟分开
             $k1 = date('Y-m-d');
-            $k2 = date('H:s');
+            $k2 = date('H:i');
             foreach ($this->flushData['counter'] as $key => $value)
             {
                 # 更新任务总的统计信息
