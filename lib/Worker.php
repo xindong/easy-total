@@ -549,6 +549,8 @@ class Worker
                     debug("worker: $this->id, tag: $tag, records count: " . $count);
                 }
 
+                $d = date('Y-m-d');
+                $k = date('H:i');
                 foreach ($jobs as $jobKey => $job)
                 {
                     $beginTime = microtime(1);
@@ -560,8 +562,8 @@ class Worker
                     }
 
                     # 记录统计信息
-                    $this->flushDataRunTime['counter'][$jobKey]['total'] += $count;
-                    $this->flushDataRunTime['counter'][$jobKey]['time']  += intval(1000 * (microtime(1) - $beginTime));
+                    $this->flushDataRunTime['counter'][$jobKey][$d][$k]     += $count;
+                    $this->flushDataRunTime['counterTime'][$jobKey][$d][$k] += intval(1000 * (microtime(1) - $beginTime));
                 }
             }
         }
@@ -946,12 +948,12 @@ class Worker
             # 更新唯一值
             if ($this->flushData['dist'])
             {
-                foreach ($this->flushData['dist'] as $key => $v)
+                foreach ($this->flushData['dist'] as $jobKey => $v)
                 {
-                    if ($this->redis->hMSet($key, $v))
+                    if ($this->redis->hMSet($jobKey, $v))
                     {
                         # 成功
-                        unset($this->flushData['dist'][$key]);
+                        unset($this->flushData['dist'][$jobKey]);
                     }
                 }
             }
@@ -961,9 +963,9 @@ class Worker
             {
                 if (!$this->flushData['jobs'])break;
 
-                foreach ($this->flushData['jobs'] as $key => $opt)
+                foreach ($this->flushData['jobs'] as $jobKey => $opt)
                 {
-                    $lockKey = "lock,{$key}";
+                    $lockKey = "lock,{$jobKey}";
 
                     # 没用 $redis->set($lockKey, microtime(1), ['nx', 'ex' => 10]); 这样过期设置是因为ssdb不支持
                     if ($this->redis->setNx($lockKey, microtime(1)))
@@ -974,7 +976,7 @@ class Worker
                         list($id, $time, $app, $fromTable, $jobKey) = $opt;
 
                         # 获取所有统计相关数据
-                        $totalKey = "total,{$key}";
+                        $totalKey = "total,{$jobKey}";
                         $total    = $this->redis->get($totalKey);
                         if (!$total)
                         {
@@ -989,22 +991,22 @@ class Worker
                         $job = $this->tasks[$fromTable][$jobKey];
 
                         # 更新统计数据
-                        if ($this->flushData['total'][$key])
+                        if ($this->flushData['total'][$jobKey])
                         {
                             # 合并统计数据
-                            $total = $this->totalDataMerge($total, $this->flushData['total'][$key], $job['function']);
+                            $total = $this->totalDataMerge($total, $this->flushData['total'][$jobKey], $job['function']);
 
                             # 更新数据
                             if ($this->redis->set($totalKey, serialize($total)))
                             {
-                                unset($this->flushData['total'][$key]);
+                                unset($this->flushData['total'][$jobKey]);
                             }
                         }
 
                         $limit     = date('YmdHi');
                         $saveData  = [];
                         $distCache = [];
-                        $value     = $this->flushData['value'][$key] ?: [];
+                        $v     = $this->flushData['value'][$jobKey] ?: [];
 
                         foreach ($job['saveAs'] as $table => $st)
                         {
@@ -1014,7 +1016,7 @@ class Worker
 
                             if ($st['allField'])
                             {
-                                $data += $value;
+                                $data += $v;
                             }
 
                             # 排除字段
@@ -1048,7 +1050,7 @@ class Worker
                                         if (!isset($distCache[$field]))
                                         {
                                             # 获取唯一值的长度
-                                            $distCache[$field] = (int)$this->redis->hLen("dist,{$key},{$field}");
+                                            $distCache[$field] = (int)$this->redis->hLen("dist,{$jobKey},{$field}");
                                         }
                                         $data[$as] = $distCache[$field];
                                         break;
@@ -1060,7 +1062,7 @@ class Worker
 
                                     case 'value':
                                     default:
-                                        $data[$as] = $value[$field];
+                                        $data[$as] = $v[$field];
                                         break;
                                 }
                             }
@@ -1081,10 +1083,10 @@ class Worker
                             }
                         }
 
-                        if (!$error && !isset($this->flushData['total'][$key]))
+                        if (!$error && !isset($this->flushData['total'][$jobKey]))
                         {
-                            unset($this->flushData['jobs'][$key]);
-                            unset($this->flushData['value'][$key]);
+                            unset($this->flushData['jobs'][$jobKey]);
+                            unset($this->flushData['value'][$jobKey]);
                         }
 
                         # 释放锁
@@ -1114,22 +1116,29 @@ class Worker
         }
 
         # 同步统计信息
-        if ($this->flushData['counter'])
+        if ($this->flushData['counter'])foreach ($this->flushData['counter'] as $jobKey => $value)
         {
-            # 按每分钟分开
-            $k1 = date('Y-m-d');
-            $k2 = date('H:i');
-            foreach ($this->flushData['counter'] as $key => $value)
+            $total = 0;
+            foreach ($value as $day => $vv)
             {
-                # 更新任务总的统计信息
-                $this->redis->hIncrBy('counter', $key, $value['total']);
+                foreach ($vv as $k => $v)
+                {
+                    # 更新当前任务的当天统计信息
+                    $this->redis->hIncrBy("counter.total.$day.$jobKey", $k, $v);
+                    $this->redis->hIncrBy("counter.time.$day.$jobKey", $k, $this->flushData['counterTime'][$jobKey][$day][$k]);
 
-                # 更新当前任务的当天统计信息
-                $this->redis->hIncrBy("counter.total.$k1.$key", $k2, $value['total']);
-                $this->redis->hIncrBy("counter.time.$k1.$key", $k2, $value['time']);
-
-                unset($this->flushData['counter'][$key]);
+                    $total += $v;
+                }
             }
+
+            # 更新任务总的统计信息
+            if ($total > 0)
+            {
+                $this->redis->hIncrBy('counter', $jobKey, $total);
+            }
+
+            unset($this->flushData['counter'][$jobKey]);
+            unset($this->flushData['counterTime'][$jobKey]);
         }
 
         return true;
