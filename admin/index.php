@@ -192,7 +192,8 @@ $useTime = array_map('intval', $useTime);
           </li>
           <li class="list-group-item">
             <span class="badge"><?php
-              echo number_format(array_sum($this->worker->redis->hVals('counter') ?: []), 0, '.', ',');
+              $allTotal = $this->worker->redis->hVals('counter') ?: [];
+              echo number_format(array_sum($allTotal), 0, '.', ',');
               ?></span>
             累计处理数据总数
           </li>
