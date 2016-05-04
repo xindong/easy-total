@@ -99,8 +99,11 @@ class Manager
 
         ob_start();
         include __DIR__ .'/../admin/_header.php';
-        include $file;
-        include __DIR__ .'/../admin/_footer.php';
+        $rs = include $file;
+        if ($rs !== 'noFooter')
+        {
+            include __DIR__ . '/../admin/_footer.php';
+        }
         $html = ob_get_clean();
 
         $this->response->end($html);
@@ -114,6 +117,7 @@ class Manager
         {
             case 'task/add':
             case 'task/merge':
+            case 'task/replace':
                 # 添加一个任务
                 $sql = $this->request->post['sql'];
 
@@ -136,12 +140,8 @@ class Manager
                     $key    = $option['key'];
                     $table  = $option['table'];
                     $saveAs = key($option['saveAs']);
-                    $name   = trim($this->request->post['name']) ?: '';
 
-                    if ($name)
-                    {
-                        $option['setting'][$saveAs]['name'] = $name;
-                    }
+                    $option['setting'][$saveAs]['name'] = trim($this->request->post['name']) ?: "from {$table} to {$saveAs}";
                     $option['setting'][$saveAs]['time'] = time();
 
                     if (isset($this->worker->tasks[$table][$key]))
@@ -161,13 +161,19 @@ class Manager
                             else
                             {
                                 $oldSql = $oldOpt['sqlOrigin'][$saveAs];
+                                $newSql = $option['sqlOrigin'][$saveAs];
 
                                 # 合并所有配置
                                 $option = self::mergeOption($oldOpt, $option);
 
                                 # 处理合并后的SQL
-                                $option['sql'][$saveAs]       = self::getSqlByOption($oldOpt);
-                                $option['sqlOrigin'][$saveAs] = "$oldSql;\n{$oldOpt['sqlOrigin'][$saveAs]}";
+                                $option['sql'][$saveAs] = self::getSqlByOption($oldOpt);
+
+                                if ($uri !== 'task/replace')
+                                {
+                                    # 替换
+                                    $option['sqlOrigin'][$saveAs] = "$oldSql;\n$newSql";
+                                }
                             }
                         }
                         else

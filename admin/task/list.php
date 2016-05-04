@@ -1,16 +1,17 @@
 <?php
 $queries = array_map('unserialize', $this->worker->redis->hGetAll('queries') ?: []);
 
-usort($queries, function($a, $b)
-{
-    return $a['table'] > $b['table'] ? 1 : -1;
-});
-
 if (!$queries)
 {
     echo '<div style="padding:0 15px;"><div class="alert alert-warning">还没有任何任务, <a href="/admin/task/add/">点击这里添加任务</a></div></div>';
     return;
 }
+
+uasort($queries, function($a, $b)
+{
+    return $a['table'] > $b['table'] ? 1 : -1;
+});
+
 ?>
 
 <link rel="stylesheet" href="/assets/highlightjs/tomorrow.min.css">
@@ -31,7 +32,12 @@ if (!$queries)
 <div style="padding:0 15px;">
     <div class="row">
         <div class="col-md-12">
-            <div class="text-right" style="margin:-10px 0 10px 0"><a href="/admin/task/add/"><button type="button" class="btn btn-primary btn-sm">添加新任务</button></a></div>
+            <div class="pull-right" style="margin:-10px 0 10px 0">
+                <input type="file" class="task-import" style="cursor:pointer;width: 70px;height:30px;position: absolute;opacity:0.01" />
+                <button type="button" class="btn btn-info btn-sm">导入任务</button>
+                <a href="/admin/task/export/"><button type="button" class="btn btn-success btn-sm">导出任务</button></a>
+                <a href="/admin/task/add/"><button type="button" class="btn btn-primary btn-sm">添加新任务</button></a>
+            </div>
             <table class="table table-bordered table-striped">
                 <thead>
                     <tr style="white-space:nowrap">
@@ -77,6 +83,64 @@ if (!$queries)
 </div>
 
 <script type="text/javascript">
+    $('.task-import').on('change', function()
+    {
+        if (window.File && window.FileReader && window.FileList && window.Blob)
+        {
+            var reader   = new FileReader();
+            var fileList = this.files;
+
+            reader.onload = function(e)
+            {
+                if (confirm('将会覆盖现有相同的配置, 是否继续?'))
+                {
+                    var data = e.target.result;
+                    if (!data)
+                    {
+                        alert('读取了一个空文件');
+                        return false;
+                    }
+
+                    $.ajax({
+                        url: '/admin/task/import/',
+                        data: {
+                            'data': data
+                        },
+                        method: 'post',
+                        dataType: 'json',
+                        success: function(data, status, xhr)
+                        {
+                            if (data.status == 'error')
+                            {
+                                alert(data.message || '添加失败');
+                                return;
+                            }
+                            alert('导入成功');
+                            window.location.reload();
+                        },
+                        error: function(xhr, status, err)
+                        {
+                            alert('请求服务器失败');
+                        }
+                    });
+                }
+                else
+                {
+                    alert('您放弃了导入操作');
+                }
+            };
+
+            reader.readAsText(fileList[0]);
+        }
+        else
+        {
+            alert('你的浏览器版本太旧, 不支持');
+        }
+
+        // 重置
+        this.value = '';
+    });
+
     $('.task-delete').on('click', function()
     {
         var $this  = $(this);

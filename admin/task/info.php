@@ -97,12 +97,12 @@ if (!$query)
                 <?php
                 if ($this->worker->isSSDB)
                 {
-                    $data = $this->worker->ssdb->scan("total,{$key}_", "total,{$key}_z", 50);
+                    $data = $this->worker->ssdb->scan("total,{$key},", "total,{$key},z", 50);
                 }
                 else
                 {
                     $it      = null;
-                    $arrKeys = $this->redis->scan($it, "total,{$key}_*", 50);
+                    $arrKeys = $this->redis->scan($it, "total,{$key},*", 50);
                     $data    = [];
                     foreach($arrKeys as $strKey)
                     {
@@ -112,7 +112,7 @@ if (!$query)
 
                 if ($data)
                 {
-                    $len = strlen("total,{$key}_");
+                    $len = strlen("total,{$key},");
                     foreach ($data as $k => $v)
                     {
                         $v = unserialize($v) ?: [];

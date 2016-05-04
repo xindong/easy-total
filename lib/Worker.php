@@ -755,11 +755,11 @@ class Worker
             $groupValue[] = $item[$group];
         }
 
-        $id  = "{$table}_". implode('_', $groupValue);
+        $id  = implode('_', $groupValue);
         $fun = $job['function'];
-        $key = "{$jobKey}_{$app}_{$id}";
+        $key = "{$jobKey},{$app},{$id}";
 
-        if (strlen($key) > 160)
+        if (strlen($key) > 140)
         {
             # 防止key太长
             $key = substr($key, 0 , 120) .'_'. md5($key);
