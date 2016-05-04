@@ -1,6 +1,10 @@
 <?php
-$queries = $this->worker->redis->hGetAll('queries');
+$queries = array_map('unserialize', $this->worker->redis->hGetAll('queries') ?: []);
 
+usort($queries, function($a, $b)
+{
+    return $a['table'] > $b['table'] ? 1 : -1;
+});
 
 if (!$queries)
 {
@@ -45,7 +49,6 @@ if (!$queries)
                 $i = 0;
                 foreach ($queries as $query)
                 {
-                    $query = unserialize($query);
                     foreach ($query['sql'] as $saveAs => $sql)
                     {
                         $i++;
