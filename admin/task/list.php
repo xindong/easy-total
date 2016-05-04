@@ -7,8 +7,23 @@ if (!$queries)
     echo '<div style="padding:0 15px;"><div class="alert alert-warning">还没有任何任务, <a href="/admin/task/add/">点击这里添加任务</a></div></div>';
     return;
 }
-
 ?>
+
+<link rel="stylesheet" href="/assets/highlightjs/tomorrow.min.css">
+<script src="/assets/highlightjs/highlight.min.js"></script>
+<style type="text/css">
+.highlight{
+    border:none;
+    padding:0;
+    margin:0;
+    background-color: transparent;
+}
+
+.hljs {
+    background: transparent;
+}
+</style>
+
 <div style="padding:0 15px;">
     <div class="row">
         <div class="col-md-12">
@@ -40,7 +55,7 @@ if (!$queries)
                         echo "<tr>
 <td style=\"text-align:center\">{$i}</td>
 <td>{$setting['name']}</td>
-<td style='font-size:12px;'>$sql</td>
+<td><pre class='highlight'><code class=\"mysql\">{$sql}</code></pre></td>
 <td style=\"text-align:center;white-space:nowrap\">{$saveAs}</td>
 <td style=\"text-align:center;\"><i style='font-size:9px;color:{$statsColor}' class=\"glyphicon glyphicon-{$stats}\"></i></td>
 <td style='text-align:center;font-size:12px;padding-top:11px'>".($setting['time'] ? date('Y-m-d H:i:s', $setting['time']) : '-')."</td>
@@ -92,3 +107,5 @@ if (!$queries)
         }
     });
 </script>
+
+<script>hljs.initHighlightingOnLoad();</script>

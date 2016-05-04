@@ -24,6 +24,20 @@ if (!$query)
 }
 ?>
 <script type="text/javascript" src="/assets/highcharts/highstock.js"></script>
+<link rel="stylesheet" href="/assets/highlightjs/tomorrow.min.css">
+<script src="/assets/highlightjs/highlight.min.js"></script>
+<style type="text/css">
+.highlight{
+    border:none;
+    padding:0;
+    margin:0;
+    background-color: transparent;
+}
+
+.hljs {
+    background: transparent;
+}
+</style>
 
 <div style="padding:0 15px;margin-top:-15px">
     <div class="row">
@@ -51,14 +65,14 @@ if (!$query)
                 echo '<td style="text-align:center"><i style="width:1em;font-size:9px;color:'.$statsColor.'" class="glyphicon glyphicon-'.$stats.'"></i></td>';
                 echo "<td>{$setting['name']}</td>";
                 echo "<td>{$table}</td>";
-                echo "<td>{$sql}</td>";
+                echo "<td><pre class='highlight'><code class=\"mysql\">{$sql}</code></pre></td>";
                 echo '</tr>';
             }
             ?>
             </table>
         </div>
         <div class="col-md-12">
-            <h5>统计曲线</h5>
+            <h4>运行记录监控</h4>
         </div>
         <div class="col-md-12">
             <table class="table table-bordered">
@@ -69,6 +83,66 @@ if (!$query)
                 </tr>
             </table>
         </div>
+
+        <div class="col-md-12">
+            <h4>统计中间值</h4>
+            <table class="table table-bordered table-striped">
+                <thead>
+                <tr style="white-space: nowrap">
+                    <th>键</th>
+                    <th>值</th>
+                    <th width="40">操作</th>
+                </tr>
+                </thead>
+                <?php
+                if ($this->worker->isSSDB)
+                {
+                    $data = $this->worker->ssdb->scan("total,{$key}_", "total,{$key}_z", 50);
+                }
+                else
+                {
+                    $it      = null;
+                    $arrKeys = $this->redis->scan($it, "total,{$key}_*", 50);
+                    $data    = [];
+                    foreach($arrKeys as $strKey)
+                    {
+                        $data[$strKey] = $this->redis->get($strKey);
+                    }
+                }
+
+                if ($data)
+                {
+                    $len = strlen("total,{$key}_");
+                    foreach ($data as $key => $item)
+                    {
+                        $item = unserialize($item) ?: [];
+                ?>
+                <tr>
+                    <td style="white-space: nowrap"><?php echo substr($key, $len);?></td>
+                    <td><pre class="highlight"><code class="json"><?php echo htmlentities(json_encode($item, JSON_UNESCAPED_UNICODE));?></code></pre></td>
+                    <td style="text-align:center;"><button class="btn btn-xs btn-danger">删</button></td>
+                </tr>
+                <?php
+                    }
+                }
+                else
+                {
+                    echo '<tr><td colspan="3">没有相关数据</td></tr>';
+                }
+                ?>
+            </table>
+        </div>
+
+
+        <div class="col-md-12">
+            <h4>配置数据</h4>
+            <?php
+            echo '<pre style="background: #fcfcfc"><code class="json">';
+            echo htmlspecialchars(json_encode($query, JSON_PRETTY_PRINT));
+            echo '</code></pre>';
+            ?>
+        </div>
+
     </div>
 </div>
 
@@ -188,10 +262,5 @@ $('#container').highcharts({
 });
 </script>
 
-<?php
 
-
-echo '<pre>';
-print_r($query);
-echo '</pre>';
-
+<script>hljs.initHighlightingOnLoad();</script>
