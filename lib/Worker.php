@@ -214,10 +214,13 @@ class Worker
             }
         }
 
-        # 加载task
         if ($this->redis)
         {
+            # 加载task
             $this->reloadTasks();
+
+            # 注册服务
+            $this->updateServerStatus();
         }
         else
         {
@@ -227,6 +230,7 @@ class Worker
                 if ($this->redis)
                 {
                     $this->reloadTasks();
+                    $this->updateServerStatus();
 
                     # 退出循环
                     swoole_timer_clear($id);
@@ -259,6 +263,7 @@ class Worker
             if ($this->redis)
             {
                 $this->reloadTasks();
+
                 # 设置内存数
                 $this->redis->hSet('server.memory', self::$serverName.'_'.$this->id, serialize([memory_get_usage(true), self::$timed, self::$serverName]));
             }
@@ -272,6 +277,13 @@ class Worker
             swoole_timer_tick($limit, function()
             {
                 $this->server->task('output');
+            });
+
+            # 没分钟处理
+            swoole_timer_tick(60000, function()
+            {
+                # 更新服务器信息
+                $this->updateServerStatus();
             });
 
 
@@ -907,6 +919,17 @@ class Worker
         {
             info("not found any task");
         }
+    }
+
+    protected function updateServerStatus()
+    {
+        if (!$this->redis)return false;
+
+        $data = [
+            'stats'      => $this->server->stats(),
+            'updateTime' => self::$timed,
+        ];
+        return $this->redis->hSet('servers', self::$serverName, json_encode($data)) ? true : false;
     }
 
     /**

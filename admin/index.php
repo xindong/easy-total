@@ -130,11 +130,25 @@ $useTime = array_map('intval', $useTime);
 ?>
 <div style="padding:0 15px;">
   <div class="row">
-    <div class="col-md-4" style="margin-bottom: 15px;">
-      <div id="container-server" style="height: 250px;border: 1px solid #ddd;"></div>
+    <div class="col-md-4" style="margin-bottom:15px;">
+      <ul class="list-group">
+        <li class="list-group-item list-group-item-warning">
+          <h4 style="margin:2px 0">服务器占用内存</h4>
+        </li>
+        <li class="list-group-item">
+          <div id="container-server" style="height:225px;"></div>
+        </li>
+      </ul>
     </div>
-    <div class="col-md-4" style="margin-bottom: 15px;">
-      <div id="container-redis" style="height: 250px;border: 1px solid #ddd;"></div>
+    <div class="col-md-4" style="margin-bottom:15px;">
+      <ul class="list-group">
+        <li class="list-group-item list-group-item-warning">
+          <h4 style="margin:2px 0"><?php echo $type;?>占用</h4>
+        </li>
+        <li class="list-group-item">
+          <div id="container-redis" style="height:225px;"></div>
+        </li>
+      </ul>
     </div>
     <div class="col-md-4" style="margin-bottom: 15px;">
       <div style="height: 240px">
@@ -145,6 +159,29 @@ $useTime = array_map('intval', $useTime);
           <li class="list-group-item">
             <span class="badge"><?php echo $this->worker->redis->hLen('queries');?></span>
             <a href="/admin/task/list/">任务数</a>
+          </li>
+          <li class="list-group-item">
+            <span class="badge"><?php
+              $servers = $this->worker->redis->hGetAll('servers');
+              if ($servers)
+              {
+                $count = 0;
+                foreach ($servers as $item)
+                {
+                  $arr = @json_decode($item, true);
+                  if ($arr && time() - $arr['updateTime'] < 120)
+                  {
+                    $count++;
+                  }
+                }
+                echo $count ?: 1;
+              }
+              else
+              {
+                echo '1';
+              }
+              ?></span>
+            集群服务器数
           </li>
           <li class="list-group-item">
             <span class="badge"><?php
@@ -168,7 +205,7 @@ $useTime = array_map('intval', $useTime);
           </li>
           <li class="list-group-item">
             <span class="badge"><?php echo date('Y-m-d H:i:s', $stat['start_time']);?></span>
-            服务器启动时间
+            当前服务器启动时间
           </li>
         </ul>
 
@@ -248,7 +285,7 @@ $useTime = array_map('intval', $useTime);
         min: 0,
         max: <?php echo $maxSize;?>,
         title: {
-          text: '<?php echo $type;?>占用'
+          text: null
         }
       },
 
@@ -276,7 +313,7 @@ $useTime = array_map('intval', $useTime);
         min: 0,
         max: 200,
         title: {
-          text: '服务占用内存'
+          text: null
         }
       },
 
