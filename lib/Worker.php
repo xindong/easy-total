@@ -561,7 +561,7 @@ class Worker
 
                     # 记录统计信息
                     $this->flushDataRunTime['counter'][$jobKey]['total'] += $count;
-                    $this->flushDataRunTime['counter'][$jobKey]['time']  += intval(1000 * (microtime(1) - $beginTime));
+                    $this->flushDataRunTime['counter'][$jobKey]['time']  += 1000 * (microtime(1) - $beginTime);
                 }
             }
         }
