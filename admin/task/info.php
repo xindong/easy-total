@@ -113,13 +113,13 @@ if (!$query)
                 if ($data)
                 {
                     $len = strlen("total,{$key}_");
-                    foreach ($data as $key => $item)
+                    foreach ($data as $k => $v)
                     {
-                        $item = unserialize($item) ?: [];
+                        $v = unserialize($v) ?: [];
                 ?>
                 <tr>
-                    <td style="white-space: nowrap"><?php echo substr($key, $len);?></td>
-                    <td><pre class="highlight"><code class="json"><?php echo htmlentities(json_encode($item, JSON_UNESCAPED_UNICODE));?></code></pre></td>
+                    <td style="white-space: nowrap"><?php echo substr($k, $len);?></td>
+                    <td><pre class="highlight"><code class="json"><?php echo htmlentities(json_encode($v, JSON_UNESCAPED_UNICODE));?></code></pre></td>
                     <td style="text-align:center;"><button class="btn btn-xs btn-danger">删</button></td>
                 </tr>
                 <?php
