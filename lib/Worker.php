@@ -1127,11 +1127,11 @@ class Worker
                 {
                     list($k1, $k2) = explode(',', $timeKey);
 
-                    $allCount += $value['total'];
+                    $allCount += $v['total'];
 
                     # 更新当前任务的当天统计信息
-                    $this->redis->hIncrBy("counter.total.$k1.$key", $k2, $value['total']);
-                    $this->redis->hIncrBy("counter.time.$k1.$key", $k2, $value['time']);
+                    $this->redis->hIncrBy("counter.total.$k1.$key", $k2, $v['total']);
+                    $this->redis->hIncrBy("counter.time.$k1.$key", $k2, $v['time']);
                 }
 
                 # 更新任务总的统计信息
