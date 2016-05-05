@@ -1120,8 +1120,6 @@ class Worker
             # 按每分钟分开
             foreach ($this->flushData['counter'] as $key => $value)
             {
-                if (is_array($value))
-                {
                 $allCount = 0;
                 foreach ($value as $timeKey => $v)
                 {
@@ -1136,7 +1134,6 @@ class Worker
 
                 # 更新任务总的统计信息
                 $this->redis->hIncrBy('counter', $key, $allCount);
-                }
                 unset($this->flushData['counter'][$key]);
             }
         }
