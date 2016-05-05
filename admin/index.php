@@ -100,9 +100,15 @@ if ($keys)foreach ($keys as $k)
   $tmp = $this->worker->redis->hGetAll('counter.time.'. substr($k, $keyLen)) ?: [];
   foreach ($tmp as $k1 => $v1)
   {
-    $useTime[$k1] += $v1;
+    $useTime[$k1] += $v1 / 1000;
   }
 }
+foreach ($useTime as & $item)
+{
+  $item = number_format($item, 3, '.', '');
+}
+unset($item);
+
 
 //$i = 0;
 //$totalArr = [];
@@ -400,14 +406,14 @@ $useTime = array_map('intval', $useTime);
         name: '处理数据量',
         type: 'spline',
         yAxis: 0,
-        data: <?php echo json_encode(array_values($total));?>,
+        data: <?php echo json_encode(array_values($total), JSON_NUMERIC_CHECK);?>,
         marker: {
           enabled: false
         }
       }, {
         name: '消耗时间',
         type: 'spline',
-        data: <?php echo json_encode(array_values($useTime));?>,
+        data: <?php echo json_encode(array_values($useTime), JSON_NUMERIC_CHECK);?>,
         yAxis: 1,
         dashStyle: 'shortdot',
         tooltip: {

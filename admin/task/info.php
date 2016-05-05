@@ -169,8 +169,11 @@ $timeKey = date('Y-m-d');
 $useTime = array_merge($useTime, $this->worker->redis->hGetAll("counter.time.$timeKey.$key") ?: []);
 $total   = array_merge($total, $this->worker->redis->hGetAll("counter.total.$timeKey.$key") ?: []);
 
-$total   = array_map('intval', $total);
-$useTime = array_map('intval', $useTime);
+$useTime = array_map(function($v)
+{
+    # 转成毫秒
+    return number_format($v / 1000, 3, '.', '');
+}, $useTime);
 ?>
 
 <script type="text/javascript">
@@ -242,14 +245,14 @@ $('#container').highcharts({
         name: '处理数据量',
         type: 'spline',
         yAxis: 0,
-        data: <?php echo json_encode(array_values($total));?>,
+        data: <?php echo json_encode(array_values($total), JSON_NUMERIC_CHECK);?>,
         marker: {
             enabled: false
         }
     }, {
         name: '消耗时间',
         type: 'spline',
-        data: <?php echo json_encode(array_values($useTime));?>,
+        data: <?php echo json_encode(array_values($useTime), JSON_NUMERIC_CHECK);?>,
         yAxis: 1,
         dashStyle: 'shortdot',
         tooltip: {
