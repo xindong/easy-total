@@ -903,23 +903,6 @@ class Manager
 
         $where = preg_replace('# and #i', ' && ', preg_replace('# or #i', ' || ', $where));
 
-        # 预处理函数
-        if (preg_match_all('#(?<fun>[a-z_0-9]+)\((?<field>[a-z0-9_"\'` ])(?:(?>[ ]+)?,(?>[ ]+)?(?<arg>[^\)]+))?\)#Ui', $where, $m))
-        {
-            foreach ($m[0] as $k => $v)
-            {
-                $hash = md5($v);
-
-                $funHash[$hash] = [
-                    'fun'   => strtolower($m['fun'][$k]),
-                    'field' => self::deQuoteValue($m['field'][$k]),
-                    'arg'   => self::deQuoteValue($m['arg'][$k]),
-                ];
-
-                $where = str_replace($v, "{$hash} func 0 = 0", $where);
-            }
-        }
-
         # 解析in, not in
         if (preg_match_all('#(?<field>[a-z0-9]+)[ ]+(?<notIn>not[ ]+)?in[ ]*\((?<arg>.+)\)#Ui', $where, $m))
         {
@@ -936,6 +919,23 @@ class Manager
                     'fun'   => $m['notIn'][$k] ? 'not_in' : 'in',
                     'field' => self::deQuoteValue($m['field'][$k]),
                     'arg'   => $arg,
+                ];
+
+                $where = str_replace($v, "{$hash} func 0 = 0", $where);
+            }
+        }
+
+        # 预处理函数
+        if (preg_match_all('#(?<fun>[a-z_0-9]+)\((?<field>[a-z0-9_"\'` ])(?:(?>[ ]+)?,(?>[ ]+)?(?<arg>[^\)]+))?\)#Ui', $where, $m))
+        {
+            foreach ($m[0] as $k => $v)
+            {
+                $hash = md5($v);
+
+                $funHash[$hash] = [
+                    'fun'   => strtolower($m['fun'][$k]),
+                    'field' => self::deQuoteValue($m['field'][$k]),
+                    'arg'   => self::deQuoteValue($m['arg'][$k]),
                 ];
 
                 $where = str_replace($v, "{$hash} func 0 = 0", $where);
