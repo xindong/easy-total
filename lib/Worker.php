@@ -549,6 +549,7 @@ class Worker
                     debug("worker: $this->id, tag: $tag, records count: " . $count);
                 }
 
+                $k = date('Y-m-d,H:i');
                 foreach ($jobs as $jobKey => $job)
                 {
                     $beginTime = microtime(1);
@@ -560,8 +561,8 @@ class Worker
                     }
 
                     # 记录统计信息
-                    $this->flushDataRunTime['counter'][$jobKey]['total'] += $count;
-                    $this->flushDataRunTime['counter'][$jobKey]['time']  += 1000000 * (microtime(1) - $beginTime);
+                    $this->flushDataRunTime['counter'][$jobKey][$k]['total'] += $count;
+                    $this->flushDataRunTime['counter'][$jobKey][$k]['time']  += 1000000 * (microtime(1) - $beginTime);
                 }
             }
         }
@@ -1117,17 +1118,25 @@ class Worker
         if ($this->flushData['counter'])
         {
             # 按每分钟分开
-            $k1 = date('Y-m-d');
-            $k2 = date('H:i');
             foreach ($this->flushData['counter'] as $key => $value)
             {
+                if (is_array($value))
+                {
+                $allCount = 0;
+                foreach ($value as $timeKey => $v)
+                {
+                    list($k1, $k2) = explode(',', $timeKey);
+
+                    $allCount += $value['total'];
+
+                    # 更新当前任务的当天统计信息
+                    $this->redis->hIncrBy("counter.total.$k1.$key", $k2, $value['total']);
+                    $this->redis->hIncrBy("counter.time.$k1.$key", $k2, $value['time']);
+                }
+
                 # 更新任务总的统计信息
-                $this->redis->hIncrBy('counter', $key, $value['total']);
-
-                # 更新当前任务的当天统计信息
-                $this->redis->hIncrBy("counter.total.$k1.$key", $k2, $value['total']);
-                $this->redis->hIncrBy("counter.time.$k1.$key", $k2, $value['time']);
-
+                $this->redis->hIncrBy('counter', $key, $allCount);
+                }
                 unset($this->flushData['counter'][$key]);
             }
         }
