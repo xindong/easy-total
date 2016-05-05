@@ -1390,12 +1390,12 @@ class Worker
 
                                     case 'in':
                                         $isIn = true;
-                                        $rs = in_array($item['arg'], $data[$item['field']]);
+                                        $rs = in_array($data[$item['field']], $item['arg']);
                                         break;
 
                                     case 'not_in':
                                         $isIn = true;
-                                        $rs = !in_array($item['arg'], $data[$item['field']]);
+                                        $rs = !in_array($data[$item['field']], $item['arg']);
                                         break;
 
                                     default:
