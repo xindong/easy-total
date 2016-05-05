@@ -152,7 +152,7 @@ uasort($queries, function($a, $b)
                 url: '/api/task/remove',
                 data: {
                     key: key,
-                    table: saveAs
+                    save: saveAs
                 },
                 type: 'post',
                 dataType: 'json',

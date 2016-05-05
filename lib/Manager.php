@@ -229,7 +229,7 @@ class Manager
                 break;
 
             case 'task/remove':
-                # 添加一个任务
+                # 移除一个任务
                 $option = null;
                 if (isset($this->request->post['sql']))
                 {
@@ -244,20 +244,17 @@ class Manager
                     }
 
                     $key   = $option['key'];
-                    $table = $option['table'];
                     $save  = key($option['saveAs']);
                 }
-                elseif (isset($this->request->post['key']) && isset($this->request->post['table']))
+                elseif (isset($this->request->post['key']) && isset($this->request->post['save']))
                 {
-                    $key   = $this->request->post['key'];
-                    $table = $this->request->post['table'];
-                    $save  = $this->request->post['saveAs'] ?: $table;
+                    $key  = $this->request->post['key'];
+                    $save = $this->request->post['save'];
                 }
-                elseif (isset($this->request->get['key']) && isset($this->request->post['table']))
+                elseif (isset($this->request->get['key']) && isset($this->request->get['save']))
                 {
-                    $key   = $this->request->get['key'];
-                    $table = $this->request->get['table'];
-                    $save  = $this->request->get['saveAs'] ?: $table;
+                    $key  = $this->request->get['key'];
+                    $save = $this->request->get['save'];
                 }
                 else
                 {
@@ -266,16 +263,21 @@ class Manager
                     goto send;
                 }
 
-                if (isset($key) && isset($table))
+                if (isset($key) && isset($save))
                 {
-                    if (isset($this->worker->tasks[$table][$key]))
-                    {
-                        $option = $this->worker->tasks[$table][$key];
-                    }
-                    else
+                    $option = $this->worker->redis->hGet('queries', $key);
+                    if (!$option)
                     {
                         $data['status']  = 'error';
-                        $data['message'] = "can not found (key={$key},table={$table},saveAs={$save}) task";
+                        $data['message'] = "can not found (key={$key},saveAs={$save}) task";
+                        goto send;
+                    }
+                    $option = @unserialize($option);
+
+                    if (!$option)
+                    {
+                        $data['status']  = 'error';
+                        $data['message'] = "数据解析错误,无法删除 (key={$key},saveAs={$save}) task";
                         goto send;
                     }
                 }
