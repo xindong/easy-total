@@ -97,6 +97,7 @@ if ($keys)foreach ($keys as $k)
   {
     $total[$k1] += $v1;
   }
+
   $tmp = $this->worker->redis->hGetAll('counter.time.'. substr($k, $keyLen)) ?: [];
   foreach ($tmp as $k1 => $v1)
   {
@@ -109,30 +110,6 @@ foreach ($useTime as & $item)
 }
 unset($item);
 
-
-//$i = 0;
-//$totalArr = [];
-//foreach ($total as $k => $v)
-//{
-//  $tmp        = ($timeBegin + $i * 60) * 1000;
-//  $totalArr[] = [$tmp, (int)$v];
-//  $i++;
-//}
-//$total = $totalArr;
-//
-//$i = 0;
-//$totalArr = [];
-//foreach ($useTime as $k => $v)
-//{
-//  $tmp        = ($timeBegin + $i * 60) * 1000;
-//  $totalArr[] = [$tmp, (int)$v];
-//  $i++;
-//}
-//$useTime = $totalArr;
-//unset($totalArr);
-
-$total   = array_map('intval', $total);
-$useTime = array_map('intval', $useTime);
 ?>
 <div style="padding:0 15px;">
   <div class="row">
