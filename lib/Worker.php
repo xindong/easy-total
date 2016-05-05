@@ -1011,8 +1011,8 @@ class Worker
                         foreach ($job['saveAs'] as $table => $st)
                         {
                             $data = [
-                                '_id'        => $id,
-                                'time_group' => $timeGroup,
+                                '_id'    => $id,
+                                '_group' => $timeGroup,
                             ];
 
                             if ($st['allField'])
