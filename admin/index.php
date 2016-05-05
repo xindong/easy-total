@@ -360,7 +360,7 @@ $useTime = array_map('intval', $useTime);
           }
         },
         title: {
-          text: '累计请求数',
+          text: '处理数据量',
           style: {
             color: Highcharts.getOptions().colors[0]
           }
@@ -374,7 +374,7 @@ $useTime = array_map('intval', $useTime);
           }
         },
         title: {
-          text: '累计耗时',
+          text: '消耗时间',
           style: {
             color: Highcharts.getOptions().colors[1]
           }
@@ -397,7 +397,7 @@ $useTime = array_map('intval', $useTime);
         backgroundColor: (Highcharts.theme && Highcharts.theme.legendBackgroundColor) || '#FFFFFF'
       },
       series: [{
-        name: '累计请求数',
+        name: '处理数据量',
         type: 'spline',
         yAxis: 0,
         data: <?php echo json_encode(array_values($total));?>,
@@ -405,7 +405,7 @@ $useTime = array_map('intval', $useTime);
           enabled: false
         }
       }, {
-        name: '累计耗时',
+        name: '消耗时间',
         type: 'spline',
         data: <?php echo json_encode(array_values($useTime));?>,
         yAxis: 1,
