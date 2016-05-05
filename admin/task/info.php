@@ -319,8 +319,7 @@ $('#container').highcharts({
         enabled: false
     },
     title: {
-        text: '数据处理统计曲线',
-        y: 20
+        text: null
     },
     scrollbar: {
         enabled: true,

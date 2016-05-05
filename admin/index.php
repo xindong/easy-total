@@ -199,7 +199,14 @@ unset($item);
     </div>
 
     <div class="col-md-12">
-      <div id="container-total" style="border:1px solid #ddd"></div>
+      <div class="panel panel-warning">
+        <div class="panel-heading">
+          <h3 class="panel-title">数据处理统计曲线</h3>
+        </div>
+        <div class="panel-body">
+          <div id="container-total"></div>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -331,8 +338,7 @@ unset($item);
         enabled: false
       },
       title: {
-        text: '今日数据处理统计曲线',
-        y: 20
+        text: null
       },
       xAxis: [{
         categories: <?php echo json_encode($arrKeys);?>,
