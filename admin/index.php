@@ -111,11 +111,14 @@ foreach ($useTime as & $item)
 unset($item);
 
 ?>
+<style type="text/css">
+  .list-group-item {border-color: #bce8f1;}
+</style>
 <div style="padding:0 15px;">
   <div class="row">
     <div class="col-md-4" style="margin-bottom:15px;">
       <ul class="list-group">
-        <li class="list-group-item list-group-item-warning">
+        <li class="list-group-item list-group-item-info">
           <h4 style="margin:2px 0">服务器占用内存</h4>
         </li>
         <li class="list-group-item">
@@ -125,7 +128,7 @@ unset($item);
     </div>
     <div class="col-md-4" style="margin-bottom:15px;">
       <ul class="list-group">
-        <li class="list-group-item list-group-item-warning">
+        <li class="list-group-item list-group-item-info">
           <h4 style="margin:2px 0"><?php echo $type;?>占用</h4>
         </li>
         <li class="list-group-item">
@@ -136,15 +139,15 @@ unset($item);
     <div class="col-md-4" style="margin-bottom: 15px;">
       <div style="height: 240px">
         <ul class="list-group">
-          <li class="list-group-item list-group-item-warning">
+          <li class="list-group-item list-group-item-info">
             <h4 style="margin:2px 0">服务器信息</h4>
           </li>
           <li class="list-group-item">
-            <span class="badge"><?php echo $this->worker->redis->hLen('queries');?></span>
+            <span class="badge" style="background:#5cb85c"><?php echo $this->worker->redis->hLen('queries');?></span>
             <a href="/admin/task/list/">任务数</a>
           </li>
           <li class="list-group-item">
-            <span class="badge"><?php
+            <span class="badge" style="background:#5bc0de"><?php
               $servers = $this->worker->redis->hGetAll('servers');
               if ($servers)
               {
@@ -167,21 +170,21 @@ unset($item);
             集群服务器数
           </li>
           <li class="list-group-item">
-            <span class="badge"><?php
+            <span class="badge" style="background:#f0ad4e"><?php
               echo number_format($totalTotalAll, 0, '.', ',');
               unset($tmp, $k1);
               ?></span>
             今日处理数据数
           </li>
           <li class="list-group-item">
-            <span class="badge"><?php
+            <span class="badge" style="background:#f0ad4e"><?php
               $allTotal = $this->worker->redis->hVals('counter') ?: [];
               echo number_format(array_sum($allTotal), 0, '.', ',');
               ?></span>
             累计处理数据总数
           </li>
           <li class="list-group-item">
-            <span class="badge"><?php
+            <span class="badge" style="background:#f0ad4e"><?php
               echo number_format(FluentServer::getCount(), 0, '.', ',');
             ?></span>
             启动后处理数据数
