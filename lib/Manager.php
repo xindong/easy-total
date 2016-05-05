@@ -119,7 +119,6 @@ class Manager
             case 'task/merge':
             case 'task/replace':
                 # 添加一个任务
-                $sql = $this->request->post['sql'];
 
                 if (!$this->worker->redis)
                 {
@@ -128,6 +127,7 @@ class Manager
                     goto send;
                 }
 
+                $sql = $this->request->post['sql'];
                 if (!$sql)
                 {
                     $data['status']  = 'error';
@@ -166,12 +166,12 @@ class Manager
                                 # 合并所有配置
                                 $option = self::mergeOption($oldOpt, $option);
 
-                                # 处理合并后的SQL
+                                # 更新合并后的SQL
                                 $option['sql'][$saveAs] = self::getSqlByOption($oldOpt);
 
                                 if ($uri !== 'task/replace')
                                 {
-                                    # 替换
+                                    # 合并语句
                                     $option['sqlOrigin'][$saveAs] = "$oldSql;\n$newSql";
                                 }
                             }
@@ -369,8 +369,13 @@ class Manager
                         }
                     }
 
-                    # 清理redis中的数据
-                    $this->worker->clearDataByKey($key);
+                    if ($sendType === 'task.remove')
+                    {
+                        # 异步清理redis中的数据
+                        # todo 异步删除数据
+                        # $this->server->task("clear|{$key}|{$option['table']}|{$save}");
+                        $this->worker->clearDataByKey($key);
+                    }
 
                     if (isset($sql))
                     {
