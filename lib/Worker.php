@@ -746,9 +746,10 @@ class Worker
         }
 
         # 分组数据
+        $timeGroup  = self::getTimeKey($time, $job['groupTime']['type'], $job['groupTime']['limit']);
         $groupValue = [
             $job['groupTime']['limit'] . $job['groupTime']['type'],
-            self::getTimeKey($time, $job['groupTime']['type'], $job['groupTime']['limit'])
+            $timeGroup,
         ];
 
         if ($job['groupBy'])foreach ($job['groupBy'] as $group)
@@ -796,7 +797,7 @@ class Worker
         }
 
         # 标记
-        $this->flushDataRunTime['jobs'][$key] = [$id, $time, $app, $table, $jobKey];
+        $this->flushDataRunTime['jobs'][$key] = [$id, $time, $timeGroup, $app, $table, $jobKey];
 
         return;
     }
@@ -971,8 +972,8 @@ class Worker
                     {
                         # 抢锁成功
 
-                        # $this->flushData['jobs'][$key] = [$id, $time, $app, $table, $jobKey];
-                        list($id, $time, $app, $fromTable, $jobKey) = $opt;
+                        # $this->flushData['jobs'][$key] = [$id, $time, $timeGroup, $app, $table, $jobKey];
+                        list($id, $time, $timeGroup, $app, $fromTable, $jobKey) = $opt;
 
                         # 获取所有统计相关数据
                         $totalKey = "total,{$key}";
@@ -1010,7 +1011,8 @@ class Worker
                         foreach ($job['saveAs'] as $table => $st)
                         {
                             $data = [
-                                '_id' => $id,
+                                '_id'    => $id,
+                                '_group' => $timeGroup,
                             ];
 
                             if ($st['allField'])
