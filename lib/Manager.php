@@ -160,20 +160,11 @@ class Manager
                             }
                             else
                             {
-                                $oldSql = $oldOpt['sqlOrigin'][$saveAs];
-                                $newSql = $option['sqlOrigin'][$saveAs];
-
                                 # 合并所有配置
                                 $option = self::mergeOption($oldOpt, $option);
 
                                 # 更新合并后的SQL
                                 $option['sql'][$saveAs] = self::getSqlByOption($oldOpt);
-
-                                if ($uri !== 'task/replace')
-                                {
-                                    # 合并语句
-                                    $option['sqlOrigin'][$saveAs] = "$oldSql;\n$newSql";
-                                }
                             }
                         }
                         else
@@ -297,7 +288,6 @@ class Manager
                     else
                     {
                         unset($option['sql'][$save]);
-                        unset($option['sqlOrigin'][$save]);
 
                         # 更新function
                         $option['function'] = [];
@@ -563,9 +553,6 @@ class Manager
                 'table' => $table,
                 'use'   => true,
                 'sql'   => [],
-                'sqlOrigin' => [
-                    $saveAs => $sql
-                ]
             ];
 
             if ($select === '*')
