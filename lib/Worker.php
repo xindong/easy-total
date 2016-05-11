@@ -1180,7 +1180,7 @@ class Worker
                     $this->flushProcessPID = null;
 
                     # 回收子进程
-                    swoole_process::wait(true);
+                    while (swoole_process::wait(true));
 
                     # 记录总耗时
                     $useTime = 1000000 * (microtime(1) - $time);
