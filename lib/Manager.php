@@ -189,7 +189,10 @@ class Manager
                 break;
 
             case 'task/remove':
-                # 移除一个任务
+            case 'task/restore':
+            case 'task/pause':
+            case 'task/start':
+                # 移除, 恢复, 暂停一个任务
                 $option = null;
                 if (isset($this->request->post['sql']))
                 {
@@ -203,33 +206,46 @@ class Manager
                         goto send;
                     }
 
-                    $key   = $option['key'];
-                    $save  = key($option['saveAs']);
+                    $sql = $option['sql'];
+                    $key = null;
+                    foreach ($this->worker->queries as $k => $query)
+                    {
+                        if ($sql === $query['sql'])
+                        {
+                            $key = $k;
+                            break;
+                        }
+                    }
+
+                    if (!$key)
+                    {
+                        $data['status']  = 'error';
+                        $data['message'] = 'can not found sql task: '.$sql;
+                        goto send;
+                    }
                 }
-                elseif (isset($this->request->post['key']) && isset($this->request->post['save']))
+                elseif (isset($this->request->post['key']))
                 {
-                    $key  = $this->request->post['key'];
-                    $save = $this->request->post['save'];
+                    $key = $this->request->post['key'];
                 }
-                elseif (isset($this->request->get['key']) && isset($this->request->get['save']))
+                elseif (isset($this->request->get['key']))
                 {
-                    $key  = $this->request->get['key'];
-                    $save = $this->request->get['save'];
+                    $key = $this->request->get['key'];
                 }
                 else
                 {
                     $data['status']  = 'error';
-                    $data['message'] = 'need arguments [key and table] or [sql]';
+                    $data['message'] = 'need arguments key or sql';
                     goto send;
                 }
 
-                if (isset($key) && isset($save))
+                if (isset($key))
                 {
                     $option = $this->worker->redis->hGet('queries', $key);
                     if (!$option)
                     {
                         $data['status']  = 'error';
-                        $data['message'] = "can not found (key={$key},saveAs={$save}) task";
+                        $data['message'] = "can not found (key: {$key})";
                         goto send;
                     }
                     $option = @unserialize($option);
@@ -237,66 +253,36 @@ class Manager
                     if (!$option)
                     {
                         $data['status']  = 'error';
-                        $data['message'] = "数据解析错误,无法删除 (key={$key},saveAs={$save}) task";
+                        $data['message'] = "数据解析错误 (key: {$key})";
                         goto send;
                     }
                 }
 
-                $sendType = 'task.update';
                 if ($option)
                 {
-                    $sql = $option['sql'][$save];
-                    unset($option['saveAs'][$save]);
-
-                    if (!$option['saveAs'])
+                    switch ($uri)
                     {
-                        # 没有其它任务, 可直接清除
-                        $rs       = $this->worker->redis->hDel('queries', $key);
-                        $sendType = 'task.remove';
+                        case 'task/restore':
+                            unset($option['deleteTime']);
+                            break;
+
+                        case 'task/pause':
+                            # 标记为暂停
+                            $option['use'] = false;
+                            break;
+
+                        case 'task/start':
+                            # 标记为暂停
+                            $option['use'] = true;
+                            break;
+
+                        default:
+                            # 标记为移除
+                            $option['deleteTime'] = time();
+                            break;
                     }
-                    else
-                    {
-                        unset($option['sql'][$save]);
 
-                        # 更新function
-                        $option['function'] = [];
-                        $allField           = false;
-                        foreach ($option['saveAs'] as $opt)
-                        {
-                            if ($opt['allField'])$allField = true;
-                            foreach ($opt['field'] as $st)
-                            {
-                                $type  = $st['type'];
-                                $field = $st['field'];
-                                switch ($type)
-                                {
-                                    case 'avg':
-                                        $option['function']['sum'][$field]  = true;
-                                        $option['function']['count']['*']   = true;
-                                        break;
-
-                                    case 'dist':
-                                    case 'list':
-                                    case 'listcount':
-                                        $option['function']['dist'][$field] = true;
-                                        break;
-
-                                    case 'count':
-                                        $option['function']['count']['*'] = true;
-                                        break;
-
-                                    default:
-                                        $option['function'][$type][$field] = true;
-                                        break;
-                                }
-                            }
-                        }
-                        # 是否全部字段
-                        $option['allField'] = $allField;
-
-                        # 更新数据
-                        $rs = $this->worker->redis->hSet('queries', $key, serialize($option));
-                    }
+                    $rs = $this->worker->redis->hSet('queries', $key, serialize($option));
                 }
                 else
                 {
@@ -307,37 +293,27 @@ class Manager
                 {
                     $data['status'] = 'ok';
 
-                    # 通知所有进程清理数据
-                    for ($i = 0; $i < $this->server->setting['worker_num']; $i++)
-                    {
-                        # 通知更新
-                        $msg = [
-                            'type' => $sendType,
-                            'key'  => $key,
-                        ];
-
-                        if ($i == $this->workerId)
-                        {
-                            # 直接请求
-                            $this->worker->onPipeMessage($this->server, $this->workerId, json_encode($msg));
-                        }
-                        else
-                        {
-                            # 通知执行
-                            $this->server->sendMessage(json_encode($msg), $i);
-                        }
-                    }
-
-                    if ($sendType === 'task.remove')
-                    {
-                        # 异步清理redis中的数据
-                        # todo 异步删除数据
-                        $this->server->task("clearByKey|{$key}|{$option['table']}|{$save}");
-                    }
+                    # 通知所有进程
+                    $this->notifyAllWorker('task.reload');
 
                     if (isset($sql))
                     {
-                        info("remove sql: {$sql}");
+                        if ($uri === 'task/restore')
+                        {
+                            info("restore sql: {$sql}");
+                        }
+                        elseif ($uri === 'task/pause')
+                        {
+                            info("restore sql: {$sql}");
+                        }
+                        elseif ($uri === 'task/start')
+                        {
+                            info("start sql: {$sql}");
+                        }
+                        else
+                        {
+                            info("remove sql: {$sql}");
+                        }
                     }
                 }
                 else
@@ -354,10 +330,10 @@ class Manager
                     $queries = $this->worker->redis->hGetAll('queries');
                     if ($queries)foreach ($queries as $key => $query)
                     {
-                        $query = unserialize($query);
-                        foreach ($query['sql'] as $table => $sql)
+                        $query = @unserialize($query);
+                        if ($query)
                         {
-                            $rs[] = $sql;
+                            $rs[$query['key']] = $query['sql'];
                         }
                     }
 
@@ -367,36 +343,6 @@ class Manager
                 {
                     $data['status']  = 'error';
                     $data['message'] = 'please check redis server.';
-                }
-
-                break;
-
-            case 'task/pause':
-                # 暂停任务
-                if (isset($this->request->get['key']))
-                {
-                    $key = $this->request->get['key'];
-                }
-                else
-                {
-                    $data['status']  = 'error';
-                    $data['message'] = 'need parameter key';
-                    break;
-                }
-
-                break;
-
-            case 'task/start':
-                # 开启任务任务
-                if (isset($this->request->get['key']))
-                {
-                    $key = $this->request->get['key'];
-                }
-                else
-                {
-                    $data['status']  = 'error';
-                    $data['message'] = 'need parameter key';
-                    break;
                 }
 
                 break;
@@ -559,8 +505,10 @@ class Manager
         # 设置查询的映射
         foreach ($option['groupTime'] as $groupKey => $st)
         {
-            $seriesOption['queries'][$groupKey][] = $option['key'];
-            $seriesOption['queries'][$groupKey]   = array_unique($seriesOption['queries'][$groupKey]);
+            if (!$seriesOption['queries'][$groupKey] || (is_array($seriesOption['queries'][$groupKey]) && !in_array($option['key'], $seriesOption['queries'][$groupKey])))
+            {
+                $seriesOption['queries'][$groupKey][] = $option['key'];
+            }
         }
 
         return false !== $this->worker->redis->hSet('series', $seriesKey, serialize($seriesOption));

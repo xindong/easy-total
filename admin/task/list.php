@@ -57,20 +57,34 @@ uasort($queries, function($a, $b)
                 {
                     $i++;
                     $stats      = $query['use'] ? 'ok' : 'pause';
+                    $statsText  = $query['use'] ? '运行中' : '暂停';
                     $statsColor = $query['use'] ? '#d43f3a' : '#eea236';
                     $saveAs     = implode(',', $query['saveAs']);
+
+                    if ($query['deleteTime'] > 0)
+                    {
+                        # 已经删除了
+
+                        $stats      = 'remove-circle';
+                        $statsText  = '已移除';
+                        $statsColor = '#d9534f';
+                    }
                     echo "<tr>
 <td style=\"text-align:center\">{$i}</td>
 <td>{$query['name']}</td>
 <td><pre class='highlight'><code class=\"mysql\">{$query['sql']}</code></pre></td>
 <td style=\"text-align:center;white-space:nowrap\">{$saveAs}</td>
-<td style=\"text-align:center;\"><i style='font-size:9px;color:{$statsColor}' class=\"glyphicon glyphicon-{$stats}\"></i></td>
+<td style=\"text-align:center;\"><i style='font-size:9px;color:{$statsColor}' data-toggle=\"tooltip\" title=\"$statsText\" class=\"glyphicon glyphicon-{$stats}\"></i></td>
 <td style='text-align:center;font-size:12px;padding-top:11px'>".date('Y-m-d H:i:s', $query['createTime'])."</td>
 <td align=\"center\">
 <a href=\"/admin/task/info/?key={$query['key']}\"><button type=\"button\" class=\"btn btn-info btn-xs\">管理</button></a>
 <a href=\"/admin/task/pause/\"><button type=\"button\" class=\"btn btn-warning btn-xs\">暂停</button></a>
-<button data-key=\"{$query['key']}\" data-save-as=\"{$saveAs}\" type=\"button\" class=\"btn btn-danger btn-xs task-delete\">删除</button>
-</td></tr>";
+" . ($query['deleteTime'] > 0 ?
+"<button data-key=\"{$query['key']}\" type=\"button\" class=\"btn btn-danger btn-xs task-delete\">删除</button>"
+:
+"<button data-key=\"{$query['key']}\" type=\"button\" class=\"btn btn-danger btn-xs task-restore\">恢复</button>"
+).
+"</td></tr>";
                 }
                 ?>
                 </tbody>
@@ -148,8 +162,7 @@ uasort($queries, function($a, $b)
             $.ajax({
                 url: '/api/task/remove',
                 data: {
-                    key: key,
-                    save: saveAs
+                    key: key
                 },
                 type: 'post',
                 dataType: 'json',
@@ -161,6 +174,38 @@ uasort($queries, function($a, $b)
                         return;
                     }
                     alert('删除成功');
+                    window.location.reload();
+                },
+                error: function(xhr, status, err)
+                {
+                    alert('请求服务器失败');
+                }
+            });
+        }
+    });
+
+    $('.task-restore').on('click', function()
+    {
+        var $this  = $(this);
+        var key    = $this.data('key');
+        var saveAs = $this.data('saveAs');
+        if (confirm('确定要删除?'))
+        {
+            $.ajax({
+                url: '/api/task/restore',
+                data: {
+                    key: key
+                },
+                type: 'post',
+                dataType: 'json',
+                success: function(data, status, xhr)
+                {
+                    if (data.status == 'error')
+                    {
+                        alert(data.message || '恢复失败');
+                        return;
+                    }
+                    alert('恢复成功');
                     window.location.reload();
                 },
                 error: function(xhr, status, err)

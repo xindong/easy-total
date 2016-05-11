@@ -645,7 +645,7 @@ class Worker
 
             if (IS_DEBUG)
             {
-                debug('flushData jobs number: '. count($this->flushData['jobs']));
+                debug('flush data jobs number: '. count($this->flushData['jobs']));
             }
 
             if (count($this->flushData['jobs']) > 1000)
@@ -665,26 +665,13 @@ class Worker
      */
     public function onPipeMessage(swoole_server $server, $fromWorkerId, $message)
     {
-        if (substr($message, 0, 1) === '{')
+        switch ($message)
         {
-            $data = @json_decode($message, true);
-            if ($data)
-            {
-                switch ($data['type'])
-                {
-                    case 'task.update':
-                    case 'task.remove':
-                        # 更新配置
-                        $this->reloadSetting();
-                        break;
-
-                        break;
-
-                }
-            }
+            case 'task.reload':
+                # 更新配置
+                $this->reloadSetting();
+                break;
         }
-
-        return;
     }
 
     public function onFinish($server, $task_id, $data)
@@ -967,6 +954,11 @@ class Worker
                 {
                     debug("query not use, key: {$opt['key']}, table: {$opt['table']}");
                 }
+                continue;
+            }
+            elseif ($opt['deleteTime'] > 0)
+            {
+                # 已经标记为移除了的任务
                 continue;
             }
 

@@ -374,7 +374,7 @@ unset($item);
           }
         },
         title: {
-          text: '消耗时间',
+          text: '处理数据耗时',
           style: {
             color: Highcharts.getOptions().colors[1]
           }
@@ -389,7 +389,7 @@ unset($item);
           }
         },
         title: {
-          text: '数据合并消耗时间',
+          text: '汇总合并耗时',
           style: {
             color: Highcharts.getOptions().colors[1]
           }
@@ -420,7 +420,7 @@ unset($item);
           enabled: false
         }
       }, {
-        name: '消耗时间',
+        name: '处理数据耗时',
         type: 'spline',
         data: <?php echo json_encode(array_values($useTime), JSON_NUMERIC_CHECK);?>,
         yAxis: 1,
@@ -432,7 +432,7 @@ unset($item);
           enabled: false
         }
       }, {
-        name: '数据合并消耗时间',
+        name: '汇总合并耗时',
         type: 'spline',
         data: <?php echo json_encode(array_values($pushTime), JSON_NUMERIC_CHECK);?>,
         yAxis: 1,

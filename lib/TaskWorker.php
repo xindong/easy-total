@@ -32,33 +32,31 @@ class TaskWorker
      */
     public function onTask(swoole_server $server, $taskId, $fromId, $data)
     {
-        switch ($data)
+        try
         {
-            case 'output':
-                $ssdb  = null;
-                $redis = new Redis();
-                $redis->pconnect(FluentServer::$config['redis']['host'], FluentServer::$config['redis']['port']);
+            switch ($data)
+            {
+                case 'output':
+                    $this->outputToFluent();
+                    break;
 
-                if (false === $redis->time())
-                {
-                    require_once __DIR__ . '/SSDB.php';
-                    $ssdb = new SimpleSSDB(FluentServer::$config['redis']['host'], FluentServer::$config['redis']['port']);
-                }
+                case 'clean':
+                    # 每天清理数据
+                    $this->clean();
 
-                $this->outputToFluent($redis, $ssdb);
-
-                $redis->close();
-                break;
-            case 'clean':
-                # 每天清理数据
-                $this->clean();
-                break;
+                    info("clean date at ". date('Y-m-d H:i:s'));
+                    break;
+            }
+        }
+        catch (Exception $e)
+        {
+            warn($e->getMessage());
         }
     }
 
     public function shutdown()
     {
-
+        # 没有什么需要处理的
     }
 
 
@@ -67,110 +65,199 @@ class TaskWorker
      *
      * @param $key
      */
-    public function clearDataByKey($key)
+    public function clearSeriesDataByKey($key)
     {
-        if ($this->isSSDB)
+        /**
+         * @var Redis $redis
+         * @var SimpleSSDB $ssdb
+         */
+        list($redis, $ssdb) = self::getRedis();
+        if (false === $redis)return false;
+
+
+        if ($ssdb)
         {
-            while ($keys = $this->ssdb->hlist("total,{$key},", "total,{$key},z", 100))
+            foreach (['total', 'dist', 'join'] as $item)
             {
-                foreach ($keys as $k)
+                while ($keys = $ssdb->hlist("{$item},{$key},", "{$item},{$key},z", 100))
                 {
-                    $this->ssdb->hclear($k);
+                    foreach ($keys as $k)
+                    {
+                        $ssdb->hclear($k);
+                    }
                 }
             }
 
-            while ($keys = $this->ssdb->hlist("dist,{$key},", "dist,{$key},z", 100))
-            {
-                foreach ($keys as $k)
-                {
-                    $this->ssdb->hclear($k);
-                }
-            }
-
-            while ($keys = $this->ssdb->hlist("join,{$key},", "dist,{$key},z", 100))
-            {
-                foreach ($keys as $k)
-                {
-                    $this->ssdb->hclear($k);
-                }
-            }
+            $ssdb->hclear("series.app.$key");
         }
         else
         {
-            $keys = $this->redis->keys("total,{$key},*");
-            if ($keys)
+            foreach (['total', 'dist', 'join'] as $item)
             {
-                $this->redis->delete($keys);
+                $keys = $redis->keys("{$item},{$key},*");
+                if ($keys)
+                {
+                    $redis->delete($keys);
+                }
             }
 
-            $keys = $this->redis->keys("dist,{$key},*");
-            if ($keys)
-            {
-                $this->redis->delete($keys);
-            }
-
-            $keys = $this->redis->keys("join,{$key},*");
-            if ($keys)
-            {
-                $this->redis->delete($keys);
-            }
+            $redis->delete("series.app.$key");
         }
+
+        $redis->close();
+        if ($ssdb)$ssdb->close();
+
+        return true;
     }
 
+    /**
+     * 每天清理数据
+     *
+     * @return bool
+     */
     protected function clean()
     {
+        /**
+         * @var Redis $redis
+         * @var SimpleSSDB $ssdb
+         */
+        list($redis, $ssdb) = self::getRedis();
+        if (false === $redis)return false;
+
+        # 清理已经删除的任务
+        $queries = array_map('unserialize', $redis->hGetAll('queries'));
+        foreach ($queries as $key => $query)
+        {
+            if ($query['deleteTime'] > 0)
+            {
+                unset($queries[$key]);
+                $redis->hDel('queries', $key);
+                info("clean data, remove sql({$key}): {$query['sql']}");
+            }
+        }
+
+        $updateSeries = [];
+        $series       = array_map('unserialize', $redis->hGetAll('series'));
+        foreach ($series as $key => $item)
+        {
+            if ($item['queries'])
+            {
+                # 遍历所有的查询关系设置
+                /*
+                 exp:
+                 $item['queries'] = [
+                    '1d' => ['abcdef123123', 'abc12312353'],
+                    '1h' => ['abcdef123123', 'abc12312353'],
+                ];
+                 */
+                foreach ($item['queries'] as $st => $keys)
+                {
+                    foreach ($keys as $k => $v)
+                    {
+                        if (!isset($queries[$v]))
+                        {
+                            unset($item[$st][$k]);
+                            if (!$item[$st][$k])
+                            {
+                                unset($item[$st][$k]);
+                            }
+                            else
+                            {
+                                # 更新
+                                $item[$st][$k] = array_values($item[$st][$k]);
+                            }
+
+                            # 放到需要处理的变量里
+                            $updateSeries[$key] = $item;
+                        }
+                    }
+                }
+            }
+            else
+            {
+                $updateSeries[$key] = $item;
+            }
+        }
+
+        # 进行清理数据操作
+        if ($updateSeries)
+        {
+            foreach ($updateSeries as $key => $item)
+            {
+                if (!$item['queries'])
+                {
+                    # 没有关联的查询了, 直接删除这个序列
+                    if ($this->clearSeriesDataByKey($key))
+                    {
+                        # 移除任务
+                        $redis->hDel('series', $key);
+                    }
+                }
+            }
+        }
+
+
+
         # 清理每天的统计数据, 只保留10天内的
         $time = time();
-        $k1   = date('Y-m-d', $time - 86400 * 11);
-        $k2   = date('Y-m-d', $time - 86400 * 12);
-        if ($this->isSSDB)
+        $k1   = date('Y-m-d', $time - 86400 * 12);
+        $k2   = date('Y-m-d', $time - 86400 * 11);
+
+        if ($ssdb)
         {
-            while ($keys = $this->ssdb->hlist("counter.total.$k1", "counter.total.$k2", 100))
+            foreach (['total', 'time', 'pushtime'] as $item)
             {
-                # 列出key
-                foreach ($keys as $k)
+                foreach (['counter', 'counterApp'] as $k0)
                 {
-                    # 清除
-                    $this->ssdb->hclear($k);
+                    while ($keys = $ssdb->hlist("$k0.$item.$k1", "counter.$item.$k2", 100))
+                    {
+                        # 列出key
+                        foreach ($keys as $k)
+                        {
+                            # 清除
+                            $ssdb->hclear($k);
+                        }
+                    }
                 }
             }
-            while ($keys = $this->ssdb->hlist("counter.time.$k1", "counter.time.$k2", 100))
-            {
-                # 列出key
-                foreach ($keys as $k)
-                {
-                    # 清除
-                    $this->ssdb->hclear($k);
-                }
-            }
+
+            $ssdb->hclear("counter.allpushtime.$k1");
+            $ssdb->hclear("counter.allpushtime.$k2");
         }
         else
         {
-            # 获取所有key
-            $keys = $this->redis->keys("counter.total.$k1.*");
-            if ($keys)foreach ($keys as $k)
+            foreach (['total', 'time', 'pushtime'] as $item)
             {
-                $this->redis->delete($k);
+                foreach (['counter', 'counterApp'] as $k0)
+                {
+                    $keys = $redis->keys("$k0.$item.$k1.*");
+                    if ($keys)
+                    {
+                        foreach ($keys as $k)
+                        {
+                            $redis->delete($k);
+                        }
+                    }
+
+                    $keys = $redis->keys("$k0.$item.$k2.*");
+                    if ($keys)
+                    {
+                        foreach ($keys as $k)
+                        {
+                            $redis->delete($k);
+                        }
+                    }
+                }
             }
 
-            $keys = $this->redis->keys("counter.time.$k1.*");
-            if ($keys)foreach ($keys as $k)
-            {
-                $this->redis->delete($k);
-            }
-
-            $keys = $this->redis->keys("counter.total.$k2.*");
-            if ($keys)foreach ($keys as $k)
-            {
-                $this->redis->delete($k);
-            }
-
-            $keys = $this->redis->keys("counter.time.$k2.*");
-            if ($keys)foreach ($keys as $k)
-            {
-                $this->redis->delete($k);
-            }
+            $redis->delete("counter.allpushtime.$k1");
+            $redis->delete("counter.allpushtime.$k2");
         }
+
+        $redis->close();
+        if ($ssdb)$ssdb->close();
+
+        return true;
     }
 
     /**
@@ -178,8 +265,15 @@ class TaskWorker
      *
      * @return bool
      */
-    protected function outputToFluent(Redis $redis, $ssdb = null)
+    protected function outputToFluent()
     {
+        /**
+         * @var Redis $redis
+         * @var SimpleSSDB $ssdb
+         */
+        list($redis, $ssdb) = self::getRedis();
+        if (false === $redis)return false;
+
         getLock:
 
         $lockKey = 'output_lock';
@@ -324,6 +418,37 @@ class TaskWorker
         # 释放锁
         $redis->delete($lockKey);
 
+        # 关闭连接
+        $redis->close();
+        if ($ssdb)$ssdb->close();
+
         return true;
+    }
+
+    /**
+     * 获取Redis连接
+     *
+     * @return array
+     */
+    protected static function getRedis()
+    {
+        try
+        {
+            $ssdb  = null;
+            $redis = new Redis();
+            $redis->pconnect(FluentServer::$config['redis']['host'], FluentServer::$config['redis']['port']);
+
+            if (false === $redis->time())
+            {
+                require_once __DIR__ . '/SSDB.php';
+                $ssdb = new SimpleSSDB(FluentServer::$config['redis']['host'], FluentServer::$config['redis']['port']);
+            }
+
+            return [$redis, $ssdb];
+        }
+        catch (Exception $e)
+        {
+            return [false, false];
+        }
     }
 }
