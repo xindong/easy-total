@@ -312,11 +312,12 @@ class Worker
             # 清理老数据
             if ($this->buffer)
             {
+                self::$timed = time();
                 foreach ($this->buffer as $k => $v)
                 {
-                    if (self::$timed - $this->bufferTime[$k] > 180)
+                    if (self::$timed - $this->bufferTime[$k] > 300)
                     {
-                        # 超过1分钟没有更新数据, 则移除
+                        # 超过5分钟没有更新数据, 则移除
                         info('clear expired data len: '. $this->bufferLen[$k]);
 
                         unset($this->buffer[$k]);
@@ -1145,7 +1146,7 @@ class Worker
                     {
                         # 任务完成
                         $worker->write('done');
-                        if ($tick)swoole_timer_del($tick);
+                        if ($tick)swoole_timer_clear($tick);
                         $exit();
                     }
                 });

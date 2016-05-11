@@ -385,13 +385,13 @@ unset($item);
         labels: {
           format: '{value}ms',
           style: {
-            color: Highcharts.getOptions().colors[1]
+            color: Highcharts.getOptions().colors[2]
           }
         },
         title: {
           text: '汇总合并耗时',
           style: {
-            color: Highcharts.getOptions().colors[1]
+            color: Highcharts.getOptions().colors[2]
           }
         },
         opposite: true
