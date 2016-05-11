@@ -1075,23 +1075,29 @@ class Worker
                 $this->dumpFileData = [];
             }
 
+            $tick = null;
+
             # 结束程序
-            $exit = function() use ($worker)
+            $exit = function() use ($worker, & $tick)
             {
+                # 退出循环
+                swoole_event_del($worker->pipe);
+                if ($tick)swoole_timer_clear($tick);
+
                 # 执行导出数据
                 $this->dumpData();
 
                 # 退出子进程
                 $worker->daemon(true);
-                $worker->exit(0);
-                exit;
+                $worker->exit(2);
+                die();
             };
 
             # 监听一个退出信号
             swoole_process::signal(SIGINT, function($signo) use ($exit)
             {
                 $exit();
-                die;
+                die();
             });
 
             # 接受主进程的消息通知
@@ -1101,7 +1107,7 @@ class Worker
                 {
                     # 收到一个退出程序的请求
                     $exit();
-                    exit;
+                    exit(2);
                 }
             });
 
@@ -1141,14 +1147,12 @@ class Worker
             else
             {
                 # 如果每一次性处理完毕, 放在异步里每秒钟重试一次
-                $tick = null;
                 $tick = swoole_timer_tick(1000, function() use ($run, $worker, $exit, & $tick)
                 {
                     if ($run())
                     {
                         # 任务完成
                         $worker->write('done');
-                        if ($tick)swoole_timer_clear($tick);
                         $exit();
                         exit;
                     }
