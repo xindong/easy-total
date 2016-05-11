@@ -61,6 +61,7 @@ $stat = $this->server->stats();
 $time      = time();
 $timeBegin = strtotime(date('Y-m-d 00:00:00'));
 $useTime   = [];
+$pushTime  = [];
 $total     = [];
 $arrKeys   = [];
 for ($i = 0; $i < 1440; $i++)
@@ -71,11 +72,12 @@ for ($i = 0; $i < 1440; $i++)
 
   if ($timeLimit < $time)
   {
-    $useTime[$k] = 0;
-    $total[$k]   = 0;
+    $total[$k]    = 0;
+    $useTime[$k]  = 0;
+    $pushTime[$k] = 0;
   }
 }
-$timeKey       = date('Y-m-d');
+$timeKey       = date('Ymd');
 $totalTotalAll = 0;
 
 if ($this->worker->isSSDB)
@@ -102,6 +104,12 @@ if ($keys)foreach ($keys as $k)
   foreach ($tmp as $k1 => $v1)
   {
     $useTime[$k1] += $v1 / 1000;
+  }
+
+  $tmp = $this->worker->redis->hGetAll('counter.pushtime.'. substr($k, $keyLen)) ?: [];
+  foreach ($tmp as $k1 => $v1)
+  {
+    $pushTime[$k1] += $v1 / 1000;
   }
 }
 foreach ($useTime as & $item)
@@ -373,6 +381,21 @@ unset($item);
         },
         opposite: true
 
+      }, { // Primary yAxis
+        labels: {
+          format: '{value}ms',
+          style: {
+            color: Highcharts.getOptions().colors[1]
+          }
+        },
+        title: {
+          text: '数据合并消耗时间',
+          style: {
+            color: Highcharts.getOptions().colors[1]
+          }
+        },
+        opposite: true
+
       }],
       tooltip: {
         shared: true
@@ -400,6 +423,18 @@ unset($item);
         name: '消耗时间',
         type: 'spline',
         data: <?php echo json_encode(array_values($useTime), JSON_NUMERIC_CHECK);?>,
+        yAxis: 1,
+        dashStyle: 'shortdot',
+        tooltip: {
+          valueSuffix: 'ms'
+        },
+        marker: {
+          enabled: false
+        }
+      }, {
+        name: '数据合并消耗时间',
+        type: 'spline',
+        data: <?php echo json_encode(array_values($pushTime), JSON_NUMERIC_CHECK);?>,
         yAxis: 1,
         dashStyle: 'shortdot',
         tooltip: {

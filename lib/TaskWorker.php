@@ -32,24 +32,146 @@ class TaskWorker
      */
     public function onTask(swoole_server $server, $taskId, $fromId, $data)
     {
-        if ($data === 'output')
+        switch ($data)
         {
-            $ssdb  = null;
-            $redis = new Redis();
-            $redis->pconnect(FluentServer::$config['redis']['host'], FluentServer::$config['redis']['port']);
+            case 'output':
+                $ssdb  = null;
+                $redis = new Redis();
+                $redis->pconnect(FluentServer::$config['redis']['host'], FluentServer::$config['redis']['port']);
 
-            if (false === $redis->time())
-            {
-                require_once __DIR__ . '/SSDB.php';
-                $ssdb = new SimpleSSDB(FluentServer::$config['redis']['host'], FluentServer::$config['redis']['port']);
-            }
+                if (false === $redis->time())
+                {
+                    require_once __DIR__ . '/SSDB.php';
+                    $ssdb = new SimpleSSDB(FluentServer::$config['redis']['host'], FluentServer::$config['redis']['port']);
+                }
 
-            $this->outputToFluent($redis, $ssdb);
+                $this->outputToFluent($redis, $ssdb);
 
-            $redis->close();
+                $redis->close();
+                break;
+            case 'clean':
+                # 每天清理数据
+                $this->clean();
+                break;
         }
     }
 
+    public function shutdown()
+    {
+
+    }
+
+
+    /**
+     * 清理redis中的数据
+     *
+     * @param $key
+     */
+    public function clearDataByKey($key)
+    {
+        if ($this->isSSDB)
+        {
+            while ($keys = $this->ssdb->hlist("total,{$key},", "total,{$key},z", 100))
+            {
+                foreach ($keys as $k)
+                {
+                    $this->ssdb->hclear($k);
+                }
+            }
+
+            while ($keys = $this->ssdb->hlist("dist,{$key},", "dist,{$key},z", 100))
+            {
+                foreach ($keys as $k)
+                {
+                    $this->ssdb->hclear($k);
+                }
+            }
+
+            while ($keys = $this->ssdb->hlist("join,{$key},", "dist,{$key},z", 100))
+            {
+                foreach ($keys as $k)
+                {
+                    $this->ssdb->hclear($k);
+                }
+            }
+        }
+        else
+        {
+            $keys = $this->redis->keys("total,{$key},*");
+            if ($keys)
+            {
+                $this->redis->delete($keys);
+            }
+
+            $keys = $this->redis->keys("dist,{$key},*");
+            if ($keys)
+            {
+                $this->redis->delete($keys);
+            }
+
+            $keys = $this->redis->keys("join,{$key},*");
+            if ($keys)
+            {
+                $this->redis->delete($keys);
+            }
+        }
+    }
+
+    protected function clean()
+    {
+        # 清理每天的统计数据, 只保留10天内的
+        $time = time();
+        $k1   = date('Y-m-d', $time - 86400 * 11);
+        $k2   = date('Y-m-d', $time - 86400 * 12);
+        if ($this->isSSDB)
+        {
+            while ($keys = $this->ssdb->hlist("counter.total.$k1", "counter.total.$k2", 100))
+            {
+                # 列出key
+                foreach ($keys as $k)
+                {
+                    # 清除
+                    $this->ssdb->hclear($k);
+                }
+            }
+            while ($keys = $this->ssdb->hlist("counter.time.$k1", "counter.time.$k2", 100))
+            {
+                # 列出key
+                foreach ($keys as $k)
+                {
+                    # 清除
+                    $this->ssdb->hclear($k);
+                }
+            }
+        }
+        else
+        {
+            # 获取所有key
+            $keys = $this->redis->keys("counter.total.$k1.*");
+            if ($keys)foreach ($keys as $k)
+            {
+                $this->redis->delete($k);
+            }
+
+            $keys = $this->redis->keys("counter.time.$k1.*");
+            if ($keys)foreach ($keys as $k)
+            {
+                $this->redis->delete($k);
+            }
+
+            $keys = $this->redis->keys("counter.total.$k2.*");
+            if ($keys)foreach ($keys as $k)
+            {
+                $this->redis->delete($k);
+            }
+
+            $keys = $this->redis->keys("counter.time.$k2.*");
+            if ($keys)foreach ($keys as $k)
+            {
+                $this->redis->delete($k);
+            }
+        }
+    }
 
     /**
      * 将数据重新分发到 Fluent
@@ -184,7 +306,7 @@ class TaskWorker
                     }
                     else
                     {
-                        debug("push data to ". FluentServer::$config['output']['fluent'] . ' fail.');
+                        debug("push data to ". FluentServer::$config['output']['type'] .': '. FluentServer::$config['output']['link'] . ' fail.');
                     }
                 }
             }

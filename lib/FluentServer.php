@@ -229,6 +229,11 @@ class FluentServer
         if ($server->taskworker)
         {
             $type = 'Tasker';
+
+            if ($this->taskWorker)
+            {
+                $this->taskWorker->shutdown();
+            }
         }
         else
         {
@@ -237,7 +242,7 @@ class FluentServer
             if ($this->worker)
             {
                 # 保存数据
-                $this->worker->dumpData();
+                $this->worker->shutdown();
             }
         }
 

@@ -35,6 +35,8 @@ class Manager
         $this->server   = $server;
         $this->worker   = $worker;
         $this->workerId = $workerId;
+
+        require_once __DIR__ .'/Sql.php';
     }
 
     /**
@@ -116,8 +118,6 @@ class Manager
         switch ($uri)
         {
             case 'task/add':
-            case 'task/merge':
-            case 'task/replace':
                 # 添加一个任务
 
                 if (!$this->worker->redis)
@@ -135,61 +135,31 @@ class Manager
                     goto send;
                 }
 
-                if ($option = self::parseSql($sql))
+                if ($option = SQL::parseSql($sql))
                 {
-                    $key    = $option['key'];
-                    $table  = $option['table'];
-                    $saveAs = key($option['saveAs']);
+                    $key = $option['key'];
 
-                    $option['setting'][$saveAs]['name'] = trim($this->request->post['name']) ?: "from {$table} to {$saveAs}";
-                    $option['setting'][$saveAs]['time'] = time();
-
-                    if (isset($this->worker->tasks[$table][$key]))
+                    if ($this->request->post['name'])
                     {
-                        $oldOpt = $this->worker->tasks[$table][$key];
-
-                        if (isset($oldOpt['saveAs'][$saveAs]))
-                        {
-                            # 已经存在一个
-                            if ($uri === 'task/add' && !(isset($this->request->post['merge']) && $this->request->post['merge'] == 'yes'))
-                            {
-                                $data['status']  = 'error';
-                                $data['message'] = "the task from {$table} and save as {$saveAs} already exists. you can use api task/merge update the exists task";
-
-                                goto send;
-                            }
-                            else
-                            {
-                                # 合并所有配置
-                                $option = self::mergeOption($oldOpt, $option);
-
-                                # 更新合并后的SQL
-                                $option['sql'][$saveAs] = self::getSqlByOption($oldOpt);
-                            }
-                        }
-                        else
-                        {
-                            $option = self::mergeOption($oldOpt, $option);
-                        }
+                        $option['name'] = trim($this->request->post['name']);
                     }
 
-                    if (false !== $this->worker->redis->hSet('queries', $key, serialize($option)))
+                    if ($this->request->post['start'] > time())
+                    {
+                        # 开始时间
+                        $option['start'] = (int)$this->request->post['start'];
+                    }
+
+                    if ($this->request->post['end'] > time())
+                    {
+                        # 结束时间
+                        $option['end'] = (int)$this->request->post['start'];
+                    }
+
+                    if ($this->createSeriesByQueryOption($option) && false !== $this->worker->redis->hSet('queries', $key, serialize($option)))
                     {
                         # 通知所有worker进程更新SQL
-                        for ($i = 0; $i < $this->server->setting['worker_num']; $i++)
-                        {
-                            # 每个服务器通知更新
-                            if ($i !== $this->workerId)
-                            {
-                                $msg = [
-                                    'type' => 'task.update',
-                                    'key'  => $key,
-                                ];
-                                $this->server->sendMessage(json_encode($msg), $i);
-                            }
-                        }
-
-                        $this->worker->tasks[$table][$key] = $option;
+                        $this->notifyAllWorker('task.reload');
                     }
                     else
                     {
@@ -206,8 +176,7 @@ class Manager
 
                     $data['status'] = 'ok';
                     $data['key']    = $key;
-                    $data['saveAs'] = $saveAs;
-                    $data['sql']    = $option['sql'][$data['saveAs']];
+                    $data['sql']    = $option['sql'];
 
                     info("fork new sql($key): {$data['sql']}");
                 }
@@ -225,7 +194,7 @@ class Manager
                 if (isset($this->request->post['sql']))
                 {
                     $sql    = $this->request->post['sql'];
-                    $option = self::parseSql($sql);
+                    $option = SQL::parseSql($sql);
                     if (!$option)
                     {
                         $data['status']  = 'error';
@@ -363,8 +332,7 @@ class Manager
                     {
                         # 异步清理redis中的数据
                         # todo 异步删除数据
-                        # $this->server->task("clear|{$key}|{$option['table']}|{$save}");
-                        $this->worker->clearDataByKey($key);
+                        $this->server->task("clearByKey|{$key}|{$option['table']}|{$save}");
                     }
 
                     if (isset($sql))
@@ -525,646 +493,92 @@ class Manager
     }
 
     /**
-     * 解析一个SQL语句
+     * 创建一个序列设置, 如果存在则合并
      *
-     * @param $sql
-     * @return array|bool
+     * @param $option
+     * @return bool
      */
-    protected static function parseSql($sql)
+    protected function createSeriesByQueryOption($option)
     {
-        $preg = "#^select[ ]+(?<select>.+) from (?:(?<app>[a-z0-9_]+)\.)?(?<table>[a-z0-9_]+)(?:[ ]+for[ ]+(?<for>[a-z0-9,]+))?(?: where (?<where>(?:(?! group[ ]+time | group[ ]+by | save[ ]+as ).)+))?(?: group[ ]+by[ ]+(?<groupBy>[a-z0-9_,]+))?(?: group[ ]+time[ ]+(?<groupTime>\d+(?:d|h|m|s|W)))?(?: save[ ]+as (?<saveAs>[a-z0-9_]+))?$#i";
-        if (preg_match($preg, str_replace(["\r\n", "\r", "\n"], ' ', $sql), $m))
+        $seriesKey = $option['seriesKey'];
+
+        if (isset($this->worker->series[$seriesKey]))
         {
-            if (IS_DEBUG)
-            {
-                echo "Match: ";
-                print_r($m);
-            }
+            # 已经存在, where 和 group by 是一样的所以不用合并了
+            $seriesOption = $this->worker->series[$seriesKey];
+            $seriesOption['function']  = array_merge_recursive($seriesOption['function'], $option['function']);
+            $seriesOption['groupTime'] = array_merge($seriesOption['groupTime'], $option['groupTime']);
 
-            $table     = trim($m['table']);
-            $select    = trim($m['select']);
-            $for       = trim($m['for']);
-            $where     = trim($m['where']);
-            $groupBy   = trim($m['groupBy']);
-            $groupTime = trim($m['groupTime']);
-            $saveAs    = trim($m['saveAs']) ?: $table;
-            $option    = [
-                'key'   => null,
-                'table' => $table,
-                'use'   => true,
-                'sql'   => [],
-            ];
-
-            if ($select === '*')
+            if ($option['for'])
             {
-                $option['allField'] = $option['saveAs'][$saveAs]['allField'] = true;
+                $seriesOption['for'] = array_merge($seriesOption['for'], $option['for']);
             }
             else
             {
-                foreach (explode(',', $select) as $s)
-                {
-                    $s = trim($s);
-                    if ($s === '*')
-                    {
-                        $option['allField'] = $option['saveAs'][$saveAs]['allField'] = true;
-                    }
-                    elseif (preg_match('#^(?<field>[a-z0-9_]+)(?:[ ]+as[ ]+(?<as>[a-z0-9_]+))?(?:[ ]+)?$#i', $s, $mSelect))
-                    {
-                        # 匹配 select abc, abc as def
-                        $field = trim($mSelect['field']);
-                        $as    = trim($mSelect['as'] ?: $field);
-
-                        $option['saveAs'][$saveAs]['field'][$as] = [
-                            'type' => 'value',
-                            'field' => $field,
-                        ];
-
-                        $option['function']['value'][$field] = true;
-                    }
-                    elseif (preg_match('#^(?<type>count|sum|max|min|avg|first|last|dist|exclude|listcount|list|value)[ ]*\((?<field>[a-z0-9_ \*]*)\)(?:[ ]+as[ ]+(?<as>[a-z0-9_]+))?$#i', $s, $mSelect))
-                    {
-                        # 匹配 select sum(abc), sum(abc) as def
-                        $field = trim($mSelect['field']);
-                        $type  = strtolower(trim($mSelect['type']));
-                        $as    = trim($mSelect['as'] ?: $field);
-
-                        if ($field === '*' && $type !== 'count')
-                        {
-                            # 只支持 count(*)
-                            continue;
-                        }
-
-                        $option['saveAs'][$saveAs]['field'][$as] = [
-                            'type'  => $type,
-                            'field' => $field,
-                        ];
-
-                        switch ($type)
-                        {
-                            case 'avg':
-                                $option['function']['sum'][$field]  = true;
-                                $option['function']['count']['*']   = true;
-                                break;
-
-                            case 'dist':
-                            case 'list':
-                            case 'listcount':
-                                $option['function']['dist'][$field] = true;
-                                break;
-
-                            case 'count':
-                                $option['saveAs'][$saveAs]['field'][$as] = [
-                                    'type'  => $type,
-                                    'field' => '*',
-                                ];
-                                $option['function']['count']['*'] = true;
-                                break;
-
-                            default:
-                                $option['function'][$type][$field] = true;
-                                break;
-                        }
-                    }
-                }
+                $option['allApp'] = true;
             }
 
-            if ($for)
+            # 开始时间
+            if ($seriesOption['start'] < time() || $option['start'] < time())
             {
-                foreach (explode(',', $for) as $item)
-                {
-                    $option['for'][$item] = $item;
-                }
-                ksort($option['for']);
+                $seriesOption['start'] = 0;
             }
-
-            if ($where)
+            else
             {
-                $option['where'] = self::parseWhere($where);
+                $seriesOption['start'] = min($option['start'], $seriesOption['start']);
             }
 
-            $GroupTimeSet = [
-                'type'  => 'm',
-                'limit' => 1,
-            ];
-
-            if ($groupTime)
+            # 结束时间
+            if ($seriesOption['end'] == 0 || $option['end'] == 0 || $seriesOption['end'] > time() || $option['end'] > time())
             {
-                if (preg_match('#^(\d+)(d|m|h|s)$#i', $groupTime, $m))
-                {
-                    $GroupTimeSet = [
-                        'type'  => strtolower($m[2]),
-                        'limit' => $m[1] >= 1 ? (int)$m[1] : ($m[2] == 's' ? 30 : 1),
-                    ];
-                }
-                else
-                {
-                    debug("error group time: $groupTime, exp: 3m, 1d, 1h, 30s");
-                }
+                $seriesOption['end'] = 0;
             }
-
-            $option['groupTime'] = $GroupTimeSet;
-
-            if ($groupBy)
+            else
             {
-                foreach(explode(',', $groupBy) as $item)
-                {
-                    $item = trim($item);
-                    if ($item)
-                    {
-                        $option['groupBy'][] = trim($item);
-                    }
-                }
-
-                if ($option['groupBy'])
-                {
-                    # 重新排序
-                    sort($option['groupBy']);
-                }
+                $seriesOption['end'] = max($option['end'], $seriesOption['end']);
             }
-
-            $option['key']          = self::getKeyByOption($option);
-            $option['sql'][$saveAs] = self::getSqlByOption($option);
-
-            return $option;
         }
         else
         {
-            warn("error sql: $sql");
-            return false;
+            $seriesOption = [
+                'key'       => $option['seriesKey'],
+                'use'       => $option['use'],
+                'start'     => $option['start'],
+                'end'       => $option['end'],
+                'allApp'    => $option['for'] ? false : true,
+                'for'       => $option['for'],
+                'table'     => $option['table'],
+                'where'     => $option['where'],
+                'groupBy'   => $option['groupBy'],
+                'groupTime' => $option['groupTime'],
+                'function'  => $option['function'],
+                'queries'   => [],
+            ];
         }
+
+        # 设置查询的映射
+        foreach ($option['groupTime'] as $groupKey => $st)
+        {
+            $seriesOption['queries'][$groupKey][] = $option['key'];
+            $seriesOption['queries'][$groupKey]   = array_unique($seriesOption['queries'][$groupKey]);
+        }
+
+        return false !== $this->worker->redis->hSet('series', $seriesKey, serialize($seriesOption));
     }
 
-    /**
-     * 根据配置获取key
-     *
-     * @param $option
-     * @return string
-     */
-    protected static function getKeyByOption($option)
+    protected function notifyAllWorker($data)
     {
-        $key = "table:{$option['table']}";
-
-        if (isset($option['for']) && $option['for'])
+        for ($i = 0; $i < $this->server->setting['worker_num']; $i++)
         {
-            $key .= '|for:' . implode(',', $option['for']);
-        }
-
-        if (isset($option['where']) && $option['where'])
-        {
-            $key .= '|where:' . $option['where']['$sql'];
-        }
-
-        if (isset($option['groupBy']) && $option['groupBy'])
-        {
-            $key .= ',' . implode(',', $option['groupBy']);
-        }
-
-        $key .= "|group:{$option['groupTime']['limit']}{$option['groupTime']['type']}";
-
-        $key = substr(md5($key), 8, 16);
-
-        return $key;
-    }
-
-    /**
-     * 根据配置生成格式化后的SQL语句
-     *
-     * @param $option
-     * @param null $table
-     * @return bool|string
-     */
-    protected static function getSqlByOption($option, $table = null)
-    {
-        if (null === $table)
-        {
-            $table = key($option['saveAs']);
-        }
-        elseif (!isset($option['saveAs'][$table]))
-        {
-            return false;
-        }
-
-        $save = $option['saveAs'][$table];
-
-
-        $select = [];
-        if ($save['allField'])
-        {
-            $select[] = '*';
-        }
-
-        foreach ($save['field'] as $as => $st)
-        {
-            if ($st['type'] === 'value')
+            # 每个服务器通知更新
+            if ($i == $this->workerId)
             {
-                $tmp = $st['field'];
+                $this->worker->onPipeMessage($this->server, $this->workerId, $data);
             }
             else
             {
-                $tmp = "{$st['type']}({$st['field']})";
-            }
-
-            if ($st['field'] !== $as)
-            {
-                $tmp .= " as {$as}";
-            }
-
-            $select[] = $tmp;
-        }
-
-        $sql = 'select '. implode(',', $select) . " from {$option['table']}";
-
-        if (isset($option['for']) && $option['for'])
-        {
-            $sql .= " for ". implode(',', $option['for']);
-        }
-
-        if (isset($option['where']) && $option['where'])
-        {
-            $sql .= " where {$option['where']['$sql']}";
-        }
-
-        if (isset($option['groupBy']) && $option['groupBy'])
-        {
-            $sql .= " group by ". implode(',', $option['groupBy']);
-        }
-
-        $sql .= " group time {$option['groupTime']['limit']}{$option['groupTime']['type']}";
-
-        if ($table !== $option['table'])
-        {
-            $sql .= " save as {$table}";
-        }
-
-        return $sql;
-    }
-
-    protected static function mergeOption($opt1, $opt2)
-    {
-        foreach ($opt2 as $key => $item)
-        {
-            if (is_array($item))
-            {
-                $opt1[$key] = self::mergeOption($opt1[$key], $item);
-            }
-            else
-            {
-                $opt1[$key] = $item;
+                $this->server->sendMessage($data, $i);
             }
         }
-
-        return $opt1;
-    }
-
-    /**
-     * 解析一个where字符串为一个多维结构数组
-     *
-     * 例如:
-     *
-     *      ((a < 1 and b % 3 = 2 and (aa=1 or bb=2 or (cc=3 and dd=4))) or ccc = 3) and (aaaa=1 or bbbb=2)
-     *
-     * @param $where
-     * @return array
-     */
-    protected static function parseWhere($where)
-    {
-        $funHash = [];
-
-        $parseWhere = function($where) use (& $funHash)
-        {
-            if (preg_match('#^(?<field>[a-z0-9_\'`"]+)(?:(?:[ ]+)?(?<typeM>%|>>|<<|mod|func|\-|\+|x|\*|/)(?:[ ]+)?(?<mValue>[0-9a-z]+))?(?:[ ]+)?(?<type>=|\!=|\<\>|\>|\<)(?:[ ]+)?(?<value>.*)$#i', $where , $mWhere))
-            {
-                $field  = self::deQuoteValue($mWhere['field']);
-                $type   = $mWhere['type'] === '<>' ? '!=' : $mWhere['type'];
-                $value  = self::deQuoteValue($mWhere['value']);
-                $typeM  = $mWhere['typeM'];
-                $mValue = $mWhere['mValue'];
-
-                if ($typeM === 'func')
-                {
-                    # time_format(a, '%Y%m') = 201601
-                    if (isset($funHash[$field]))
-                    {
-                        $opt = $funHash[$field];
-                        $field = $opt['field'];
-                    }
-                    else
-                    {
-                        return false;
-                    }
-                }
-
-                $option = [
-                    '$sql'  => $field .($typeM ? " $typeM ". $mValue:'') . " $type " . $value,
-                    'field' => $field,
-                    'type'  => $type,
-                    'value' => $value,
-                    'typeM' => $typeM,
-                    'mValue'=> $mValue,
-                ];
-
-                if ($typeM === 'func' && isset($opt))
-                {
-                    $option['arg']  = $opt['arg'];
-                    $option['fun']  = $opt['fun'];
-
-                    if ($opt['fun'] === 'in')
-                    {
-                        $option['$sql']  = "$field in(". implode(',', $opt['arg']) .")";
-                    }
-                    elseif ($opt['fun'] === 'not_in')
-                    {
-                        $option['$sql'] = "$field not in(". implode(',', $opt['arg']) .")";
-                    }
-                    else
-                    {
-                        $option['$sql'] = "{$opt['fun']}($field" . ($opt['arg'] ? ', \'' . $opt['arg'] . "'" : '') . ") {$type} {$value}";
-                    }
-                }
-
-                return $option;
-            }
-
-            return false;
-        };
-
-        $where = preg_replace('# and #i', ' && ', preg_replace('# or #i', ' || ', $where));
-
-        # 解析in, not in
-        if (preg_match_all('#(?<field>[a-z0-9]+)[ ]+(?<notIn>not[ ]+)?in[ ]*\((?<arg>.+)\)#Ui', $where, $m))
-        {
-            foreach ($m[0] as $k => $v)
-            {
-                $hash = md5($v);
-
-                $arg  = explode(',', $m['arg'][$k]);
-                $arg  = array_map('self::deQuoteValue', $arg);
-                $arg  = array_unique($arg);
-                sort($arg);
-
-                $funHash[$hash] = [
-                    'fun'   => $m['notIn'][$k] ? 'not_in' : 'in',
-                    'field' => self::deQuoteValue($m['field'][$k]),
-                    'arg'   => $arg,
-                ];
-
-                $where = str_replace($v, "{$hash} func 0 = 0", $where);
-            }
-        }
-
-        # 预处理函数
-        if (preg_match_all('#(?<fun>[a-z_0-9]+)\((?<field>[a-z0-9_"\'` ])(?:(?>[ ]+)?,(?>[ ]+)?(?<arg>[^\)]+))?\)#Ui', $where, $m))
-        {
-            foreach ($m[0] as $k => $v)
-            {
-                $hash = md5($v);
-
-                $funHash[$hash] = [
-                    'fun'   => strtolower($m['fun'][$k]),
-                    'field' => self::deQuoteValue($m['field'][$k]),
-                    'arg'   => self::deQuoteValue($m['arg'][$k]),
-                ];
-
-                $where = str_replace($v, "{$hash} func 0 = 0", $where);
-            }
-        }
-
-        $len        = strlen($where);
-        $groupLevel = 0;
-        $tmpWhere   = '';
-        $whereArr   = [];
-        $whereGroup = '&&';
-        $nextGroup  = null;
-
-        for ($i = 0; $i < $len; $i++)
-        {
-            $subStr = $where[$i];
-            $tmpGroupLevel = $groupLevel;
-
-            if ($nextGroup)
-            {
-                $whereGroup = $nextGroup;
-                $nextGroup  = null;
-            }
-
-            if (in_array($subPot = substr($where, $i, 4), [' && ', ' || ']))
-            {
-                $nextGroup = trim($subPot);
-            }
-            else
-            {
-                $nextGroup = null;
-            }
-
-            if ($nextGroup)
-            {
-                $whereStr = $tmpWhere;
-                $tmpWhere = '';
-            }
-            elseif ($subStr === '(')
-            {
-                $groupLevel++;
-                $whereStr = $tmpWhere;
-                $tmpWhere = '';
-            }
-            elseif ($subStr === ')')
-            {
-                $groupLevel--;
-                $whereStr = $tmpWhere;
-                $tmpWhere = '';
-            }
-            elseif ($i + 1 === $len)
-            {
-                $tmpWhere .= $subStr;
-                $whereStr = $tmpWhere;
-            }
-            else
-            {
-                $whereStr = '';
-                $tmpWhere .= $subStr;
-            }
-
-            if ($whereStr)
-            {
-                $whereStr = trim($whereStr);
-                if (preg_match('#^(&&|\|\|) (.*)$#', $whereStr, $m))
-                {
-                    $whereArr[] = [
-                        'level'    => $tmpGroupLevel,
-                        'type'     => $nextGroup ?: $whereGroup,
-                        'query'    => $m[1],
-                    ];
-                    $whereStr = trim($m[2]);
-                }
-                $whereArr[] = [
-                    'level'    => $tmpGroupLevel,
-                    'type'     => $nextGroup ?: $whereGroup,
-                    'query'    => $whereStr,
-                ];
-            }
-        }
-
-        $tmpLevel = 0;
-        $tmpArr   = [
-            '$type'  => '&&',
-            '$level' => 0,
-            '$sql'   => '',
-            '$item'  => [],
-        ];
-        $tmpArrList  = [];
-        $whereOption =& $tmpArr;
-        $tmpType     = '&&';
-
-        foreach ($whereArr as $item)
-        {
-            if ($item['level'] < $tmpLevel)
-            {
-                # 上一级
-                for ($j = 0; $j < $tmpLevel - $item['level']; $j++)
-                {
-                    end($tmpArrList);
-                    $key = key($tmpArrList);
-                    unset($parentArr);
-                    $parentArr =& $tmpArrList[$key];
-                    unset($tmpArrList[$key]);
-                }
-
-                $tmpArr =& $parentArr;
-            }
-            elseif ($item['level'] > $tmpLevel)
-            {
-                # 下一级
-                for ($j = 0; $j < $item['level'] - $tmpLevel; $j++)
-                {
-                    unset($tmpArrOld);
-                    $tmpArrOld =& $tmpArr;
-                    unset($tmpArr);
-                    $tmpArr = [
-                        '$type'  => $item['type'],
-                        '$level' => $item['level'],
-                        '$sql'   => '',
-                        '$item'  => [],
-                    ];
-                    $tmpArrOld['$item'][]  =& $tmpArr;
-                    if (isset($tmpArrOld['$item'][0]))
-                    {
-                        $tmpArrList[] =& $tmpArrOld;
-                    }
-                }
-            }
-            elseif ($tmpType !== $item['type'])
-            {
-                # 类型不相同
-                unset($tmpArrOld);
-                $tmpArrOld =& $tmpArr;
-                unset($tmpArr);
-                $tmpArr = [
-                    '$type'  => $item['type'],
-                    '$level' => $item['level'],
-                    '$sql'   => '',
-                    '$item'  => [],
-                ];
-                if (isset($tmpArrOld['$item'][0]))
-                {
-                    $tmpArr['$item'][] =& $tmpArrOld;
-                }
-            }
-
-            if ($item['query'] === '&&' || $item['query'] === '||')
-            {
-                if ($tmpArr['$type'] !== $item['query'])
-                {
-                    # 和前面分组不一样
-                    if (isset($tmpArr['$item'][1]))
-                    {
-                        # 已经有了2个, 需要新建一个分组
-                        unset($tmpArrOld);
-                        $tmpArrOld =& $tmpArr;
-                        unset($tmpArr);
-                        $tmpArr = [
-                            '$type'  => $item['query'],
-                            '$level' => $item['level'],
-                            '$sql'   => '',
-                            '$item'  => [],
-                        ];
-                        if (isset($tmpArrOld['$item'][0]))
-                        {
-                            $tmpArr['$item'][] =& $tmpArrOld;
-                        }
-                    }
-                    else
-                    {
-                        $tmpArr['$type'] = $item['query'];
-                    }
-                }
-            }
-            else
-            {
-                if ($tmpOpt = $parseWhere($item['query']))
-                {
-                    $tmpArr['$item'][] = $tmpOpt;
-                }
-            }
-
-            $tmpLevel = $item['level'];
-            $tmpType  = $item['type'];
-        }
-
-        if (count($tmpArrList) === 0)
-        {
-            unset($whereOption);
-            $whereOption = $tmpArr;
-        }
-
-        $whereOption = self::whereOptionFormat($whereOption);
-
-        return $whereOption;
-    }
-
-    protected static function whereOptionFormat($option)
-    {
-        # 处理排序
-        $sort = function($a, $b)
-        {
-            $arr = [$a['$sql'], $b['$sql']];
-            sort($arr);
-
-            return $a['$sql'] === $arr[0] ? -1 : 1;
-        };
-
-        if ($option['$type'] !== 'where' && $option['$item'])
-        {
-            foreach ($option['$item'] as $k => & $item)
-            {
-                if (isset($item['$type']))
-                {
-                    $item = self::whereOptionFormat($item);
-
-                    if (count($item['$item']) === 0)
-                    {
-                        # 移除空的数据
-                        unset($option['$item'][$k]);
-                    }
-                }
-            }
-            unset($item);
-
-            usort($option['$item'], $sort);
-
-            $sql = [];
-            foreach ($option['$item'] as $tmp)
-            {
-                $sql[] = isset($tmp['$type']) ? '('.$tmp['$sql'].')' : $tmp['$sql'];
-            }
-
-            $option['$sql'] = implode(" {$option['$type']} ", $sql);
-        }
-
-        return $option;
-    }
-
-    public static function deQuoteValue($value)
-    {
-        return preg_replace('#^`(.*)`$#', '$1', preg_replace('#^"(.*)"$#', '$1', preg_replace("#^'(.*)'$#", '$1', trim($value))));
     }
 }
