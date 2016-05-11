@@ -38,7 +38,7 @@ uasort($queries, function($a, $b)
                 <a href="/admin/task/export/"><button type="button" class="btn btn-success btn-sm">导出任务</button></a>
                 <a href="/admin/task/add/"><button type="button" class="btn btn-primary btn-sm">添加新任务</button></a>
             </div>
-            <table class="table table-bordered table-striped">
+            <table class="table table-bordered table-striped table-hover">
                 <thead>
                     <tr style="white-space:nowrap">
                     <th style="text-align:center" width="50">#</th>
@@ -55,25 +55,22 @@ uasort($queries, function($a, $b)
                 $i = 0;
                 foreach ($queries as $query)
                 {
-                    foreach ($query['sql'] as $saveAs => $sql)
-                    {
-                        $i++;
-                        $setting    = $query['setting'][$saveAs] ?: [];
-                        $stats      = $query['use'] ? 'ok' : 'pause';
-                        $statsColor = $query['use'] ? '#d43f3a' : '#eea236';
-                        echo "<tr>
+                    $i++;
+                    $stats      = $query['use'] ? 'ok' : 'pause';
+                    $statsColor = $query['use'] ? '#d43f3a' : '#eea236';
+                    $saveAs     = implode(',', $query['saveAs']);
+                    echo "<tr>
 <td style=\"text-align:center\">{$i}</td>
-<td>{$setting['name']}</td>
-<td><pre class='highlight'><code class=\"mysql\">{$sql}</code></pre></td>
+<td>{$query['name']}</td>
+<td><pre class='highlight'><code class=\"mysql\">{$query['sql']}</code></pre></td>
 <td style=\"text-align:center;white-space:nowrap\">{$saveAs}</td>
 <td style=\"text-align:center;\"><i style='font-size:9px;color:{$statsColor}' class=\"glyphicon glyphicon-{$stats}\"></i></td>
-<td style='text-align:center;font-size:12px;padding-top:11px'>".($setting['time'] ? date('Y-m-d H:i:s', $setting['time']) : '-')."</td>
+<td style='text-align:center;font-size:12px;padding-top:11px'>".date('Y-m-d H:i:s', $query['createTime'])."</td>
 <td align=\"center\">
-<a href=\"/admin/task/info/?key={$query['key']}&save={$saveAs}\"><button type=\"button\" class=\"btn btn-info btn-xs\">管理</button></a>
+<a href=\"/admin/task/info/?key={$query['key']}\"><button type=\"button\" class=\"btn btn-info btn-xs\">管理</button></a>
 <a href=\"/admin/task/pause/\"><button type=\"button\" class=\"btn btn-warning btn-xs\">暂停</button></a>
 <button data-key=\"{$query['key']}\" data-save-as=\"{$saveAs}\" type=\"button\" class=\"btn btn-danger btn-xs task-delete\">删除</button>
 </td></tr>";
-                    }
                 }
                 ?>
                 </tbody>
