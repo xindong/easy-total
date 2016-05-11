@@ -36,7 +36,7 @@ class Manager
         $this->worker   = $worker;
         $this->workerId = $workerId;
 
-        require_once __DIR__ .'/Sql.php';
+        require_once __DIR__ .'/SQL.php';
     }
 
     /**
