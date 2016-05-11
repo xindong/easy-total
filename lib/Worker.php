@@ -1091,7 +1091,7 @@ class Worker
             swoole_process::signal(SIGINT, function($signo) use ($exit)
             {
                 $exit();
-                exit;
+                die;
             });
 
             # 接受主进程的消息通知
@@ -1101,6 +1101,7 @@ class Worker
                 {
                     # 收到一个退出程序的请求
                     $exit();
+                    exit;
                 }
             });
 
@@ -1135,6 +1136,7 @@ class Worker
                 # 如果返回true表示任务完成, 通知主进程回收进程
                 $worker->write('done');
                 $exit();
+                exit;
             }
             else
             {
@@ -1148,6 +1150,7 @@ class Worker
                         $worker->write('done');
                         if ($tick)swoole_timer_clear($tick);
                         $exit();
+                        exit;
                     }
                 });
             }
