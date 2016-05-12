@@ -207,17 +207,7 @@ class Worker
                 $this->reConnectRedis();
             }
 
-            try
-            {
-                if (false === @$this->redis->ping())
-                {
-                    throw new Exception('redis closed');
-                }
-            }
-            catch(Exception $e)
-            {
-                $this->redis = null;
-            }
+            $this->checkRedis();
         });
 
         # 刷新间隔时间, 单位毫秒
@@ -239,14 +229,7 @@ class Worker
             catch (Exception $e)
             {
                 # 避免正好在处理数据时redis连接失败抛错导致程序终止, 系统会自动重连
-                if ($this->redis && false === @$this->redis->ping())
-                {
-                    $this->redis = null;
-                    if ($this->ssdb)
-                    {
-                        $this->ssdb = null;
-                    }
-                }
+                $this->checkRedis();
             }
         });
 
@@ -568,48 +551,67 @@ class Worker
 
             if ($jobs)
             {
-                $this->flushDataRunTime = $this->flushData;
-
-                $count = count($records);
-
-                if (IS_DEBUG)
+                try
                 {
-                    debug("worker: $this->id, tag: $tag, records count: " . $count);
-                }
+                    $this->flushDataRunTime = $this->flushData;
 
-                # 标记为更新, 当此值为 true 时系统才会触发推送数据功能
-                $this->flushDataRunTime['updated'] = true;
+                    $count = count($records);
 
-                # 统计用的当前时间的key
-                $dayKey = date('Ymd,H:i');
-
-                # 记录APP统计的起始时间
-                $appBeginTime = microtime(1);
-
-                foreach ($jobs as $key => $job)
-                {
-                    if (!isset($this->jobAppList[$key][$app]))
+                    if (IS_DEBUG)
                     {
-                        # 增加app列表映射, 用于后期数据管理
-                        $this->flushDataRunTime['apps'][$key][$app] = $this->jobAppList[$key][$app] = self::$timed;
+                        debug("worker: $this->id, tag: $tag, records count: " . $count);
                     }
 
-                    # 记录当前任务的起始时间
-                    $beginTime = microtime(1);
-                    foreach ($records as $record)
+                    # 标记为更新, 当此值为 true 时系统才会触发推送数据功能
+                    $this->flushDataRunTime['updated'] = true;
+
+                    # 统计用的当前时间的key
+                    $dayKey = date('Ymd,H:i');
+
+                    # 记录APP统计的起始时间
+                    $appBeginTime = microtime(1);
+
+                    foreach ($jobs as $key => $job)
                     {
-                        # 处理数据
-                        $this->doJob($job, $app, isset($record[1]['time']) && $record[1]['time'] > 0 ? $record[1]['time'] : $record[0], $record[1]);
+                        if (!isset($this->jobAppList[$key][$app]))
+                        {
+                            # 增加app列表映射, 用于后期数据管理
+                            $this->flushDataRunTime['apps'][$key][$app] = $this->jobAppList[$key][$app] = self::$timed;
+                        }
+
+                        # 记录当前任务的起始时间
+                        $beginTime = microtime(1);
+                        foreach ($records as $record)
+                        {
+                            # 处理数据
+                            $this->doJob($job, $app, isset($record[1]['time']) && $record[1]['time'] > 0 ? $record[1]['time'] : $record[0], $record[1]);
+                        }
+
+                        # 序列的统计数据
+                        $this->flushDataRunTime['counter'][$key][$dayKey]['total'] += $count;
+                        $this->flushDataRunTime['counter'][$key][$dayKey]['time']  += 1000000 * (microtime(1) - $beginTime);
                     }
 
-                    # 序列的统计数据
-                    $this->flushDataRunTime['counter'][$key][$dayKey]['total'] += $count;
-                    $this->flushDataRunTime['counter'][$key][$dayKey]['time']  += 1000000 * (microtime(1) - $beginTime);
+                    # APP的统计数据
+                    $this->flushDataRunTime['counterApp'][$app][$dayKey]['total'] += $count;
+                    $this->flushDataRunTime['counterApp'][$app][$dayKey]['time']  += 1000000 * (microtime(1) - $appBeginTime);
                 }
+                catch (Exception $e)
+                {
+                    # 执行中报错, 可能是redis出问题了
+                    warn($e->getMessage());
 
-                # APP的统计数据
-                $this->flushDataRunTime['counterApp'][$app][$dayKey]['total'] += $count;
-                $this->flushDataRunTime['counterApp'][$app][$dayKey]['time']  += 1000000 * (microtime(1) - $appBeginTime);
+                    # 重置临时数据
+                    $this->flushDataRunTime = [];
+
+                    # 关闭连接
+                    $server->close($fd);
+
+                    # 检查连接
+                    $this->checkRedis();
+
+                    return false;
+                }
             }
         }
         else
@@ -724,7 +726,7 @@ class Worker
             $host  = FluentServer::$config['redis']['host'];
             $port  = FluentServer::$config['redis']['port'];
 
-            $redis->pconnect($host, $port);
+            $redis->connect($host, $port);
             $this->redis = $redis;
 
             if (false === $redis->time())
@@ -1028,6 +1030,20 @@ class Worker
 
         if ($this->flushData['updated'])
         {
+            try
+            {
+                $this->doFlush();
+            }
+            catch (Exception $e)
+            {
+                warn($e->getMessage());
+
+                # 如果有错误则检查下
+                $this->checkRedis();
+            }
+
+            # 目前发现会存在个别进程回收不了的问题, 所以暂时不用
+            /*
             $count = count($this->flushData['jobs']);
             if ($this->flushData['dist'])foreach (array_keys($this->flushData['dist']) as $key)
             {
@@ -1049,7 +1065,7 @@ class Worker
             {
                 $this->flushBySubProcess();
             }
-
+            */
         }
         elseif ($this->dumpFileData)
         {
@@ -1074,6 +1090,12 @@ class Worker
                 $this->dumpFileData = [];
             }
 
+            # 清理没必要的数据
+            $this->server     = null;
+            $this->buffer     = [];
+            $this->bufferTime = [];
+            $this->bufferLen  = [];
+
             $tick = null;
 
             # 结束程序
@@ -1081,13 +1103,19 @@ class Worker
             {
                 # 退出循环
                 swoole_event_del($worker->pipe);
+
+                # 移除异步获取数据
                 if ($tick)swoole_timer_clear($tick);
+
+                # 移除信号监听
+                swoole_process::signal(SIGINT, null);
 
                 # 执行导出数据
                 $this->dumpData();
 
-                # 退出子进程
                 $worker->daemon(true);
+
+                # 退出子进程
                 $worker->exit();
             };
 
@@ -1122,6 +1150,9 @@ class Worker
                 catch (Exception $e)
                 {
                     warn($e->getMessage());
+
+                    # 如果有错误则检查下
+                    $this->checkRedis();
                 }
 
                 if (!$this->flushData['updated'])
@@ -1172,10 +1203,17 @@ class Worker
                 if ('done' === $process->read())
                 {
                     # 执行关闭
-                    $process->kill($this->flushProcessPID, SIGINT);
+                    $process->kill($this->flushProcessPID);
 
                     # 回收子进程
                     while (swoole_process::wait(true));
+
+                    # 释放变量
+                    $this->flushProcess    = null;
+                    $this->flushProcessPID = null;
+
+                    # 任务结束, 移除异步监听
+                    swoole_event_del($process->pipe);
 
                     # 记录总耗时
                     $useTime = 1000000 * (microtime(1) - $time);
@@ -1186,13 +1224,6 @@ class Worker
                     $this->redis->hIncrBy("counter.allpushtime.$k1", $k2, $useTime);
 
                     debug("push data with process use {$useTime}ns");
-
-                    # 释放变量
-                    $this->flushProcess    = null;
-                    $this->flushProcessPID = null;
-
-                    # 任务结束, 移除异步监听
-                    swoole_event_del($process->pipe);
                 }
             });
         }
@@ -1535,6 +1566,25 @@ class Worker
         }
 
         return true;
+    }
+
+    /**
+     * 检查redis连接, 如果ping不通则将 `$this->redis` 设置成 null
+     */
+    protected function checkRedis()
+    {
+        try
+        {
+            if ($this->redis && false === @$this->redis->ping())
+            {
+                throw new Exception('redis closed');
+            }
+        }
+        catch(Exception $e)
+        {
+            $this->redis = null;
+            $this->ssdb  = null;
+        }
     }
 
     protected function totalData($total, $current, $fun, $time)
