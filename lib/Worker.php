@@ -1172,6 +1172,9 @@ class Worker
             {
                 if ('done' === $process->read())
                 {
+                    # 执行关闭
+                    $process->kill($this->flushProcessPID);
+
                     # 回收子进程
                     while (swoole_process::wait(true));
 
