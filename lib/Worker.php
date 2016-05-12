@@ -854,7 +854,7 @@ class Worker
             }
 
             # 回收子进程
-            swoole_process::wait();
+            while (swoole_process::wait(true));
             $this->flushProcess    = null;
             $this->flushProcessPID = null;
         }
@@ -1044,7 +1044,6 @@ class Worker
             {
                 # 如果任务内容很少, 直接处理掉
                 $this->doFlush();
-                return;
             }
             else
             {
@@ -1089,14 +1088,14 @@ class Worker
 
                 # 退出子进程
                 $worker->daemon(true);
-                $worker->exit(2);
-                die();
+                $worker->exit();
             };
 
             # 监听一个退出信号
             swoole_process::signal(SIGINT, function($signo) use ($exit)
             {
                 $exit();
+                exit;
             });
 
             # 接受主进程的消息通知
@@ -1173,7 +1172,7 @@ class Worker
                 if ('done' === $process->read())
                 {
                     # 执行关闭
-                    $process->kill($this->flushProcessPID);
+                    $process->kill($this->flushProcessPID, SIGINT);
 
                     # 回收子进程
                     while (swoole_process::wait(true));
