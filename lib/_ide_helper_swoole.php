@@ -1748,6 +1748,38 @@ class swoole_websocket_server extends swoole_http_server
     function push($fd, $data, $binary_data = false, $finish = true) {}
 }
 
+class swoole_websocket_frame
+{
+    /**
+     * 客户端的socket id，使用$server->push推送数据时需要用到
+     *
+     * @var int
+     */
+    public $fd;
+
+    /**
+     * 数据内容，可以是文本内容也可以是二进制数据，可以通过opcode的值来判断
+     *
+     * @var string
+     */
+    public $data;
+
+    /**
+     * WebSocket的OpCode类型，可以参考WebSocket协议标准文档
+     *
+     * @var int
+     */
+    public $opcode;
+
+    /**
+     * 表示数据帧是否完整，一个WebSocket请求可能会分成多个数据帧进行发送
+     *
+     * @var bool
+     */
+    public $finish;
+}
+
+
 /**
  * Http请求对象
  * Class swoole_http_request
@@ -1824,6 +1856,7 @@ class swoole_http_response
 
     }
 }
+
 
 /**
  * 创建内存表

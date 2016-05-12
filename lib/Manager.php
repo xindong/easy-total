@@ -44,7 +44,7 @@ class Manager
      * @param swoole_http_response $response
      * @return mixed
      */
-    public function onManagerRequest(swoole_http_request $request, swoole_http_response $response)
+    public function onRequest(swoole_http_request $request, swoole_http_response $response)
     {
         $this->request  = $request;
         $this->response = $response;
@@ -76,6 +76,33 @@ class Manager
 
         $this->request  = null;
         $this->response = null;
+
+        return true;
+    }
+
+    /**
+     * webSocket协议收到消息
+     *
+     * @param swoole_server $server
+     * @param swoole_websocket_frame $frame
+     * @return mixed
+     */
+    public function onMessage(swoole_websocket_server $server, swoole_websocket_frame $frame)
+    {
+        # 给客户端发送消息
+        # $server->push($frame->fd, 'data');
+    }
+
+    /**
+     * webSocket端打开连接
+     *
+     * @param swoole_websocket_server $server
+     * @param swoole_http_request $request
+     * @return mixed
+     */
+    public function onOpen(swoole_websocket_server $server, swoole_http_request $request)
+    {
+        debug("server: handshake success with fd{$request->fd}");
     }
 
     protected function admin($uri)

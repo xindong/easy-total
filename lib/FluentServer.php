@@ -179,7 +179,8 @@ class FluentServer
     {
         $port = self::$config['manager']['port'] ?: 9200;
         $host = self::$config['manager']['host'] ?: '127.0.0.1';
-        $this->server = new swoole_http_server($host, $port, SWOOLE_PROCESS);
+//        $this->server = new swoole_http_server($host, $port, SWOOLE_PROCESS);
+        $this->server = new swoole_websocket_server($host, $port);
         $this->server->set(self::$config['conf']);
     }
 
@@ -210,13 +211,46 @@ class FluentServer
         $this->server->on('Task',         [$this, 'onTask']);
         $this->server->on('Start',        [$this, 'onStart']);
         $this->server->on('Request',      [$this, 'onManagerRequest']);
+        $this->server->on('Message',      [$this, 'onManagerMessage']);
+        $this->server->on('Open',         [$this, 'onManagerOpen']);
 
         return $this;
     }
 
+    /**
+     * 管理端的HTTP协议接口
+     *
+     * @param swoole_http_request $request
+     * @param swoole_http_response $response
+     * @return mixed
+     */
     public function onManagerRequest(swoole_http_request $request, swoole_http_response $response)
     {
-        return $this->manager->onManagerRequest($request, $response);
+        return $this->manager->onRequest($request, $response);
+    }
+
+    /**
+     * 管理端的webSocket协议收到消息
+     *
+     * @param swoole_server $server
+     * @param swoole_websocket_frame $frame
+     * @return mixed
+     */
+    public function onManagerMessage(swoole_websocket_server $server, swoole_websocket_frame $frame)
+    {
+        return $this->manager->onMessage($server, $frame);
+    }
+
+    /**
+     * 管理webSocket端打开连接
+     *
+     * @param swoole_websocket_server $server
+     * @param swoole_http_request $request
+     * @return mixed
+     */
+    public function onManagerOpen(swoole_websocket_server $server, swoole_http_request $request)
+    {
+        return $this->manager->onOpen($server, $request);
     }
 
     public function onShutdown($server)
