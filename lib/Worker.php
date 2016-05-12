@@ -1097,7 +1097,6 @@ class Worker
             swoole_process::signal(SIGINT, function($signo) use ($exit)
             {
                 $exit();
-                die();
             });
 
             # 接受主进程的消息通知
@@ -1107,7 +1106,6 @@ class Worker
                 {
                     # 收到一个退出程序的请求
                     $exit();
-                    exit(2);
                 }
             });
 
@@ -1127,7 +1125,7 @@ class Worker
                     warn($e->getMessage());
                 }
 
-                if (!$this->flushData['jobs'] && !$this->flushData['dist'])
+                if (!$this->flushData['updated'])
                 {
                     return true;
                 }
@@ -1142,19 +1140,17 @@ class Worker
                 # 如果返回true表示任务完成, 通知主进程回收进程
                 $worker->write('done');
                 $exit();
-                exit;
             }
             else
             {
                 # 如果每一次性处理完毕, 放在异步里每秒钟重试一次
-                $tick = swoole_timer_tick(1000, function() use ($run, $worker, $exit, & $tick)
+                $tick = swoole_timer_tick(1000, function() use ($run, $worker, $exit)
                 {
                     if ($run())
                     {
                         # 任务完成
                         $worker->write('done');
                         $exit();
-                        exit;
                     }
                 });
             }
@@ -1172,17 +1168,10 @@ class Worker
             $this->flushProcessPID = $pid;
 
             # 进入异步监听方式
-            swoole_event_add($process->pipe, function($pipe) use ($time)
+            swoole_event_add($process->pipe, function($pipe) use ($time, $process)
             {
-                if ('done' === $this->flushProcess->read())
+                if ('done' === $process->read())
                 {
-                    # 任务结束, 移除异步监听
-                    swoole_event_del($this->flushProcess->pipe);
-
-                    # 释放变量
-                    $this->flushProcess    = null;
-                    $this->flushProcessPID = null;
-
                     # 回收子进程
                     while (swoole_process::wait(true));
 
@@ -1195,6 +1184,13 @@ class Worker
                     $this->redis->hIncrBy("counter.allpushtime.$k1", $k2, $useTime);
 
                     debug("push data with process use {$useTime}ns");
+
+                    # 释放变量
+                    $this->flushProcess    = null;
+                    $this->flushProcessPID = null;
+
+                    # 任务结束, 移除异步监听
+                    swoole_event_del($process->pipe);
                 }
             });
         }
@@ -1204,6 +1200,7 @@ class Worker
             $this->flushProcessPID = null;
             $process->close();
             unset($process);
+            while (swoole_process::wait(false));
         }
     }
 
