@@ -374,24 +374,9 @@ unset($item);
           }
         },
         title: {
-          text: '处理数据耗时',
+          text: '耗时',
           style: {
             color: Highcharts.getOptions().colors[1]
-          }
-        },
-        opposite: true
-
-      }, { // Primary yAxis
-        labels: {
-          format: '{value}ms',
-          style: {
-            color: Highcharts.getOptions().colors[2]
-          }
-        },
-        title: {
-          text: '汇总合并耗时',
-          style: {
-            color: Highcharts.getOptions().colors[2]
           }
         },
         opposite: true

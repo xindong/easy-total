@@ -365,24 +365,9 @@ $('#container').highcharts({
             }
         },
         title: {
-            text: '处理数据耗时',
+            text: '耗时',
             style: {
                 color: Highcharts.getOptions().colors[1]
-            }
-        },
-        opposite: true
-
-    }, {
-        labels: {
-            format: '{value}ms',
-            style: {
-                color: Highcharts.getOptions().colors[2]
-            }
-        },
-        title: {
-            text: '汇总合并耗时',
-            style: {
-                color: Highcharts.getOptions().colors[2]
             }
         },
         opposite: true
@@ -421,7 +406,7 @@ $('#container').highcharts({
         name: '汇总合并耗时',
         type: 'spline',
         data: <?php echo json_encode(array_values($pushTime), JSON_NUMERIC_CHECK);?>,
-        yAxis: 2,
+        yAxis: 1,
         dashStyle: 'shortdot',
         tooltip: {
             valueSuffix: 'ms'
