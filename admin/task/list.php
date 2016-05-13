@@ -23,6 +23,10 @@ uasort($queries, function($a, $b)
     margin:0;
     background-color: transparent;
 }
+.highlight code {
+    padding:0;
+    margin:0;
+}
 
 .hljs {
     background: transparent;
@@ -78,11 +82,15 @@ uasort($queries, function($a, $b)
 <td style='text-align:center;font-size:12px;padding-top:11px'>".date('Y-m-d H:i:s', $query['createTime'])."</td>
 <td align=\"center\">
 <a href=\"/admin/task/info/?key={$query['key']}\"><button type=\"button\" class=\"btn btn-info btn-xs\">管理</button></a>
-<a href=\"/admin/task/pause/\"><button type=\"button\" class=\"btn btn-warning btn-xs\">暂停</button></a>
-" . ($query['deleteTime'] > 0 ?
-"<button data-key=\"{$query['key']}\" type=\"button\" class=\"btn btn-danger btn-xs task-delete\">删除</button>"
+".
+($query['use'] ?
+"<button data-key=\"{$query['key']}\" type=\"button\" data-type=\"pause\" class=\"btn btn-warning btn-xs task-edit-status\">暂停</button>"
 :
-"<button data-key=\"{$query['key']}\" type=\"button\" class=\"btn btn-danger btn-xs task-restore\">恢复</button>"
+"<button data-key=\"{$query['key']}\" type=\"button\" data-type=\"start\" class=\"btn btn-warning btn-xs task-edit-status\">启用</button>"
+). " ". ($query['deleteTime'] > 0 ?
+"<button data-key=\"{$query['key']}\" data-type=\"restore\" type=\"button\" class=\"btn btn-danger btn-xs task-edit-status\">恢复</button>"
+:
+"<button data-key=\"{$query['key']}\" data-type=\"remove\" type=\"button\" class=\"btn btn-danger btn-xs task-edit-status\">删除</button>"
 ).
 "</td></tr>";
                 }
@@ -152,60 +160,38 @@ uasort($queries, function($a, $b)
         this.value = '';
     });
 
-    $('.task-delete').on('click', function()
+    $('.task-edit-status').on('click', function()
     {
         var $this  = $(this);
         var key    = $this.data('key');
         var saveAs = $this.data('saveAs');
-        if (confirm('确定要删除?'))
-        {
-            $.ajax({
-                url: '/api/task/remove',
-                data: {
-                    key: key
-                },
-                type: 'post',
-                dataType: 'json',
-                success: function(data, status, xhr)
-                {
-                    if (data.status == 'error')
-                    {
-                        alert(data.message || '删除失败');
-                        return;
-                    }
-                    alert('删除成功');
-                    window.location.reload();
-                },
-                error: function(xhr, status, err)
-                {
-                    alert('请求服务器失败');
-                }
-            });
-        }
-    });
+        var type   = $this.data('type');
+        var typeMap = {
+            pause    : '你确定要暂停此任务?暂停后任务将不再处理后续数据',
+            remove   : '你确定要删除此任务?删除后相关的数据将在24小时内清除',
+            start    : '是否要开启当前任务?',
+            restore  : '当前任务已经删除会在24小时内移除并清理, 此操作将取消移除并恢复启用, 是否继续?'
+        };
 
-    $('.task-restore').on('click', function()
-    {
-        var $this  = $(this);
-        var key    = $this.data('key');
-        var saveAs = $this.data('saveAs');
-        if (confirm('确定要删除?'))
+        if (!typeMap[type])return;
+
+        if (confirm(typeMap[type]))
         {
             $.ajax({
-                url: '/api/task/restore',
+                url: '/api/task/'+ type,
                 data: {
                     key: key
                 },
-                type: 'post',
+                method: 'post',
                 dataType: 'json',
                 success: function(data, status, xhr)
                 {
                     if (data.status == 'error')
                     {
-                        alert(data.message || '恢复失败');
+                        alert(data.message || '操作失败');
                         return;
                     }
-                    alert('恢复成功');
+                    alert('操作成功');
                     window.location.reload();
                 },
                 error: function(xhr, status, err)

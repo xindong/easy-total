@@ -19,15 +19,6 @@
         </div>
         <div class="form-group">
             <div class="col-sm-offset-2 col-sm-10">
-                <div class="checkbox">
-                    <label>
-                        <input name="merge" value="yes" type="checkbox"> 如果已经有相同规则则合并
-                    </label>
-                </div>
-            </div>
-        </div>
-        <div class="form-group">
-            <div class="col-sm-offset-2 col-sm-10">
                 <button type="submit" class="btn btn-primary">提交任务</button>
                 &nbsp;
                 &nbsp;
@@ -70,8 +61,7 @@ group by type group time 3m save as newtable</pre>
         e.preventDefault();
         var formData = {
             name : this.elements.name.value,
-            sql : this.elements.sql.value,
-            merge : this.elements.merge.checked ? 'yes' : 'no'
+            sql : this.elements.sql.value
         };
 
         if (formData.name == '')

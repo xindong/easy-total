@@ -145,12 +145,13 @@ class Manager
         switch ($uri)
         {
             case 'task/add':
+            case 'task/update':
                 # 添加一个任务
 
                 if (!$this->worker->redis)
                 {
                     $data['status']  = 'error';
-                    $data['message'] = 'redis server is not active';
+                    $data['message'] = '请检查redis服务器';
                     goto send;
                 }
 
@@ -158,13 +159,32 @@ class Manager
                 if (!$sql)
                 {
                     $data['status']  = 'error';
-                    $data['message'] = 'need parameter sql';
+                    $data['message'] = '需要SQL参数';
                     goto send;
                 }
 
                 if ($option = SQL::parseSql($sql))
                 {
-                    $key = $option['key'];
+                    if (isset($this->request->post['key']) && $this->request->post['key'])
+                    {
+                        # 指定任务key, 适用于更新任务
+                        $old = $this->worker->redis->hGet('queries', $this->request->post['key']);
+                        if ($old && $old = @unserialize($old))
+                        {
+                            $seriesKey = $old['seriesKey'];
+                            if ($seriesKey !== $option['seriesKey'])
+                            {
+                                # 序列和原来的不一样, 表明修改过 where, group by, from 等条件, 需要重置序列
+                                $oldSeries = $this->worker->redis->hGet('series', $seriesKey);
+                                if ($oldSeries)$oldSeries = @unserialize($oldSeries);
+                            }
+                        }
+                        $key = $option['key'] = $this->request->post['key'];
+                    }
+                    else
+                    {
+                        $key = $option['key'];
+                    }
 
                     if ($this->request->post['name'])
                     {
@@ -185,13 +205,37 @@ class Manager
 
                     if ($this->createSeriesByQueryOption($option) && false !== $this->worker->redis->hSet('queries', $key, serialize($option)))
                     {
+                        # 处理旧的序列设置
+                        if (isset($oldSeries) && $oldSeries)
+                        {
+                            foreach ($oldSeries['queries'] as $k => $v)
+                            {
+                                if (false !== ($k2 = array_search($key, $v)))
+                                {
+                                    unset($oldSeries['queries'][$k][$k2]);
+
+                                    if (!$oldSeries['queries'][$k])
+                                    {
+                                        unset($oldSeries['queries'][$k]);
+                                    }
+                                    else
+                                    {
+                                        $oldSeries['queries'][$k] = array_values($oldSeries['queries'][$k]);
+                                    }
+                                }
+                            }
+
+                            # 更新序列
+                            $this->worker->redis->hSet('series', $oldSeries['key'], serialize($oldSeries));
+                        }
+
                         # 通知所有worker进程更新SQL
                         $this->notifyAllWorker('task.reload');
                     }
                     else
                     {
                         $data['status']  = 'error';
-                        $data['message'] = 'update setting error, please check redis server.';
+                        $data['message'] = '更新服务器失败, 请检查redis服务器';
                         goto send;
                     }
 
@@ -210,7 +254,7 @@ class Manager
                 else
                 {
                     $data['status']  = 'error';
-                    $data['message'] = 'parse sql error';
+                    $data['message'] = '解析SQL失败';
                 }
 
                 break;
@@ -228,7 +272,7 @@ class Manager
                     if (!$option)
                     {
                         $data['status']  = 'error';
-                        $data['message'] = 'parse sql error';
+                        $data['message'] = '解析SQL失败';
 
                         goto send;
                     }
@@ -247,7 +291,7 @@ class Manager
                     if (!$key)
                     {
                         $data['status']  = 'error';
-                        $data['message'] = 'can not found sql task: '.$sql;
+                        $data['message'] = '找不到任务: '.$sql;
                         goto send;
                     }
                 }
@@ -262,7 +306,7 @@ class Manager
                 else
                 {
                     $data['status']  = 'error';
-                    $data['message'] = 'need arguments key or sql';
+                    $data['message'] = '需要key或sql参数';
                     goto send;
                 }
 
@@ -272,7 +316,7 @@ class Manager
                     if (!$option)
                     {
                         $data['status']  = 'error';
-                        $data['message'] = "can not found (key: {$key})";
+                        $data['message'] = "找不到key({$key})的任务";
                         goto send;
                     }
                     $option = @unserialize($option);
@@ -309,7 +353,7 @@ class Manager
                             break;
                     }
 
-                    $rs = $this->worker->redis->hSet('queries', $key, serialize($option));
+                    $rs = false !== $this->worker->redis->hSet('queries', $key, serialize($option));
                 }
                 else
                 {
@@ -346,6 +390,7 @@ class Manager
                 else
                 {
                     $data['status']  = 'error';
+                    $data['msssage'] = '更新失败';
                 }
 
                 break;

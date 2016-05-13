@@ -85,13 +85,42 @@ if (!$query)
                         echo "<strong style='font-size:13px'>修改时间</strong> &nbsp;<span class='label label-warning'>". date('Y-m-d H:i:s', $setting['editTime']) ."</span>\n";
                     }
 
-                    echo '<br /><br /><strong style="font-size:13px;">SQL语句:</strong> ';
-                    echo '<pre class="highlight"><code class="mysql">'. $query['sql'] .'</code></pre>';
+                    echo '<br /><br />';
+                    echo '<strong style="font-size:13px;">SQL语句:</strong> ';
+                    echo '<div style="display:none" class="edit-sql">';
+                    echo '<textarea class="form-control" rows="3" style="margin-bottom: 6px;font-family: Menlo,Monaco,Consolas,monospace;">'. $query['sql'] .'</textarea>';
+                    echo '<button type="button" class="btn btn-info">保存修改</button> ';
+                    echo '<button type="button" class="btn btn-default edit-sql-btn">取消</button>';
+                    echo '<div class="alert alert-danger" style="margin:8px 0 0 0;">注意: 若修改 from, where, group by 任意一个条件, 则会使用<strong>新的数据统计序列</strong>, 这意味着之前的统计数据将对新SQL统计无效（历史数据将在24小时内清理掉), 若你不希望这样请添加新的SQL统计, 修改其它参数则不影响, 如果你增加了一个新 group time, 或 select 字段等, 则会在保存后开始统计, 之前的数据也不会有（除非已经存在）</div>';
+                    echo '</div>';
+                    echo '<pre class="highlight show-sql">';
+                    echo '<code class="mysql">'. $query['sql'] .'</code>';
+                    echo '</pre>';
+                    echo '<div><button type="button" style="margin-top:6px;padding:3px 10px;" class="btn btn-info edit-sql-btn">修改</button></div>';
 
                     ?>
                 </div>
             </div>
         </div>
+        <script type="text/javascript">
+            $('.edit-sql-btn').on('click', function()
+            {
+                var obj = $('.edit-sql');
+                var display = obj.css('display');
+                if (display == 'none')
+                {
+                    $('.show-sql').css('display', 'none');
+                    $(this).css('display', 'none');
+                    obj.css('display', '').focus();
+                }
+                else
+                {
+                    obj.css('display', 'none');
+                    $('.show-sql').css('display', '');
+                    $('.edit-sql-btn').css('display', '');
+                }
+            });
+        </script>
 
         <div class="col-md-12">
             <div class="panel panel-warning">
@@ -100,18 +129,6 @@ if (!$query)
                 </div>
                 <div class="panel-body">
                     <div id="container" style="height:300px"></div>
-                </div>
-            </div>
-        </div>
-
-        <div class="col-md-12">
-            <div class="panel panel-info">
-                <div class="panel-heading">
-                    <div class="pull-right"><button type="button" style="margin:-4px -4px 0 0" class="btn btn-info btn-xs"<?php if (($queryCount = count($query['saveAs'])) > 1)echo ' data-toggle="tooltip" data-placement="left" title="注意, 此任务有'.$queryCount.'个子任务, 一旦修改其它任务也会受到影响, 若不想影响另外任务你可以重新创建后移除旧任务"';?>>修改</button></div>
-                    <h3 class="panel-title">Where条件</h3>
-                </div>
-                <div class="panel-body">
-                    <?php echo $query['where']['$sql'] ?: '无';?>
                 </div>
             </div>
         </div>
@@ -147,7 +164,7 @@ if (!$query)
                         <th>输出字段名</th>
                         <th>数据源字段名</th>
                         <th>运算类型</th>
-                        <th>当前数值</th>
+                        <th width="40">数值</th>
                         <th style="text-align:center" width="100">操作</th>
                     </tr></thead>';
                     echo '<tr>
@@ -180,7 +197,7 @@ if (!$query)
                         <td>'. $k .'</td>
                         <td>'. $v['field'] .'</td>
                         <td>'. $v['type'] .' ('. $typeMap[$v['type']] .')</td>
-                        <td>'. ($v['type'] === 'dist' ? '<div class="pull-right"><button class="btn btn-success btn-xs" type="button" data-toggle="tooltip" title="查看序列内容"><i class="glyphicon glyphicon-eye-open" style="width:1em"></i></button></div>': '') .'</td>
+                        <td style="text-align:center;">'. ($v['type'] !== 'value' ? '<button class="btn btn-success btn-xs" type="button" data-toggle="tooltip" title="查看统计内容"><i class="glyphicon glyphicon-eye-open" style="width:1em"></i></button>': '') .'</td>
                         <td style="text-align:center"><button class="btn btn-info btn-xs" type="button">修改</button> <button class="btn btn-danger btn-xs" type="button">删除</button></td>
                         </tr>';
                     }
@@ -266,6 +283,7 @@ if (!$query)
 $time      = time() - 60;
 $timeBegin = strtotime(date('Y-m-d 00:00:00'));
 $useTime   = [];
+$pushTime  = [];
 $total     = [];
 $arrKeys   = [];
 for ($i = 0; $i < 1440 ; $i++)
@@ -276,19 +294,28 @@ for ($i = 0; $i < 1440 ; $i++)
 
     if ($timeLimit < $time)
     {
-        $useTime[$k] = 0;
-        $total[$k]   = 0;
+        $useTime[$k]  = 0;
+        $total[$k]    = 0;
+        $pushTime[$k] = 0;
     }
 }
-$timeKey = date('Ymd');
-$useTime = array_merge($useTime, $this->worker->redis->hGetAll("counter.time.$timeKey.$key") ?: []);
-$total   = array_merge($total, $this->worker->redis->hGetAll("counter.total.$timeKey.$key") ?: []);
+$seriesKey = $query['seriesKey'];
+$timeKey   = date('Ymd');
+$useTime   = array_merge($useTime, $this->worker->redis->hGetAll("counter.time.$timeKey.$seriesKey") ?: []);
+$total     = array_merge($total, $this->worker->redis->hGetAll("counter.total.$timeKey.$seriesKey") ?: []);
+$pushTime  = array_merge($total, $this->worker->redis->hGetAll("counter.pushtime.$timeKey.$seriesKey") ?: []);
 
 $useTime = array_map(function($v)
 {
     # 转成毫秒
     return number_format($v / 1000, 3, '.', '');
 }, $useTime);
+
+$pushTime = array_map(function($v)
+{
+    # 转成毫秒
+    return number_format($v / 1000, 3, '.', '');
+}, $pushTime);
 ?>
 
 <script type="text/javascript">
@@ -324,13 +351,13 @@ $('#container').highcharts({
             }
         },
         title: {
-            text: '处理数据量',
+            text: '处理数据数量',
             style: {
                 color: Highcharts.getOptions().colors[0]
             }
         }
 
-    }, { // Primary yAxis
+    }, {
         labels: {
             format: '{value}ms',
             style: {
@@ -338,9 +365,24 @@ $('#container').highcharts({
             }
         },
         title: {
-            text: '消耗时间',
+            text: '处理数据耗时',
             style: {
                 color: Highcharts.getOptions().colors[1]
+            }
+        },
+        opposite: true
+
+    }, {
+        labels: {
+            format: '{value}ms',
+            style: {
+                color: Highcharts.getOptions().colors[2]
+            }
+        },
+        title: {
+            text: '汇总合并耗时',
+            style: {
+                color: Highcharts.getOptions().colors[2]
             }
         },
         opposite: true
@@ -356,7 +398,7 @@ $('#container').highcharts({
         backgroundColor: (Highcharts.theme && Highcharts.theme.legendBackgroundColor) || '#FFFFFF'
     },
     series: [{
-        name: '处理数据量',
+        name: '处理数据数量',
         type: 'spline',
         yAxis: 0,
         data: <?php echo json_encode(array_values($total), JSON_NUMERIC_CHECK);?>,
@@ -364,10 +406,22 @@ $('#container').highcharts({
             enabled: false
         }
     }, {
-        name: '消耗时间',
+        name: '处理数据耗时',
         type: 'spline',
         data: <?php echo json_encode(array_values($useTime), JSON_NUMERIC_CHECK);?>,
         yAxis: 1,
+        dashStyle: 'shortdot',
+        tooltip: {
+            valueSuffix: 'ms'
+        },
+        marker: {
+            enabled: false
+        }
+    }, {
+        name: '汇总合并耗时',
+        type: 'spline',
+        data: <?php echo json_encode(array_values($pushTime), JSON_NUMERIC_CHECK);?>,
+        yAxis: 2,
         dashStyle: 'shortdot',
         tooltip: {
             valueSuffix: 'ms'

@@ -29,7 +29,7 @@
         <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
             <ul class="nav navbar-nav">
                 <li<?php if ($uri === 'index')echo ' class="active"';?>><a href="/admin/">概览</a></li>
-                <li<?php if ($uri === 'task/list')echo ' class="active"';?>><a href="/admin/task/list/">任务管理</a></li>
+                <li<?php if ($uri === 'task/list' || $uri === 'task/info')echo ' class="active"';?>><a href="/admin/task/list/">任务管理</a></li>
                 <li<?php if ($uri === 'series')echo ' class="active"';?>><a href="/admin/series/">统计序列管理</a></li>
                 <li<?php if ($uri === 'dist')echo ' class="active"';?>><a href="/admin/dist/">唯一序列管理</a></li>
                 <li<?php if ($uri === 'join')echo ' class="active"';?>><a href="/admin/join/">JOIN数据管理</a></li>

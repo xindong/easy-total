@@ -360,7 +360,7 @@ unset($item);
           }
         },
         title: {
-          text: '处理数据量',
+          text: '处理数据数量',
           style: {
             color: Highcharts.getOptions().colors[0]
           }
@@ -412,7 +412,7 @@ unset($item);
         backgroundColor: (Highcharts.theme && Highcharts.theme.legendBackgroundColor) || '#FFFFFF'
       },
       series: [{
-        name: '处理数据量',
+        name: '处理数据数量',
         type: 'spline',
         yAxis: 0,
         data: <?php echo json_encode(array_values($total), JSON_NUMERIC_CHECK);?>,

@@ -16,7 +16,7 @@ uasort($queries, function($a, $b)
     return $a['table'] > $b['table'] ? 1 : -1;
 });
 
-echo $str = json_encode($queries, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+echo $str = json_encode(['version' => '1.0', 'queries' => $queries], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
 
 $size = strlen($str);
 $name = 'easy-total-' .date('Ymd,Hi') . '.json';
