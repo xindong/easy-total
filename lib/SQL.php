@@ -78,7 +78,7 @@ class SQL
                     elseif (preg_match('#^[a-z0-9_ ]+[ ]*\([^)]+$#', $s, $m))
                     {
                         # 如果没有遇到封闭函数, 则可能是 select dist(a,b),c 这样被, 分开了
-                        $nextStep .= ','. $s;
+                        $nextStep = $s;
                         continue;
                     }
 
@@ -279,6 +279,7 @@ class SQL
             $option['sql']       = self::getSqlByOption($option);
             $option['seriesKey'] = self::getSeriesKeyByOption($option);
 
+            print_r($option);return false;
             return $option;
         }
         else
