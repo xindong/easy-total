@@ -524,7 +524,12 @@ class Manager
         {
             # 已经存在, where 和 group by 是一样的所以不用合并了
             $seriesOption = $this->worker->series[$seriesKey];
-            $seriesOption['function']  = array_merge_recursive($seriesOption['function'], $option['function']);
+
+            # 合并函数
+            foreach ($option['function'] as $k => $v)
+            {
+                $seriesOption['function'][$k] = array_merge($seriesOption['function'][$k], $v);
+            }
             $seriesOption['groupTime'] = array_merge($seriesOption['groupTime'], $option['groupTime']);
 
             if ($option['for'])

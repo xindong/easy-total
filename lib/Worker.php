@@ -981,6 +981,17 @@ class Worker
             elseif ($opt['deleteTime'] > 0)
             {
                 # 已经标记为移除了的任务
+                $seriesKey = $opt['seriesKey'];
+                if ($this->series[$seriesKey])
+                {
+                    $k = array_search($key, $this->series[$seriesKey]['queries']);
+                    if (false !== $k)
+                    {
+                        unset($this->series[$seriesKey]['queries'][$k]);
+                        $this->series[$seriesKey]['queries'] = array_values($this->series[$seriesKey]['queries']);
+                    }
+                }
+
                 continue;
             }
 
