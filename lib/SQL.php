@@ -59,8 +59,30 @@ class SQL
             }
             else
             {
+                $nextStep = '';
                 foreach (explode(',', $select) as $s)
                 {
+                    var_dump($s);
+                    if ($nextStep)
+                    {
+                        if (preg_match('#[a-z0-9_]+\)(?:[ ]+as[ ]+[a-z0-9_]+)?#i', trim($s)))
+                        {
+                            $s = $nextStep .','. $s;
+                            $nextStep = '';
+                        }
+                        else
+                        {
+                            $nextStep .= ','. $s;
+                            continue;
+                        }
+                    }
+                    elseif (preg_match('#^[a-z0-9_ ]+[ ]*\([^)]+$#', $s, $m))
+                    {
+                        # 如果没有遇到封闭函数, 则可能是 select dist(a,b),c 这样被, 分开了
+                        $nextStep .= $s;
+                        continue;
+                    }
+
                     $s = trim($s);
                     if ($s === '*')
                     {
