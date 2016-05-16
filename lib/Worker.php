@@ -803,7 +803,7 @@ class Worker
             else
             {
                 # 获取时间key, Exp: 20160610123
-                $timeKey = $this->getTimeKey($time, $timeOpt['type'], $timeOpt['limit']);
+                $timeKey = $this->getTimeKey($time, $timeOpt[0], $timeOpt[1]);
 
                 # 数据的键, Exp: abcde123af32,1d,hsqj,20160506123_123_abc
                 $uniqid  = "$key,$timeOptKey,$app,{$timeKey}{$groupValue}";
@@ -1945,18 +1945,18 @@ class Worker
 
     /**
      * 获取按时间分组的key
-     * 
+     *
      * @param $time
-     * @param $type
      * @param $limit
+     * @param $type
      * @return int
      */
-    public static function getTimeKey($time, $type, $limit)
+    public static function getTimeKey($time, $limit, $type)
     {
         # 放在缓存里
         static $cache = [];
 
-        $key = "$time$type$limit";
+        $key = "{$time}{$limit}{$type}";
         if (isset($cache[$key]))return $cache[$key];
 
         # 按时间处理分组
@@ -2012,7 +2012,7 @@ class Worker
             $timeKey += $timeLimit;
         }
 
-        if (count($cache) > 1000)
+        if (count($cache) > 200)
         {
             # 清理下
             $cache = array_slice($cache, -10);

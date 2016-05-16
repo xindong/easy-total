@@ -157,7 +157,6 @@ if (!$query)
                     ];
 
                     # 根据时间戳得到当前的时间key
-                    $timeLimitKey = Worker::getTimeKey(time(), $query['groupTime']['type'], $query['groupTime']['limit']);
 //                        $totalKey     = "total,$key,$app,{$query['groupTime']['limit']}{$query['groupTime']['type']}";
 
                     echo '<table class="table table-bordered table-striped table-hover" style="margin:0"><thead><tr style="white-space:nowrap">
