@@ -79,17 +79,30 @@ class SQL
 
                         $option['function']['value'][$field] = true;
                     }
-                    elseif (preg_match('#^(?<type>count|sum|max|min|avg|first|last|dist|exclude|listcount|list|value)[ ]*\((?<field>[a-z0-9_ \*]*)\)(?:[ ]+as[ ]+(?<as>[a-z0-9_]+))?$#i', $s, $mSelect))
+                    elseif (preg_match('#^(?<type>count|sum|max|min|avg|first|last|dist|exclude|listcount|list|value)[ ]*\((?<field>[a-z0-9_, \*"\'`]*)\)(?:[ ]+as[ ]+(?<as>[a-z0-9_]+))?$#i', $s, $mSelect))
                     {
                         # 匹配 select sum(abc), sum(abc) as def
-                        $field = trim($mSelect['field']);
+                        $field = trim($mSelect['field'], " \n\r,");
                         $type  = strtolower(trim($mSelect['type']));
-                        $as    = trim($mSelect['as'] ?: $field);
+                        $as    = str_replace(',', '_', trim($mSelect['as'] ?: "{$type}_{$field}"));
+
 
                         if ($field === '*' && $type !== 'count')
                         {
                             # 只支持 count(*)
                             continue;
+                        }
+
+                        if ($type === 'dist' && false !== strpos($field, ','))
+                        {
+                            # Dist支持多字段模式
+                            $fields = array_map('self::deQuoteValue', explode(',', $field));
+                            sort($fields);
+                            $field  = implode(',', $fields);
+                        }
+                        else
+                        {
+                            $fields = true;
                         }
 
                         $option['fields'][$as] = [
@@ -105,6 +118,9 @@ class SQL
                                 break;
 
                             case 'dist':
+                                $option['function']['dist'][$field] = $fields;
+                                break;
+
                             case 'list':
                             case 'listcount':
                                 $option['function']['dist'][$field] = true;

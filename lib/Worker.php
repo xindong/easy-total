@@ -823,7 +823,22 @@ class Worker
             {
                 foreach ($fun['dist'] as $field => $t)
                 {
-                    $this->flushDataRunTime['dist']["dist,$uniqid,$field"][$item[$field]] = 1;
+                    if (true === $t)
+                    {
+                        # 单字段
+                        $k = $item[$field];
+                    }
+                    else
+                    {
+                        # 多字段
+                        $k = [];
+                        foreach ($t as $f)
+                        {
+                            $k[] = $item[$f];
+                        }
+                        $k = implode('_', $k);
+                    }
+                    $this->flushDataRunTime['dist']["dist,$uniqid,$field"][$k] = 1;
                 }
             }
 
