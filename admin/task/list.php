@@ -4,10 +4,10 @@ $queries = array_map('unserialize', $this->worker->redis->hGetAll('queries') ?: 
 if (!$queries)
 {
     echo '<div style="padding:0 15px;"><div class="alert alert-warning">还没有任何任务, <a href="/admin/task/add/">点击这里添加任务</a></div></div>';
-    return;
 }
 
-uasort($queries, function($a, $b)
+
+if ($queries)uasort($queries, function($a, $b)
 {
     return $a['table'] > $b['table'] ? 1 : -1;
 });
@@ -57,7 +57,7 @@ uasort($queries, function($a, $b)
                 <tbody>
                 <?php
                 $i = 0;
-                foreach ($queries as $query)
+                if ($queries)foreach ($queries as $query)
                 {
                     $i++;
                     $stats      = $query['use'] ? 'ok' : 'pause';
