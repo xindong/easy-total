@@ -726,7 +726,11 @@ class Worker
             $host  = FluentServer::$config['redis']['host'];
             $port  = FluentServer::$config['redis']['port'];
 
-            $redis->connect($host, $port);
+            if (false === $redis->connect($host, $port))
+            {
+                throw new Exception('connect redis error');
+            }
+
             $this->redis = $redis;
 
             if (false === $redis->time())
