@@ -279,7 +279,6 @@ class SQL
             $option['sql']       = self::getSqlByOption($option);
             $option['seriesKey'] = self::getSeriesKeyByOption($option);
 
-            print_r($option);return false;
             return $option;
         }
         else
