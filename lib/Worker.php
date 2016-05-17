@@ -1406,7 +1406,7 @@ class Worker
                                                 # 获取唯一值的长度
                                                 $distCache[$k] = (int)$this->redis->hLen($k);
                                             }
-                                            $data[$as] = $distCache[$field];
+                                            $data[$as] = $distCache[$k];
                                             break;
 
                                         case 'exclude':
