@@ -1279,12 +1279,12 @@ class Worker
         # 更新唯一值
         if ($this->flushData['dist'])
         {
-            foreach ($this->flushData['dist'] as $uniqid => $v)
+            foreach ($this->flushData['dist'] as $k => $v)
             {
-                if (false !== $this->redis->hMSet($uniqid, $v))
+                if (false !== $this->redis->hMSet($k, $v))
                 {
                     # 成功
-                    unset($this->flushData['dist'][$uniqid]);
+                    unset($this->flushData['dist'][$k]);
                 }
             }
         }
@@ -1400,10 +1400,11 @@ class Worker
                                             break;
 
                                         case 'dist':
-                                            if (!isset($distCache[$field]))
+                                            $k = "dist,{$uniqid},{$field}";
+                                            if (!isset($distCache[$k]))
                                             {
                                                 # 获取唯一值的长度
-                                                $distCache[$field] = (int)$this->redis->hLen("dist,{$uniqid},{$field}");
+                                                $distCache[$k] = (int)$this->redis->hLen($k);
                                             }
                                             $data[$as] = $distCache[$field];
                                             break;
