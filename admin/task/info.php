@@ -272,7 +272,13 @@ if (!$query)
             <h4>配置数据</h4>
             <?php
             echo '<pre style="background: #fcfcfc"><code class="json">';
-            echo htmlspecialchars(json_encode($query, JSON_PRETTY_PRINT));
+            echo htmlspecialchars(json_encode($query, JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE));
+            echo '</code></pre>';
+            ?>
+            <h4>序列配置</h4>
+            <?php
+            echo '<pre style="background: #fcfcfc"><code class="json">';
+            echo htmlspecialchars(json_encode(unserialize($this->worker->redis->hget('series', $query['seriesKey'])), JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE));
             echo '</code></pre>';
             ?>
         </div>
