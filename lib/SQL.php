@@ -379,7 +379,15 @@ class SQL
 
         if ($option['save'][0] !== $option['table'] || count($option['save']) > 1)
         {
-            $sql .= " save as ". implode(',', $option['saveAs']);
+            $saveAs = $option['saveAs'];
+            foreach ($saveAs as $k => &$v)
+            {
+                if (is_array($v))
+                {
+                    $v = $v[0];
+                }
+            }
+            $sql .= " save as ". implode(',', $saveAs);
         }
 
         return $sql;
