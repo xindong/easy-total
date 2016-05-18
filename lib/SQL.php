@@ -38,6 +38,7 @@ class SQL
                 'use'        => true,    //是否开启
                 'createTime' => time(),
                 'editTime'   => 0,
+                'deleteTime' => 0,
                 'seriesKey'  => null,    //序列的key, 生成好完整的option后再赋值
                 'sql'        => '',      //SQL语句
                 'table'      => $table,

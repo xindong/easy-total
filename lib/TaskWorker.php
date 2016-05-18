@@ -34,10 +34,11 @@ class TaskWorker
     {
         try
         {
-            switch ($data)
+            $arr = explode('|', $data);
+            switch ($arr[0])
             {
                 case 'output':
-                    $this->outputToFluent();
+                    $this->outputToFluent($arr[1]);
                     break;
 
                 case 'clean':
@@ -265,7 +266,7 @@ class TaskWorker
      *
      * @return bool
      */
-    protected function outputToFluent()
+    protected function outputToFluent($jobKey)
     {
         /**
          * @var Redis $redis
@@ -276,18 +277,18 @@ class TaskWorker
 
         getLock:
 
-        $lockKey = 'output_lock';
-        if (!$redis->setNx($lockKey, microtime(1)))
+        $lockKey = "output_lock_{$jobKey}";
+        if (!$redis->setNx($lockKey, $lockTime = microtime(1)))
         {
             # 抢锁失败
-            if (microtime(1) - $redis->get($lockKey) > 600)
+            if ($lockTime - $redis->get($lockKey) > 60)
             {
-                # 如果10分钟还没有释放的锁, 强制删除, 防止被死锁
+                # 如果1分钟还没有释放的锁, 强制删除, 防止被死锁
                 $redis->delete($lockKey);
 
                 usleep(mt_rand(1, 1000));
 
-                debug("found and deleted timeout lock.");
+                debug("found and deleted timeout lock: $lockKey.");
                 goto getLock;
             }
             else
@@ -298,14 +299,10 @@ class TaskWorker
 
         try
         {
-            $runTime = time();
-            $tryNum  = 0;
-
-            getData:
             if ($ssdb)
             {
-                # 获取列表
-                $keys = $ssdb->hlist('list,', 'list,z' , 20);
+                # 读取当前任务的前30个列表
+                $keys = $ssdb->hlist("list,{$jobKey},", "list,{$jobKey},z" , 30);
 
                 if (!$keys)
                 {
@@ -315,10 +312,10 @@ class TaskWorker
             else
             {
                 # 获取列表
-                $keys = $redis->keys('list,*');
+                $keys = $redis->keys("list,{$jobKey},*");
                 if ($keys)
                 {
-                    $keys = array_slice($keys, 0, 20);
+                    $keys = array_slice($keys, 0, 30);
                 }
                 else
                 {
@@ -329,31 +326,63 @@ class TaskWorker
 
             # 加载客户端
             require_once (__DIR__ .'/FluentClient.php');
+            $fluent = new FluentClient(FluentServer::$config['output']['link']);
 
-            # 获取上30秒的时间序列
-            $currentLimit = date('YmdHi', time() - 30);
+            # 获取上60秒的时间序列
+            $currentLimit = date('YmdHi', time() - 60);
             $outputPrefix = FluentServer::$config['output']['prefix'] ?: '';
 
-            $outData = [];
-            sort($keys);
+            # 遍历key
             foreach ($keys as $key)
             {
-                if (preg_match('#^list,(?<app>.+),(?<table>.+),(?<limit>\d+)$#', $key, $m))
+                if (preg_match('#^list,(?<jobKey>[a-z0-9]+),(?<limit>\d+),(?<app>.+),(?<table>.+)$#', $key, $m))
                 {
+                    # 新的格式, 将时间参数放在前面, 并加入 jobKey
+                    if ($m['limit'] < $currentLimit)
+                    {
+                        # 读取数据
+                        $data = $redis->hGetAll($key);
+                        $tag  = "{$outputPrefix}{$m['app']}.{$m['table']}";
+
+                        # 开始推送
+                        if (self::sendToFluent($fluent, $tag, $data))
+                        {
+                            # 成功后移除当前key的数据
+                            if ($ssdb)
+                            {
+                                $ssdb->hclear($key);
+                            }
+                            else
+                            {
+                                $redis->delete($key);
+                            }
+                        }
+                        else
+                        {
+                            debug("push data {$tag} fail. fluentd server: tcp://". FluentServer::$config['output']['type'] .': '. FluentServer::$config['output']['link']);
+                        }
+                    }
+                }
+                elseif (preg_match('#^list,(?<app>.+),(?<table>.+),(?<limit>\d+)$#', $key, $m))
+                {
+                    # todo 待删除
                     if ($m['limit'] < $currentLimit)
                     {
                         # 只有不在当前时间序列的数据才会处理
                         $data = $redis->hGetAll($key);
                         $tag = "{$outputPrefix}{$m['app']}.{$m['table']}";
-                        if (isset($outData[$tag]))
+
+                        if (self::sendToFluent($fluent, $tag, $data))
                         {
-                            $outData[$tag]['data'] = array_merge($outData[$tag]['data'], $data);
+                            if ($ssdb)
+                            {
+                                $ssdb->hclear($key);
+                            }
+                            else
+                            {
+                                $redis->delete($key);
+                            }
                         }
-                        else
-                        {
-                            $outData[$tag]['data'] = $data;
-                        }
-                        $outData[$tag]['keys'][] = $key;
                     }
                 }
                 else
@@ -375,58 +404,38 @@ class TaskWorker
 
                     warn("can not match redis key $key, remove it to bak.list.{$key}");
                 }
-            }
 
-            if ($outData)
-            {
-                $fluent = new FluentClient(FluentServer::$config['output']['link']);
-                foreach ($outData as $tag => $data)
+                $useTime = time() - $lockTime;
+
+                if ($useTime > 60)
                 {
-                    # 生成内容
-                    $ack    = uniqid('fluent');
-                    $buffer =  '["'. $tag .'",[' .implode(',', $data['data']). '], {"chunk":"'. $ack .'"}]';
-
-                    if ($fluent->push_by_buffer($tag, $buffer, $ack))
-                    {
-                        if ($tryNum > 0)$tryNum = 0;
-                        if ($ssdb)
-                        {
-                            # 清除成功的key
-                            foreach ($data['keys'] as $key)
-                            {
-                                $ssdb->hclear($key);
-                            }
-                        }
-                        else
-                        {
-                            # redis支持移除多个key
-                            $redis->delete($data['keys']);
-                        }
-                    }
-                    else
-                    {
-                        debug("push data to ". FluentServer::$config['output']['type'] .': '. FluentServer::$config['output']['link'] . ' fail.');
-                        if ($tryNum > 20)
-                        {
-                            goto rt;
-                        }
-                        $tryNum++;
-                        sleep(1);
-                    }
+                    throw new Exception('use too much time.');
                 }
-                $fluent->close();
+                elseif ($useTime > 10)
+                {
+                    # 更新锁时间值
+                    $redis->set($lockKey, $lockTime = microtime(1));
+                }
             }
 
-            if (time() - $runTime < 30)
-            {
-                # 如果在时间允许范围内, 继续执行
-                goto getData;
-            }
+            # 关闭对象
+            $fluent->close();
         }
         catch (Exception $e)
         {
-            $redis->delete($lockKey);
             warn($e->getMessage());
+
+            if (isset($fluent))
+            {
+                $fluent->close();
+            }
+
+            # 释放锁
+            $redis->delete($lockKey);
+
+            # 关闭连接
+            $redis->close();
+            if ($ssdb)$ssdb->close();
 
             return false;
         }
@@ -440,6 +449,58 @@ class TaskWorker
         if ($ssdb)$ssdb->close();
 
         return true;
+    }
+
+    protected static function sendToFluent(FluentClient $fluent, $tag, $data)
+    {
+        $len = 0;
+        $str = '';
+
+        foreach ($data as $item)
+        {
+            $len += strlen($item);
+            $str .= $item .',';
+
+            if ($len > 2000000)
+            {
+                # 每 2M 分开一次推送, 避免一次发送的数据包太大
+                $ack    = uniqid('fluent');
+                $buffer =  '["'. $tag .'",['. substr($str, 0, -1) .'], {"chunk":"'. $ack .'"}]';
+                if ($fluent->push_by_buffer($tag, $buffer, $ack))
+                {
+                    # 重置后继续
+                    $len = 0;
+                    $str = '';
+                }
+                else
+                {
+                    # 如果推送失败
+                    $fluent->close();
+                    return false;
+                }
+            }
+        }
+
+        if ($len > 0)
+        {
+            $ack    = uniqid('fluent');
+            $buffer =  '["'. $tag .'",['. substr($str, 0, -1) .'], {"chunk":"'. $ack .'"}]';
+
+            if ($fluent->push_by_buffer($tag, $buffer, $ack))
+            {
+                # 全部推送完毕
+                return true;
+            }
+            else
+            {
+                $fluent->close();
+                return false;
+            }
+        }
+        else
+        {
+            return true;
+        }
     }
 
     /**

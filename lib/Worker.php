@@ -323,12 +323,14 @@ class Worker
         # 只有需要第一个进程处理
         if ($this->id == 0)
         {
-            # 每分钟推送1次数据输出
-            $limit = intval(FluentServer::$config['output']['output_time_ms'] ?: 60000);
-            swoole_timer_tick($limit, function()
+            # 每3秒通知推送一次
+            swoole_timer_tick(3000, function()
             {
-                # 通知taskWorker处理, 不占用当前worker资源
-                $this->server->task('output');
+                # 通知 taskWorker 处理, 不占用当前 worker 资源
+                foreach ($this->queries as $k => $v)
+                {
+                    $this->server->task("output|{$k}");
+                }
             });
 
             # 每分钟处理
@@ -1442,7 +1444,7 @@ class Worker
                                 {
                                     $saveAs = $queryOption['saveAs'][$timeOptKey];
                                 }
-                                $saveKey = "list,{$app},{$saveAs},{$listLimit}";
+                                $saveKey = "list,{$jobKey},{$listLimit},{$app},{$saveAs}";
 
                                 # 导出的数据
                                 $saveData[$saveKey][$id] = json_encode([$time, $data], JSON_UNESCAPED_UNICODE);
