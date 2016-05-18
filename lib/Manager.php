@@ -178,11 +178,17 @@ class Manager
                                 $oldSeries = $this->worker->redis->hGet('series', $seriesKey);
                                 if ($oldSeries)$oldSeries = @unserialize($oldSeries);
                             }
+
+                            # 使用老的参数
+                            $option['use']        = $old['use'];
+                            $option['createTime'] = $old['createTime'];
+                            $option['editTime']   = time();
                         }
                         $key = $option['key'] = $this->request->post['key'];
                     }
                     else
                     {
+                        $old = [];
                         $key = $option['key'];
                     }
 
@@ -190,17 +196,29 @@ class Manager
                     {
                         $option['name'] = trim($this->request->post['name']);
                     }
+                    elseif ($old['name'])
+                    {
+                        $option['name'] = $old['name'];
+                    }
 
                     if ($this->request->post['start'] > time())
                     {
                         # 开始时间
                         $option['start'] = (int)$this->request->post['start'];
                     }
+                    elseif ($old['start'])
+                    {
+                        $option['start'] = $old['start'];
+                    }
 
                     if ($this->request->post['end'] > time())
                     {
                         # 结束时间
                         $option['end'] = (int)$this->request->post['start'];
+                    }
+                    elseif ($old['end'])
+                    {
+                        $option['end'] = $old['end'];
                     }
 
                     if ($this->createSeriesByQueryOption($option) && false !== $this->worker->redis->hSet('queries', $key, serialize($option)))
