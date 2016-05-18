@@ -298,6 +298,8 @@ class TaskWorker
 
         try
         {
+            $tryNum = 0;
+            
             getData:
             if ($ssdb)
             {
@@ -385,6 +387,7 @@ class TaskWorker
 
                     if ($fluent->push_by_buffer($tag, $buffer, $ack))
                     {
+                        if ($tryNum > 0)$tryNum = 0;
                         if ($ssdb)
                         {
                             # 清除成功的key
@@ -402,6 +405,12 @@ class TaskWorker
                     else
                     {
                         debug("push data to ". FluentServer::$config['output']['type'] .': '. FluentServer::$config['output']['link'] . ' fail.');
+                        if ($tryNum > 20)
+                        {
+                            goto rt;
+                        }
+                        $tryNum++;
+                        sleep(1);
                     }
                 }
                 $fluent->close();
