@@ -328,8 +328,7 @@ class TaskWorker
             require_once (__DIR__ .'/FluentClient.php');
             $fluent = new FluentClient(FluentServer::$config['output']['link']);
 
-            # 获取上60秒的时间序列
-            $currentLimit = date('YmdHi', time() - 60);
+            $currentLimit = date('YmdHi', time() - 30);
             $outputPrefix = FluentServer::$config['output']['prefix'] ?: '';
 
             # 遍历key
