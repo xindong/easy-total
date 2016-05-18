@@ -298,8 +298,9 @@ class TaskWorker
 
         try
         {
-            $tryNum = 0;
-            
+            $runTime = time();
+            $tryNum  = 0;
+
             getData:
             if ($ssdb)
             {
@@ -416,7 +417,11 @@ class TaskWorker
                 $fluent->close();
             }
 
-            goto getData;
+            if (time() - $runTime < 30)
+            {
+                # 如果在时间允许范围内, 继续执行
+                goto getData;
+            }
         }
         catch (Exception $e)
         {
