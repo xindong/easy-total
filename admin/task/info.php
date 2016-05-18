@@ -69,7 +69,7 @@ if (!$query)
                     echo "<strong style='font-size:13px;'>输出:</strong>";
                     foreach ($query['saveAs'] as $k => $v)
                     {
-                        echo " &nbsp;<span data-toggle=\"tooltip\" data-placement=\"bottom\" title='按 {$k} 时间分组输出到 {$v}' style='cursor:default'><span class='label label-success' style='border-radius:3px 0 0 3px'>$v</span><span style='border-radius:0 3px 3px 0' class='label label-info'>$k</span></span>";
+                        echo " &nbsp;<span data-toggle=\"tooltip\" data-placement=\"bottom\" title='按 {$k} 时间分组输出到 {$v}' style='cursor:default'><span class='label label-success' style='border-radius:3px 0 0 3px'>".(is_array($v)?$v[0]:$v)."</span><span style='border-radius:0 3px 3px 0' class='label label-info'>$k</span></span>";
                     }
 
                     if ($query['groupBy'])
