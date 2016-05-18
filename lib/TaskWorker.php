@@ -298,6 +298,7 @@ class TaskWorker
 
         try
         {
+            getData:
             if ($ssdb)
             {
                 # 获取列表
@@ -403,8 +404,10 @@ class TaskWorker
                         debug("push data to ". FluentServer::$config['output']['type'] .': '. FluentServer::$config['output']['link'] . ' fail.');
                     }
                 }
+                $fluent->close();
             }
 
+            goto getData;
         }
         catch (Exception $e)
         {
