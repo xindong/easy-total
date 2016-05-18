@@ -358,7 +358,7 @@ class TaskWorker
                         }
                         else
                         {
-                            debug("push data {$tag} fail. fluentd server: tcp://". FluentServer::$config['output']['type'] .': '. FluentServer::$config['output']['link']);
+                            warn("push data {$tag} fail. fluentd server: tcp://". FluentServer::$config['output']['type'] .': '. FluentServer::$config['output']['link']);
                         }
                     }
                 }
