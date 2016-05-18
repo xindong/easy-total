@@ -1,3 +1,17 @@
+<link rel="stylesheet" href="/assets/highlightjs/tomorrow.min.css">
+<script src="/assets/highlightjs/highlight.min.js"></script>
+<style type="text/css">
+    .highlight code {
+        padding:0;
+        margin:0;
+    }
+
+    .hljs {
+        background: transparent;
+    }
+</style>
+
+
 <div class="container">
     <form method="post" class="form-horizontal task-add-form">
         <div class="form-group">
@@ -45,8 +59,8 @@
                 </ul>
 
                 例:
-                <pre>select field1,field2 as test from test where type=1 and (statu = 2 or statu = 3) and tid in (1,3,5,7,9)
-group by type group time 3m save as newtable</pre>
+                <pre class="highlight"><code class="mysql">select field1, field2 as test,sum(value) as sum_value, dist(user_id) as dist_uid from test
+where type=1 and (statu = 2 or statu = 3) and tid in (1,3,5,7,9) group by type group time 3m save as newtable</code></pre>
 
                 其中，select 和 from 为必须出现的关键字，其它为可选关键字，`group time` 不设置则默认为 1m，`save as` 不设置则默认和 `from` 相同
         </div>
@@ -98,3 +112,5 @@ group by type group time 3m save as newtable</pre>
         return false;
     });
 </script>
+
+<script>hljs.initHighlightingOnLoad();</script>

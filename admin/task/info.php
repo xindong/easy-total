@@ -88,9 +88,12 @@ if (!$query)
                     echo '<br /><br />';
                     echo '<strong style="font-size:13px;">SQL语句:</strong> ';
                     echo '<div style="display:none" class="edit-sql">';
-                    echo '<textarea class="form-control" rows="3" style="margin-bottom: 6px;font-family: Menlo,Monaco,Consolas,monospace;">'. $query['sql'] .'</textarea>';
-                    echo '<button type="button" class="btn btn-info">保存修改</button> ';
+                    echo '<form class="task-edit-form" action="/api/task/update" method="post">';
+                    echo '<input type="hidden" name="key" value="'. $query['key'] .'" />';
+                    echo '<textarea name="sql" class="form-control" rows="3" style="margin-bottom: 6px;font-family: Menlo,Monaco,Consolas,monospace;">'. $query['sql'] .'</textarea>';
+                    echo '<button type="submit" class="btn btn-info">保存修改</button> ';
                     echo '<button type="button" class="btn btn-default edit-sql-btn">取消</button>';
+                    echo '</form>';
                     echo '<div class="alert alert-danger" style="margin:8px 0 0 0;">注意: 若修改 from, where, group by 任意一个条件, 则会使用<strong>新的数据统计序列</strong>, 这意味着之前的统计数据将对新SQL统计无效（历史数据将在24小时内清理掉), 若你不希望这样请添加新的SQL统计, 修改其它参数则不影响, 如果你增加了一个新 group time, 或 select 字段等, 则会在保存后开始统计, 之前的数据也不会有（除非已经存在）</div>';
                     echo '</div>';
                     echo '<pre class="highlight show-sql">';
@@ -415,6 +418,48 @@ $('#container').highcharts({
         }
     }]
 });
+</script>
+
+
+<script type="text/javascript">
+    $('.task-edit-form').on('submit', function(e)
+    {
+        e.stopPropagation();
+        e.preventDefault();
+        var formData = {
+            key : this.elements.key.value,
+            sql : this.elements.sql.value
+        };
+
+        if (formData.sql == '')
+        {
+            alert('任务SQL不能空');
+            return false;
+        }
+
+        $.ajax({
+            url: '/api/task/update',
+            data: formData,
+            type: 'post',
+            dataType: 'json',
+            success: function(data, status, xhr)
+            {
+                if (data.status == 'error')
+                {
+                    alert(data.message || '更新失败');
+                    return;
+                }
+                alert('更新成功');
+                window.location.reload();
+            },
+            error: function(xhr, status, err)
+            {
+                alert('请求服务器失败');
+            }
+        });
+
+        return false;
+    });
 </script>
 
 
