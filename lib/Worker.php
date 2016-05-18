@@ -1444,7 +1444,7 @@ class Worker
                                 {
                                     $saveAs = $queryOption['saveAs'][$timeOptKey];
                                 }
-                                $saveKey = "list,{$jobKey},{$listLimit},{$app},{$saveAs}";
+                                $saveKey = "list,{$queryKey},{$timeOptKey},{$listLimit},{$app},{$saveAs}";
 
                                 # 导出的数据
                                 $saveData[$saveKey][$id] = json_encode([$time, $data], JSON_UNESCAPED_UNICODE);
