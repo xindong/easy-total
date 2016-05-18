@@ -72,7 +72,7 @@ if ($queries)uasort($queries, function($a, $b)
                         }
                     }
                     unset($item);
-                    $saveAs = implode(',', $saveAs);
+                    $saveAs = implode(', ', $saveAs);
 
                     if ($query['deleteTime'] > 0)
                     {
