@@ -270,6 +270,16 @@ class SQL
                 if (isset($saveAsArr[$i]) && $saveAsArr[$i])
                 {
                     $current = $saveAsArr[$i];
+                    if (strpos($current, '%') !== false && preg_match_all('#%([a-z])#i', $current, $m))
+                    {
+                        # 得到所有 % 开头的变量
+                        $current = [
+                            $current,                             // 当前设置
+                            'date',                               // 处理类型, 方便以后扩展功能
+                            array_values(array_unique($m[0])),    // 所有需要替换的字符串
+                            implode(',', array_unique($m[1])),    // 对应的要替换的时间字符串
+                        ];
+                    }
                 }
 
                 $option['saveAs'][$k] = $current;

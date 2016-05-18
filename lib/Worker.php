@@ -1422,7 +1422,27 @@ class Worker
                                 }
 
                                 # 导出的数据key
-                                $saveKey = "list,{$app},{$queryOption['saveAs'][$timeOptKey]},{$listLimit}";
+                                if (is_array($queryOption['saveAs'][$timeOptKey]))
+                                {
+                                    $tmp = $queryOption['saveAs'][$timeOptKey];
+                                    switch ($tmp[1])
+                                    {
+                                        case 'date':
+                                            # 处理时间变量替换
+                                            $saveAs = str_replace($tmp[2], explode(',', date($tmp[3], $time)), $tmp[0]);
+                                            break;
+
+                                        default:
+                                            $saveAs = $tmp[0];
+                                            break;
+                                    }
+                                    unset($tmp);
+                                }
+                                else
+                                {
+                                    $saveAs = $queryOption['saveAs'][$timeOptKey];
+                                }
+                                $saveKey = "list,{$app},{$saveAs},{$listLimit}";
 
                                 # 导出的数据
                                 $saveData[$saveKey][$id] = json_encode([$time, $data], JSON_UNESCAPED_UNICODE);
