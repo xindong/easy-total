@@ -338,7 +338,7 @@ class TaskWorker
                 if (preg_match('#^list,(?<jobKey>[a-z0-9]+),(?<timeType>[a-z0-9]+),(?<limit>\d+),(?<app>.+),(?<table>.+)$#i', $key, $m))
                 {
                     # 新的格式, 将时间参数放在前面, 并加入 jobKey
-                    if ($m['limit'] < $currentLimit)
+                    if ($m['limit'] <= $currentLimit)
                     {
                         # 读取数据
                         $data = $redis->hGetAll($key);
@@ -368,16 +368,16 @@ class TaskWorker
                     # 将不符合格式的key重命名
                     if ($ssdb)
                     {
-//                        $rs = $redis->hGetAll($key);
-//                        foreach ($rs as $k => $v)
-//                        {
-//                            $redis->hSet("bak.$key", $k, $v);
-//                        }
-//                        $ssdb->hclear($key);
+                        $rs = $redis->hGetAll($key);
+                        foreach ($rs as $k => $v)
+                        {
+                            $redis->hSet("bak.$key", $k, $v);
+                        }
+                        $ssdb->hclear($key);
                     }
                     else
                     {
-//                        $redis->rename($key, "bak.$key");
+                        $redis->rename($key, "bak.$key");
                     }
 
                     warn("can not match redis key $key, remove it to bak.list.{$key}");
