@@ -63,7 +63,16 @@ if ($queries)uasort($queries, function($a, $b)
                     $stats      = $query['use'] ? 'ok' : 'pause';
                     $statsText  = $query['use'] ? '运行中' : '暂停';
                     $statsColor = $query['use'] ? '#d43f3a' : '#eea236';
-                    $saveAs     = implode(',', $query['saveAs']);
+                    $saveAs     = $query['saveAs'];
+                    foreach ($saveAs as &$item)
+                    {
+                        if (is_array($item))
+                        {
+                            $item = $item[0];
+                        }
+                    }
+                    unset($item);
+                    $saveAs = implode(',', $saveAs);
 
                     if ($query['deleteTime'] > 0)
                     {
