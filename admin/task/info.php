@@ -82,7 +82,7 @@ if (!$query)
                     if ($query['editTime'])
                     {
                         echo '<span style="width:50px;display:inline-block"></span>';
-                        echo "<strong style='font-size:13px'>修改时间</strong> &nbsp;<span class='label label-warning'>". date('Y-m-d H:i:s', $setting['editTime']) ."</span>\n";
+                        echo "<strong style='font-size:13px'>修改时间</strong> &nbsp;<span class='label label-warning'>". date('Y-m-d H:i:s', $query['editTime']) ."</span>\n";
                     }
 
                     echo '<br /><br />';
