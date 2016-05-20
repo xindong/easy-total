@@ -323,8 +323,8 @@ class Worker
         # 只有需要第一个进程处理
         if ($this->id == 0)
         {
-            # 每3秒通知推送一次
-            swoole_timer_tick(3000, function()
+            # 每5秒通知推送一次
+            swoole_timer_tick(5000, function()
             {
                 # 通知 taskWorker 处理, 不占用当前 worker 资源
                 foreach ($this->queries as $k => $v)
@@ -346,8 +346,8 @@ class Worker
                 info("fork sql({$key}): {$query['sql']}");
             }
 
-            # 每天清理数据
-            swoole_timer_tick(86400000, function()
+            # 每小时清理1次
+            swoole_timer_tick(3600 * 1000, function()
             {
                 $this->server->task('clean');
             });

@@ -355,6 +355,7 @@ class TaskWorker
                             {
                                 $redis->delete($key);
                             }
+                            debug("output data {$jobKey} time limit {$m['limit']}");
                         }
                         else
                         {
