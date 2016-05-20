@@ -380,7 +380,8 @@ class FluentClient
 
             if ($ack_key)
             {
-                $readTime = microtime(1);
+                $tryReadNum = 0;
+                $readTime   = microtime(1);
 
                 read:
                 $rs = fread($this->socket, 1024);
@@ -392,7 +393,8 @@ class FluentClient
                     {
                         # 超时等待
                         usleep(10000);
-                        debug('wait ack response');
+                        $tryReadNum++;
+                        debug('wait ack response, retry read num: '. $tryReadNum);
                         goto read;
                     }
                     else
@@ -403,7 +405,11 @@ class FluentClient
 
                 if ($rs)
                 {
-                    debug("get ack response : $rs, use time ". (microtime(1) - $readTime) . 's');
+                    if (IS_DEBUG)
+                    {
+                        debug("get ack response : $rs, use time " . (microtime(1) - $readTime) . 's. retry read num:'. $tryReadNum);
+                    }
+
                     $rs = @json_decode($rs, true);
                     if ($rs && isset($rs['ack']))
                     {
