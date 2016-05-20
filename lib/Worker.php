@@ -1302,17 +1302,17 @@ class Worker
                     {
                         # 超过100个则分批提交
                         $rs   = false;
-                        $args = [$k];
+                        $tmp = [$k];
                         $i    = 0;
                         foreach ($v as $kk => $t)
                         {
                             $i++;
-                            $args[] = $kk;
+                            $tmp[] = $kk;
 
                             if ($i % 100 === 0 || $i === $c)
                             {
                                 # 每100条提交一次
-                                $rs = false !== call_user_func_array([$this->redis, 'sAdd'], $args);
+                                $rs = false !== call_user_func_array([$this->redis, 'sAdd'], $tmp);
                                 if (false === $rs)
                                 {
                                     # 有错误, 退出循环
@@ -1323,13 +1323,14 @@ class Worker
                     }
                     else
                     {
-                        $args = [$k];
+                        $tmp = [$k];
                         foreach ($v as $kk => $t)
                         {
-                            $args[] = $kk;
+                            $tmp[] = $kk;
                         }
-                        $rs = false !== call_user_func_array([$this->redis, 'sAdd'], $args);
+                        $rs = false !== call_user_func_array([$this->redis, 'sAdd'], $tmp);
                     }
+                    unset($tmp);
 
                     if (false !== $rs)
                     {
@@ -1482,19 +1483,19 @@ class Worker
                                 # 导出的数据key
                                 if (is_array($queryOption['saveAs'][$timeOptKey]))
                                 {
-                                    $args = $queryOption['saveAs'][$timeOptKey];
-                                    switch ($args[1])
+                                    $tmp = $queryOption['saveAs'][$timeOptKey];
+                                    switch ($tmp[1])
                                     {
                                         case 'date':
                                             # 处理时间变量替换
-                                            $saveAs = str_replace($args[2], explode(',', date($args[3], $time)), $args[0]);
+                                            $saveAs = str_replace($tmp[2], explode(',', date($tmp[3], $time)), $tmp[0]);
                                             break;
 
                                         default:
-                                            $saveAs = $args[0];
+                                            $saveAs = $tmp[0];
                                             break;
                                     }
-                                    unset($args);
+                                    unset($tmp);
                                 }
                                 else
                                 {
@@ -1608,18 +1609,18 @@ class Worker
                 $apps = $this->redis->hMGet('apps', array_keys($appData)) ?: [];
                 foreach ($appData as $app => $time)
                 {
-                    $args = @unserialize($apps) ?: [];
+                    $tmp = @unserialize($apps) ?: [];
 
-                    if (!isset($args['firstTime']))
+                    if (!isset($tmp['firstTime']))
                     {
                         # 初始化一个APP
-                        $args['name']      = "App:$app";
-                        $args['firstTime'] = $time;
+                        $tmp['name']      = "App:$app";
+                        $tmp['firstTime'] = $time;
                     }
 
-                    $args['lastTime'] = $time;
+                    $tmp['lastTime'] = $time;
 
-                    $apps[$app] = serialize($args);
+                    $apps[$app] = serialize($tmp);
                 }
 
                 # 更新APP列表数据
