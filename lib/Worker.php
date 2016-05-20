@@ -1281,12 +1281,61 @@ class Worker
         # 更新唯一值
         if ($this->flushData['dist'])
         {
-            foreach ($this->flushData['dist'] as $k => $v)
+            if ($this->isSSDB)
             {
-                if (false !== $this->redis->hMSet($k, $v))
+                foreach ($this->flushData['dist'] as $k => $v)
                 {
-                    # 成功
-                    unset($this->flushData['dist'][$k]);
+                    if (false !== $this->redis->hMSet($k, $v))
+                    {
+                        # 成功
+                        unset($this->flushData['dist'][$k]);
+                    }
+                }
+            }
+            else
+            {
+                # 使用 Sets 设置
+                foreach ($this->flushData['dist'] as $k => $v)
+                {
+                    $c = count($v);
+                    if ($c > 100)
+                    {
+                        # 超过100个则分批提交
+                        $rs   = false;
+                        $args = [$k];
+                        $i    = 0;
+                        foreach ($v as $kk => $t)
+                        {
+                            $i++;
+                            $args[] = $kk;
+
+                            if ($i % 100 === 0 || $i === $c)
+                            {
+                                # 每100条提交一次
+                                $rs = false !== call_user_func_array([$this->redis, 'sAdd'], $args);
+                                if (false === $rs)
+                                {
+                                    # 有错误, 退出循环
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        $args = [$k];
+                        foreach ($v as $kk => $t)
+                        {
+                            $args[] = $kk;
+                        }
+                        $rs = false !== call_user_func_array([$this->redis, 'sAdd'], $args);
+                    }
+
+                    if (false !== $rs)
+                    {
+                        # 成功
+                        unset($this->flushData['dist'][$k]);
+                    }
                 }
             }
         }
@@ -1406,7 +1455,14 @@ class Worker
                                             if (!isset($distCache[$k]))
                                             {
                                                 # 获取唯一值的长度
-                                                $distCache[$k] = (int)$this->redis->hLen($k);
+                                                if ($this->isSSDB)
+                                                {
+                                                    $distCache[$k] = (int)$this->redis->hLen($k);
+                                                }
+                                                else
+                                                {
+                                                    $distCache[$k] = (int)$this->redis->sCard($k);
+                                                }
                                             }
                                             $data[$as] = $distCache[$k];
                                             break;
@@ -1426,19 +1482,19 @@ class Worker
                                 # 导出的数据key
                                 if (is_array($queryOption['saveAs'][$timeOptKey]))
                                 {
-                                    $tmp = $queryOption['saveAs'][$timeOptKey];
-                                    switch ($tmp[1])
+                                    $args = $queryOption['saveAs'][$timeOptKey];
+                                    switch ($args[1])
                                     {
                                         case 'date':
                                             # 处理时间变量替换
-                                            $saveAs = str_replace($tmp[2], explode(',', date($tmp[3], $time)), $tmp[0]);
+                                            $saveAs = str_replace($args[2], explode(',', date($args[3], $time)), $args[0]);
                                             break;
 
                                         default:
-                                            $saveAs = $tmp[0];
+                                            $saveAs = $args[0];
                                             break;
                                     }
-                                    unset($tmp);
+                                    unset($args);
                                 }
                                 else
                                 {
@@ -1455,12 +1511,27 @@ class Worker
                         if ($saveData)
                         {
                             $error = false;
-                            foreach ($saveData as $saveKey => $data)
+
+                            if ($this->isSSDB)
                             {
-                                if (false === $this->redis->hMset($saveKey, $data))
+                                foreach ($saveData as $saveKey => $data)
                                 {
-                                    $error = true;
-                                    break;
+                                    if (false === $this->redis->hMset($saveKey, $data))
+                                    {
+                                        $error = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                foreach ($saveData as $saveKey => $data)
+                                {
+                                    if (false === $this->redis->sAdd('allListKeys', $saveKey) || false === $this->redis->hMset($saveKey, $data))
+                                    {
+                                        $error = true;
+                                        break;
+                                    }
                                 }
                             }
                             # 清除数据释放内存
@@ -1537,18 +1608,18 @@ class Worker
                 $apps = $this->redis->hMGet('apps', array_keys($appData)) ?: [];
                 foreach ($appData as $app => $time)
                 {
-                    $tmp = @unserialize($apps) ?: [];
+                    $args = @unserialize($apps) ?: [];
 
-                    if (!isset($tmp['firstTime']))
+                    if (!isset($args['firstTime']))
                     {
                         # 初始化一个APP
-                        $tmp['name']      = "App:$app";
-                        $tmp['firstTime'] = $time;
+                        $args['name']      = "App:$app";
+                        $args['firstTime'] = $time;
                     }
 
-                    $tmp['lastTime'] = $time;
+                    $args['lastTime'] = $time;
 
-                    $apps[$app] = serialize($tmp);
+                    $apps[$app] = serialize($args);
                 }
 
                 # 更新APP列表数据

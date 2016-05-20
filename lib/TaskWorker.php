@@ -132,10 +132,29 @@ class TaskWorker
             if ($query['deleteTime'] > 0)
             {
                 unset($queries[$key]);
+                $listKeys = $redis->keys("list,$key,*");
+                if ($listKeys)
+                {
+                    if ($ssdb)
+                    {
+                        foreach ($listKeys as $listKey)
+                        {
+                            # 一个个的移除
+                            $ssdb->hclear($listKey);
+                        }
+                    }
+                    else
+                    {
+                        # 批量移除
+                        $redis->delete($listKeys);
+                    }
+                }
+
                 $redis->hDel('queries', $key);
                 info("clean data, remove sql({$key}): {$query['sql']}");
             }
         }
+
 
         $updateSeries = [];
         $series       = array_map('unserialize', $redis->hGetAll('series'));
@@ -312,7 +331,7 @@ class TaskWorker
             else
             {
                 # 获取列表
-                $keys = $redis->keys("list,{$jobKey},*");
+                $keys = $redis->sMembers('allListKeys');
                 if ($keys)
                 {
                     $keys = array_slice($keys, 0, 30);
@@ -344,7 +363,20 @@ class TaskWorker
                         $tag  = "{$outputPrefix}{$m['app']}.{$m['table']}";
 
                         # 开始推送
-                        if (self::sendToFluent($fluent, $tag, $data))
+                        if (!$data)
+                        {
+                            # 没有读到数据
+                            if (!$ssdb && false !== $redis->ping())
+                            {
+                                # 确定服务器没问题则删除多余的列表
+                                $redis->sRemove('allListKeys', $key);
+                            }
+                            else
+                            {
+                                warn("get list $key error");
+                            }
+                        }
+                        elseif (self::sendToFluent($fluent, $tag, $data))
                         {
                             # 成功后移除当前key的数据
                             if ($ssdb)
@@ -353,7 +385,12 @@ class TaskWorker
                             }
                             else
                             {
-                                $redis->delete($key);
+                                # 删除数据
+                                if (false !== $redis->delete($key))
+                                {
+                                    # 在列表中移除
+                                    $redis->sRemove('allListKeys', $key);
+                                }
                             }
                             debug("output data {$jobKey} time limit {$m['limit']}");
                         }
