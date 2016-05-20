@@ -403,7 +403,7 @@ class FluentClient
                 }
                 else
                 {
-                    warn('error response data:'. $rs);
+                    warn('error response data:'. (false === $rs ? 'false' : $rs));
                     return false;
                 }
             }
