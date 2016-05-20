@@ -39,6 +39,7 @@ class TaskWorker
             {
                 case 'output':
                     $this->outputToFluent($arr[1]);
+                    $this->server->finish('output|'.$arr[1]);
                     break;
 
                 case 'clean':
@@ -476,9 +477,9 @@ class TaskWorker
             $len += strlen($item);
             $str .= $item .',';
 
-            if ($len > 4000000)
+            if ($len > 3000000)
             {
-                # 每 4M 分开一次推送, 避免一次发送的数据包太大
+                # 每 3M 分开一次推送, 避免一次发送的数据包太大
                 $ack    = uniqid('fluent');
                 $buffer =  '["'. $tag .'",['. substr($str, 0, -1) .'], {"chunk":"'. $ack .'"}]';
                 if ($fluent->push_by_buffer($tag, $buffer, $ack))

@@ -387,7 +387,7 @@ class FluentClient
                     {
                         if ($rs['ack'] !== $ack_key)
                         {
-                            $this->process_error($tag, $buffer, 'ack in response and chunk id in sent data are different');
+                            warn('ack in response and chunk id in sent data are different. rs: '. $rs['ack']. 'send: '. $ack_key);
                             return false;
                         }
                         else
@@ -397,11 +397,13 @@ class FluentClient
                     }
                     else
                     {
+                        warn('error response data: '. $rs);
                         return false;
                     }
                 }
                 else
                 {
+                    warn('no response data.');
                     return false;
                 }
             }
@@ -409,7 +411,7 @@ class FluentClient
         catch (Exception $e)
         {
             $this->close();
-            $this->process_error($tag, $buffer, $e->getMessage());
+            warn($e->getMessage());
 
             return false;
         }

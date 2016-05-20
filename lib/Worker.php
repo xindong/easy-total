@@ -145,6 +145,8 @@ class Worker
 
     protected static $packKey;
 
+    protected static $outputTaskRunning = [];
+
     public static $timed;
 
     public static $serverName;
@@ -323,12 +325,26 @@ class Worker
         # 只有需要第一个进程处理
         if ($this->id == 0)
         {
-            # 每5秒通知推送一次
-            swoole_timer_tick(5000, function()
+            # 每3秒通知推送一次
+            swoole_timer_tick(3000, function()
             {
+                self::$timed = time();
+
                 # 通知 taskWorker 处理, 不占用当前 worker 资源
                 foreach ($this->queries as $k => $v)
                 {
+                    if (isset(self::$outputTaskRunning[$k]))
+                    {
+                        # 还在执行中
+                        if (self::$timed - self::$outputTaskRunning[$k] < 30)
+                        {
+                            # 当前的任务还在处理中, 避免重复执行, 等待它
+                            debug('output task "'. $k .'" is running');
+                            continue;
+                        }
+                    }
+
+                    self::$outputTaskRunning[$k] = self::$timed;
                     $this->server->task("output|{$k}");
                 }
             });
@@ -681,6 +697,13 @@ class Worker
 
     public function onFinish($server, $task_id, $data)
     {
+        $arr = explode('|', $data);
+        switch ($arr[0])
+        {
+            case 'output':
+                unset(self::$outputTaskRunning[$arr[1]]);
+                break;
+        }
         return true;
     }
 
