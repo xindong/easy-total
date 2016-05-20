@@ -38,6 +38,8 @@ class TaskWorker
             switch ($arr[0])
             {
                 case 'output':
+                    # 主进程会同时推送很多任务过来, 这样可以错开处理
+                    usleep(mt_rand(100, 300000));
                     $this->outputToFluent($arr[1]);
                     $this->server->finish('output|'.$arr[1]);
                     break;
