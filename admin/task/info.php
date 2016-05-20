@@ -229,11 +229,11 @@ if (!$query)
                 else
                 {
                     $it      = null;
-                    $arrKeys = $this->redis->scan($it, "total,{$key},*", 50);
+                    $arrKeys = $this->worker->redis->scan($it, "total,{$key},*", 50);
                     $data    = [];
                     foreach($arrKeys as $strKey)
                     {
-                        $data[$strKey] = $this->redis->get($strKey);
+                        $data[$strKey] = $this->worker->redis->get($strKey);
                     }
                 }
 
