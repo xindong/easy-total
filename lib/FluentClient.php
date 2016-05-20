@@ -74,6 +74,7 @@ class FluentClient
         'retry_socket'         => true,
         'max_write_retry'      => self::MAX_WRITE_RETRY,
         'require_ack_response' => self::REQUIRE_ACK_RESPONSE,
+        'ack_response_timeout' => 180,      // 超时时间
         'max_buffer_length'    => 1000,
     );
 
@@ -379,9 +380,30 @@ class FluentClient
 
             if ($ack_key)
             {
-                $rs = @fread($this->socket, 1024);
+                $readTime = microtime(1);
+
+                read:
+                $rs = fread($this->socket, 1024);
+                if ($rs === '')
+                {
+                    # 通常都是被服务器关闭了连接
+
+                    if (microtime(1) - $readTime < $this->options['ack_response_timeout'])
+                    {
+                        # 超时等待
+                        usleep(10000);
+                        debug('wait ack response');
+                        goto read;
+                    }
+                    else
+                    {
+                        throw new Exception('ack response timeout .....');
+                    }
+                }
+
                 if ($rs)
                 {
+                    debug("get ack response : $rs, use time ". (microtime(1) - $readTime) . 's');
                     $rs = @json_decode($rs, true);
                     if ($rs && isset($rs['ack']))
                     {
@@ -403,7 +425,7 @@ class FluentClient
                 }
                 else
                 {
-                    warn('error response data:'. (false === $rs ? 'false' : $rs));
+                    warn('error response data:'. ('' === $rs ? 'false' : $rs));
                     return false;
                 }
             }
