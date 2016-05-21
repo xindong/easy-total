@@ -86,7 +86,11 @@ if ($this->worker->isSSDB)
 }
 else
 {
-  $keys = $this->worker->redis->keys("counter.total.$timeKey.*");
+  $keys = [];
+  foreach ($this->worker->series as $k => $v)
+  {
+     $keys[] = "counter.total.$timeKey.$k";
+  }
 }
 
 $keyLen = strlen('counter.total.');
