@@ -382,10 +382,18 @@ class TaskWorker
                 $tag  = $groups['tag'];
                 $keys = $groups['keys'];
 
-                $data = [];
-                foreach ($keys as $key)
+                if (count($keys) > 1)
                 {
-                    $data = array_merge($data, $redis->hGetAll($key) ?: []);
+                    $data = [];
+                    foreach ($keys as $key)
+                    {
+                        # 数据合并
+                        $data = array_merge($data, $redis->hGetAll($key) ?: []);
+                    }
+                }
+                else
+                {
+                    $data = $redis->hGetAll($keys[0]);
                 }
 
                 if ((!$data && false !== $redis->ping()) || self::sendToFluent($fluent, $tag, $data))
