@@ -2120,6 +2120,7 @@ class Worker
                 break;
 
             case 'M':
+            case 'i':
                 # 分钟  201604100900
                 $timeKey   = 100 * date('YmdH', $time);
                 $timeLimit = date('i', $time);

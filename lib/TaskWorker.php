@@ -321,37 +321,30 @@ class TaskWorker
 
         try
         {
-
             if ($ssdb)
             {
                 # 读取当前任务的前30个列表
                 $keys = $ssdb->hlist("list,{$jobKey},", "list,{$jobKey},z" , 30);
-
-                if (!$keys)
-                {
-                    goto rt;
-                }
             }
             else
             {
                 # 获取列表
                 $keys = $redis->sMembers('allListKeys');
-                if (!$keys)
-                {
-                    # 没数据
-                    goto rt;
-                }
             }
 
-            # 加载客户端
-            require_once (__DIR__ .'/FluentClient.php');
-            $fluent = new FluentClient(FluentServer::$config['output']['link']);
+            if (!$keys)
+            {
+                # 没数据
+                goto rt;
+            }
 
+            # 排序, 便于下面整理
+            asort($keys);
+
+            # 整理key
             $currentLimit = date('YmdHi', time() - 30);
             $outputPrefix = FluentServer::$config['output']['prefix'] ?: '';
-            $lastSyncTime      = time();
-
-            # 遍历key
+            $myKeys       = [];
             foreach ($keys as $key)
             {
                 if (preg_match('#^list,(?<jobKey>[a-z0-9]+),(?<timeType>[a-z0-9]+),(?<limit>\d+),(?<app>.+),(?<table>.+)$#i', $key, $m))
@@ -362,73 +355,83 @@ class TaskWorker
                     # 新的格式, 将时间参数放在前面, 并加入 jobKey
                     if ($m['limit'] < $currentLimit)
                     {
-                        # 读取数据
-                        $data = $redis->hGetAll($key);
-                        $tag  = "{$outputPrefix}{$m['app']}.{$m['table']}";
+                        # 得到按时间分组的序列key
+                        preg_match('#^(\d+)([a-z]+)$#', $m['timeType'], $mm);
+                        $timeGroup = Worker::getTimeKey(strtotime($m['limit']), $mm[1], $mm[2]);
+                        $delayKey  = "{$m['timeType']},{$timeGroup},{$m['app']},{$m['table']}";
 
-                        # 开始推送
-                        if (!$data)
-                        {
-                            # 没有读到数据
-                            if (!$ssdb && false !== $redis->ping())
-                            {
-                                # 确定服务器没问题则删除多余的列表
-                                $redis->sRemove('allListKeys', $key);
-                            }
-                            else
-                            {
-                                warn("get list $key error");
-                            }
-                        }
-                        elseif (self::sendToFluent($fluent, $tag, $data))
-                        {
-                            # 成功后移除当前key的数据
-                            if ($ssdb)
-                            {
-                                $ssdb->hclear($key);
-                            }
-                            else
-                            {
-                                # 删除数据
-                                if (false !== $redis->delete($key))
-                                {
-                                    # 在列表中移除
-                                    $redis->sRemove('allListKeys', $key);
-                                }
-                            }
-                            debug("output data {$jobKey} time limit {$m['limit']}");
-                        }
-                        else
-                        {
-                            warn("push data {$tag} fail. fluentd server: tcp://". FluentServer::$config['output']['type'] .': '. FluentServer::$config['output']['link']);
-                        }
+                        $myKeys[$delayKey]['tag']    = "{$outputPrefix}{$m['app']}.{$m['table']}";
+                        $myKeys[$delayKey]['limit']  = $m['limit'];
+                        $myKeys[$delayKey]['keys'][] = $key;
                     }
                 }
-                else
+            }
+
+            if (!$myKeys)
+            {
+                goto rt;
+            }
+
+            # 加载客户端
+            require_once (__DIR__ .'/FluentClient.php');
+            $fluent = new FluentClient(FluentServer::$config['output']['link']);
+
+            $lastSyncTime = time();
+            foreach ($myKeys as $groups)
+            {
+                $tag  = $groups['tag'];
+                $keys = $groups['keys'];
+
+                $data = [];
+                foreach ($keys as $key)
                 {
-                    # 将不符合格式的key重命名
+                    $data = array_merge($data, $redis->hGetAll($key) ?: []);
+                }
+
+                if ((!$data && false !== $redis->ping()) || self::sendToFluent($fluent, $tag, $data))
+                {
+                    # 成功后移除当前key的数据
                     if ($ssdb)
                     {
-                        $rs = $redis->hGetAll($key);
-                        foreach ($rs as $k => $v)
+                        foreach ($keys as $key)
                         {
-                            $redis->hSet("bak.$key", $k, $v);
+                            $ssdb->hclear($key);
                         }
-                        $ssdb->hclear($key);
                     }
                     else
                     {
-                        $redis->rename($key, "bak.$key");
+                        # 删除数据
+                        if (false !== $redis->delete($keys))
+                        {
+                            # 在列表中移除
+                            if (count($keys) < 20)
+                            {
+                                # 批量删除
+                                call_user_func_array([$redis, 'sRemove'], array_merge(['allListKeys'], $keys));
+                            }
+                            else
+                            {
+                                foreach ($keys as $key)
+                                {
+                                    $redis->sRemove('allListKeys', $key);
+                                }
+                            }
+                        }
                     }
 
-                    warn("can not match redis key $key, remove it to bak.list.{$key}");
+                    debug("output data {$jobKey} time limit {$groups['limit']}");
+                }
+                else
+                {
+                    warn("push data {$keys} fail. fluentd server: ". FluentServer::$config['output']['type'] .': '. FluentServer::$config['output']['link']);
                 }
 
-                if (time() - $lastSyncTime > 10)
+                if (time() - $lastSyncTime > 5)
                 {
                     # 超过10秒钟则更新锁时间值并通知worker进程继续执行
                     $this->server->finish('output.continue|'. $jobKey);
 
+                    # 更新锁信息
                     $redis->set($lockKey, $lockTime = microtime(1));
 
                     # 更新上次同步时间
