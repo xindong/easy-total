@@ -837,7 +837,7 @@ class Worker
             else
             {
                 # 获取时间key, Exp: 20160610123
-                $timeKey = $this->getTimeKey($time, $timeOpt[0], $timeOpt[1]);
+                $timeKey = getTimeKey($time, $timeOpt[0], $timeOpt[1]);
 
                 # 数据的键, Exp: abcde123af32,1d,hsqj,20160506123_123_abc
                 $uniqid  = "$key,$timeOptKey,$app,{$timeKey}{$groupValue}";
@@ -2079,86 +2079,5 @@ class Worker
         }
 
         return false;
-    }
-
-    /**
-     * 获取按时间分组的key
-     *
-     * @param $time
-     * @param $limit
-     * @param $type
-     * @return int
-     */
-    public static function getTimeKey($time, $limit, $type)
-    {
-        # 放在缓存里
-        static $cache = [];
-
-        $key = "{$time}{$limit}{$type}";
-        if (isset($cache[$key]))return $cache[$key];
-
-        # 按时间处理分组
-        switch ($type)
-        {
-            case 'm':
-                # 月   201600
-                $timeKey   = 100 * date('Y', $time);
-                $timeLimit = date('m', $time);
-                break;
-
-            case 'w':
-                # 当年中第N周  201600
-                $timeKey   = 100 * date('Y', $time);
-                $timeLimit = date('W', $time) - 1;
-                break;
-
-            case 'd':
-                # 天   2016000
-                $timeKey   = 1000 * date('Y', $time);
-                # 当年中的第N天, 0-365
-                $timeLimit = date('z', $time);
-                break;
-
-            case 'M':
-            case 'i':
-                # 分钟  201604100900
-                $timeKey   = 100 * date('YmdH', $time);
-                $timeLimit = date('i', $time);
-                break;
-
-            case 's':
-                # 秒   20160410090900
-                $timeKey   = 100 * date('YmdHi', $time);
-                $timeLimit = date('s', $time);
-                break;
-
-            case 'h':
-            default:
-                # 小时        2016041000
-                $timeKey   = 100 * date('Ymd', $time);
-                $timeLimit = date('H', $time);
-                break;
-        }
-
-        if ($timeLimit > 0 && $limit > 1)
-        {
-            # 按 $job['groupTime']['limit'] 中的数值分组
-            # $timeLimit + 1 是因为所有的数值都是从0开始
-            $timeKey = $timeKey + $limit * floor(($timeLimit + 1) / $limit);
-        }
-        else
-        {
-            $timeKey += $timeLimit;
-        }
-
-        if (count($cache) > 200)
-        {
-            # 清理下
-            $cache = array_slice($cache, -10);
-        }
-
-        $cache[$key] = $timeKey;
-
-        return $timeKey;
     }
 }

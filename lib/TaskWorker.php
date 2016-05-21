@@ -357,7 +357,7 @@ class TaskWorker
                     {
                         # 得到按时间分组的序列key
                         preg_match('#^(\d+)([a-z]+)$#', $m['timeType'], $mm);
-                        $timeGroup = Worker::getTimeKey(strtotime($m['limit']), $mm[1], $mm[2]);
+                        $timeGroup = getTimeKey(strtotime($m['limit']), $mm[1], $mm[2]);
                         $delayKey  = "{$m['timeType']},{$timeGroup},{$m['app']},{$m['table']}";
 
                         $myKeys[$delayKey]['tag']    = "{$outputPrefix}{$m['app']}.{$m['table']}";
