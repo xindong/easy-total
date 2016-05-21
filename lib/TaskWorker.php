@@ -335,11 +335,7 @@ class TaskWorker
             {
                 # 获取列表
                 $keys = $redis->sMembers('allListKeys');
-                if ($keys)
-                {
-                    $keys = array_slice($keys, 0, 30);
-                }
-                else
+                if (!$keys)
                 {
                     # 没数据
                     goto rt;
@@ -358,6 +354,9 @@ class TaskWorker
             {
                 if (preg_match('#^list,(?<jobKey>[a-z0-9]+),(?<timeType>[a-z0-9]+),(?<limit>\d+),(?<app>.+),(?<table>.+)$#i', $key, $m))
                 {
+                    # 不是当前任务
+                    if ($m['jobKey'] !== $jobKey)continue;
+
                     # 新的格式, 将时间参数放在前面, 并加入 jobKey
                     if ($m['limit'] < $currentLimit)
                     {
