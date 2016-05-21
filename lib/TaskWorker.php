@@ -41,7 +41,7 @@ class TaskWorker
                     # 主进程会同时推送很多任务过来, 这样可以错开处理
                     usleep(mt_rand(100, 300000));
                     $this->outputToFluent($arr[1]);
-                    $this->server->finish('output|'.$arr[1]);
+                    $this->server->finish('output.finish|'.$arr[1]);
                     break;
 
                 case 'clean':
@@ -321,6 +321,7 @@ class TaskWorker
 
         try
         {
+
             if ($ssdb)
             {
                 # 读取当前任务的前30个列表
@@ -348,6 +349,7 @@ class TaskWorker
 
             $currentLimit = date('YmdHi', time() - 30);
             $outputPrefix = FluentServer::$config['output']['prefix'] ?: '';
+            $lastSyncTime      = time();
 
             # 遍历key
             foreach ($keys as $key)
@@ -422,16 +424,15 @@ class TaskWorker
                     warn("can not match redis key $key, remove it to bak.list.{$key}");
                 }
 
-                $useTime = time() - $lockTime;
+                if (time() - $lastSyncTime > 10)
+                {
+                    # 超过10秒钟则更新锁时间值并通知worker进程继续执行
+                    $this->server->finish('output.continue|'. $jobKey);
 
-                if ($useTime > 60)
-                {
-                    throw new Exception('use too much time.');
-                }
-                elseif ($useTime > 10)
-                {
-                    # 更新锁时间值
                     $redis->set($lockKey, $lockTime = microtime(1));
+
+                    # 更新上次同步时间
+                    $lastSyncTime = time();
                 }
             }
 

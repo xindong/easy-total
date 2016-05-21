@@ -700,8 +700,13 @@ class Worker
         $arr = explode('|', $data);
         switch ($arr[0])
         {
-            case 'output':
+            case 'output.finish':
+                # 执行完毕
                 unset(self::$outputTaskRunning[$arr[1]]);
+                break;
+            case 'output.continue':
+                # 还在执行中
+                self::$outputTaskRunning[$arr[1]] = time();
                 break;
         }
         return true;
