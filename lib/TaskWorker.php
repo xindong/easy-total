@@ -460,6 +460,7 @@ class TaskWorker
                             }
 
                             $redis->delete($key);
+                            $redis->sRemove('allListKeys', $key);
                         }
                     }
 
