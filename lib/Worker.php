@@ -1313,10 +1313,30 @@ class Worker
             {
                 foreach ($this->flushData['dist'] as $k => $v)
                 {
-                    if (false !== $this->redis->hMSet($k, $v))
+                    if (($c = count($v)) > 3000)
                     {
-                        # 成功
-                        unset($this->flushData['dist'][$k]);
+                        # 数据很多
+                        $err = false;
+                        for ($i = 0; $i < $c; $i += 2000)
+                        {
+                            if (false === $this->redis->hMSet($k, array_slice($v, $i, 2000, true)))
+                            {
+                                $err = true;
+                                break;
+                            }
+                        }
+                        if (!$err)
+                        {
+                            unset($this->flushData['dist'][$k]);
+                        }
+                    }
+                    else
+                    {
+                        if (false !== $this->redis->hMSet($k, $v))
+                        {
+                            # 成功
+                            unset($this->flushData['dist'][$k]);
+                        }
                     }
                 }
             }
