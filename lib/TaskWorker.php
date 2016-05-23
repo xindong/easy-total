@@ -458,7 +458,10 @@ class TaskWorker
                             {
                                 $redis->hDel($key, $hashKey);
                             }
+                        }
 
+                        foreach ($keys as $key)
+                        {
                             $redis->delete($key);
                             $redis->sRemove('allListKeys', $key);
                         }
