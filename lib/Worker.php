@@ -1538,7 +1538,7 @@ class Worker
                                         case 'd':
                                         case 'w':
                                             # 月, 周, 天的数据向后延迟1小时分一组
-                                            $listLimit[$timeOptKey] = date('YmdH00', time() + 3600);
+                                            $listLimit[$timeOptKey] = date('YmdH0000', time() + 3600);
                                             break;
 
                                         default:

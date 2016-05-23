@@ -343,7 +343,7 @@ class TaskWorker
             asort($keys);
 
             # 整理key
-            $currentLimit = date('YmdHi', time() - 30);
+            $currentLimit = date('YmdHi00', time() - 30);
             $outputPrefix = FluentServer::$config['output']['prefix'] ?: '';
             $myKeys       = [];
             foreach ($keys as $key)
