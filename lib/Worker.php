@@ -1541,13 +1541,9 @@ class Worker
                                             $listLimit[$timeOptKey] = date('YmdH00', time() + 3600);
                                             break;
 
-                                        case 'h':
-                                            # 小时的数据每10分钟1组, 最长不超过10分钟延迟
-                                            $listLimit[$timeOptKey] = 10 * intval(date('YmdHi', time() + 600) / 10);
-                                            break;
-
                                         default:
-                                            $listLimit[$timeOptKey] = date('YmdHi');
+                                            # 每10秒钟一组
+                                            $listLimit[$timeOptKey] = 10 * ceil(date('YmdHis') / 10);
                                             break;
                                     }
                                 }
