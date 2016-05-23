@@ -1398,7 +1398,7 @@ class Worker
                         # 任务的设置
                         $option    = $this->series[$key];
                         $saveData  = [];
-                        $listLimit = [];
+                        $listLimit = date('YmdHi');
 
                         if ($option)foreach ($arr as $id => $opt)
                         {
@@ -1530,25 +1530,7 @@ class Worker
                                     $saveAs = $queryOption['saveAs'][$timeOptKey];
                                 }
 
-                                if (!isset($listLimit[$timeOptKey]))
-                                {
-                                    switch (substr($timeOptKey, -1))
-                                    {
-                                        case 'm':
-                                        case 'd':
-                                        case 'w':
-                                            # 月, 周, 天的数据向后延迟1小时分一组
-                                            $listLimit[$timeOptKey] = date('YmdH0000', time() + 3600);
-                                            break;
-
-                                        default:
-                                            # 每10秒钟一组
-                                            $listLimit[$timeOptKey] = 10 * ceil(date('YmdHis') / 10);
-                                            break;
-                                    }
-                                }
-
-                                $saveKey = "list,{$queryKey},{$timeOptKey},{$listLimit[$timeOptKey]},{$app},{$saveAs}";
+                                $saveKey = "list,{$queryKey},{$timeOptKey},{$listLimit},{$app},{$saveAs}";
 
                                 # 导出的数据
                                 $saveData[$saveKey][$id] = json_encode([$time, $data], JSON_UNESCAPED_UNICODE);
