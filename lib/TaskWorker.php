@@ -324,7 +324,8 @@ class TaskWorker
             if ($ssdb)
             {
                 # 读取当前任务的前30个列表
-                $keys = $ssdb->hlist("list,{$jobKey},", "list,{$jobKey},z" , 30);
+                # $keys = $ssdb->hlist("list,{$jobKey},", "list,{$jobKey},z" , 30);
+                $keys = $ssdb->hgetall('allListKeys');
             }
             else
             {
@@ -393,7 +394,8 @@ class TaskWorker
                 }
                 else
                 {
-                    $data = $redis->hGetAll($keys[0]);
+                    $key  = $keys[0];
+                    $data = $redis->hGetAll($key);
                 }
 
                 if ((!$data && false !== $redis->ping()) || self::sendToFluent($fluent, $tag, $data))
@@ -403,6 +405,7 @@ class TaskWorker
                     {
                         foreach ($keys as $key)
                         {
+                            $ssdb->hdel('allListKeys', $key);
                             $ssdb->hclear($key);
                         }
                     }
