@@ -354,8 +354,6 @@ class TaskWorker
             {
                 # 获取列表
                 $keys = $redis->sMembers('allListKeys');
-
-                $redis->setOption(Redis::OPT_SCAN, Redis::SCAN_RETRY);
             }
 
             if (!$keys)
@@ -403,15 +401,14 @@ class TaskWorker
             $fluent = new FluentClient(FluentServer::$config['output']['link']);
 
             $lastSyncTime = time();
-
             foreach ($myKeys as $groups)
             {
                 $tag  = $groups['tag'];
                 $keys = $groups['keys'];
-                $data = [];
 
-                if ($ssdb)
+                if (count($keys) > 1)
                 {
+                    $data = [];
                     foreach ($keys as $key)
                     {
                         # 数据合并
@@ -420,20 +417,8 @@ class TaskWorker
                 }
                 else
                 {
-                    $redisHashKeys = [];
-                    foreach ($keys as $key)
-                    {
-                        # 大的hash数据使用 hGetAll 会需要用20-50毫秒的时间, 所以采样hScan来避免阻塞
-                        $it = null;
-                        while($arrKeys = $redis->hScan($key, $it))
-                        {
-                            foreach($arrKeys as $strField => $strValue)
-                            {
-                                $data[$strField] = $strValue;
-                                $redisHashKeys[$key][$strField] = 1;
-                            }
-                        }
-                    }
+                    $key  = $keys[0];
+                    $data = $redis->hGetAll($key);
                 }
 
                 if ((!$data && false !== $redis->ping()) || self::sendToFluent($fluent, $tag, $data))
@@ -450,20 +435,21 @@ class TaskWorker
                     else
                     {
                         # 删除数据
-                        # delete 居然是阻塞的, 好吧, 被打败了
-                        if (isset($redisHashKeys))foreach ($redisHashKeys as $key => $hashKeys)
+                        if (false !== $redis->delete($keys))
                         {
-                            # 先一个个的移除里面的数据
-                            foreach ($hashKeys as $hashKey => $tmp)
+                            # 在列表中移除
+                            if (count($keys) < 20)
                             {
-                                $redis->hDel($key, $hashKey);
+                                # 批量删除
+                                call_user_func_array([$redis, 'sRemove'], array_merge(['allListKeys'], $keys));
                             }
-                        }
-
-                        foreach ($keys as $key)
-                        {
-                            $redis->delete($key);
-                            $redis->sRemove('allListKeys', $key);
+                            else
+                            {
+                                foreach ($keys as $key)
+                                {
+                                    $redis->sRemove('allListKeys', $key);
+                                }
+                            }
                         }
                     }
 
