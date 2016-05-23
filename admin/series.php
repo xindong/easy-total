@@ -13,7 +13,7 @@
         <nav class="navbar navbar-default">
             <div class="container-fluid">
                 <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-2">
-                    <form class="navbar-form navbar-left" id="search_from" method="post">
+                    <form class="navbar-form navbar-left" id="search_from" method="get">
                         <div class="form-group">
                             类型:
                             <select name="type" class="btn btn-default">
@@ -37,12 +37,12 @@
                             游戏:
                             <select name="game" class="btn btn-default">
                                 <option value=''>-请选择-</option>
-                                <option value='hsqj'>-横扫千军-</option>
-                                <option value='ttdbl'>-天天打波利-</option>
-                                <option value='sxd2'>-神仙道2-</option>
-                                <option value='sglms'>-三国罗曼史-</option>
-                                <option value='sxd2016'>-神仙道2016-</option>
-                                <option value='kd'>-快斩狂刀-</option>
+                                <option value='hsqj'>横扫千军</option>
+                                <option value='ttdbl'>天天打波利</option>
+                                <option value='sxd2'>神仙道2</option>
+                                <option value='sglms'>-三国罗曼史</option>
+                                <option value='sxd2016'>神仙道2016</option>
+                                <option value='kd'>快斩狂刀</option>
                             </select>
                         </div>
                         <button type="submit" class="btn btn-default">搜索</button>
@@ -64,16 +64,11 @@
         </thead>
         <tbody id="ssdb_data_boday"></tbody>
     </table>
+    <ul class="pager">
+        <li class="disabled"><a href="#">上一页</a></li>
+        <li><a href="#">下一页</a></li>
+    </ul>
 </div>
-
-
-
-<?php
-$query = $this->worker->ssdb->scan("", "z", 100);
-//echo"<pre>";
-//print_r($query);
-//print_r($list);
-?>
 
 <script type="text/javascript">
     $('#search_from').on('submit', function(e)
@@ -110,21 +105,25 @@ $query = $this->worker->ssdb->scan("", "z", 100);
             }
         }
 
+        return get_list(formData);
+    });
+
+    function get_list(formData)
+    {
         $.ajax({
             url: '/api/task/series',
             data: formData,
-            type: 'post',
+            type: 'get',
             dataType: 'json',
             success: function(data, status, xhr)
             {
                 if (data.status == 'error')
                 {
                     alert(data.message || '查询失败');
-                    return;
+                    return false;
                 }
 
                 $('#ssdb_data_boday').html('');
-
                 var html = '';
                 $.each(data.list, function(name, value) {
                     html += '<tr>';
@@ -136,14 +135,28 @@ $query = $this->worker->ssdb->scan("", "z", 100);
                     html += '</tr>';
                 });
                 $('#ssdb_data_boday').html(html);
+
+                $('.pager').html('');
+                var pager_html = '';
+                pager_html += '<li><a href="javascript:void(0);" onclick="next_page('+formData+', '+ +');">上一页</a></li>';
+                pager_html += '<li><a href="javascript:void(0);" onclick="previous_page('+formData+', '+ +');">下一页</a></li>';
+                $('.pager').html(pager_html);
             },
             error: function(xhr, status, err)
             {
                 alert('请求服务器失败');
+                return false;
             }
         });
+    }
 
-        return false;
-    });
+    function next_page()
+    {
 
+    }
+
+    function previous_page()
+    {
+
+    }
 </script>
