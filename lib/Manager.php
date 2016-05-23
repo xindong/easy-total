@@ -439,26 +439,9 @@ class Manager
             case 'task/series':
                 try
                 {
-                    $type      = $this->request->get['type'];
-                    $task      = $this->request->get['task'];
+                    $page_type = $this->request->get['type'];
                     $firstItem = $this->request->get['first_item'];
                     $lastItem  = $this->request->get['last_item'];
-
-                    $conditions = '';
-                    if ($type)
-                    {
-                        $conditions .= $type.',';
-                    }
-
-                    if ($task)
-                    {
-                        if (!$type)
-                        {
-                            throw new Exception('缺少前置条件:类型');
-                        }
-
-                        $conditions .= $task.',';
-                    }
 
                     if (!$this->worker->redis)
                     {
@@ -470,9 +453,20 @@ class Manager
                     $datas = [];
                     if ($this->worker->isSSDB)
                     {
-                        $datas = $this->worker->ssdb->scan($conditions, $conditions."z", 50);
+                        switch ($page_type)
+                        {
+                            case 'next':
+                                $datas = $this->worker->ssdb->scan($lastItem, "z", 100);
+                                break;
+                            case 'prev':
+                                $datas = $this->worker->ssdb->rscan($firstItem, "z", 100);
+                                break;
+                            default :
+                                $datas = $this->worker->ssdb->scan('', "z", 100);
+                                break;
+                        }
                     }else{
-                        $keys = $this->worker->redis->scan($conditions, $conditions."z", 50);
+                        $keys = $this->worker->redis->scan('', "z", 100);
                         if ($keys)foreach($keys as $key)
                         {
                             $datas[$key] = $this->worker->redis->get($key);
