@@ -1325,6 +1325,12 @@ class Worker
                 # 使用 Sets 设置
                 foreach ($this->flushData['dist'] as $k => $v)
                 {
+                    # 记录下所有唯一值的key列表
+                    list($d, $sk) = explode(',', $k, 3);
+
+                    # 记录每个任务的唯一序列, 用于后续数据管理
+                    $this->redis->sAdd("distKeys,{$sk}", $k);
+
                     $c = count($v);
                     if ($c > 100)
                     {
@@ -1410,6 +1416,13 @@ class Worker
                             if (!$total)
                             {
                                 $total = [];
+
+                                # 更新数据
+                                if (!$this->isSSDB)
+                                {
+                                    # redis 服务器需要将 key 加入到 totalKeys 里方便后续数据维护
+                                    $this->redis->sAdd("totalKeys,$key", $totalKey);
+                                }
                             }
                             else
                             {
@@ -1422,7 +1435,6 @@ class Worker
                                 # 合并统计数据
                                 $total = $this->totalDataMerge($total, $this->flushData['total'][$uniqid], $option['function']);
 
-                                # 更新数据
                                 if ($this->redis->set($totalKey, serialize($total)))
                                 {
                                     unset($this->flushData['total'][$uniqid]);
@@ -1582,7 +1594,7 @@ class Worker
                         # 释放锁
                         $this->redis->delete($lockKey);
 
-                        # 使用时间
+                        # 使用时间（微妙）
                         $useTime = 1000000 * (microtime(1) - $beginTime);
 
                         # 更新推送消耗时间统计
@@ -1663,7 +1675,7 @@ class Worker
         if ($this->flushData['counter'])
         {
             # 按每分钟分开
-            foreach ($this->flushData['counter'] as $uniqid => $value)
+            foreach ($this->flushData['counter'] as $key => $value)
             {
                 $allCount = 0;
                 foreach ($value as $timeKey => $v)
@@ -1673,13 +1685,13 @@ class Worker
                     $allCount += $v['total'];
 
                     # 更新当前任务的当天统计信息
-                    $this->redis->hIncrBy("counter.total.$k1.$uniqid", $k2, $v['total']);
-                    $this->redis->hIncrBy("counter.time.$k1.$uniqid", $k2, $v['time']);
+                    $this->redis->hIncrBy("counter.total.$k1.$key", $k2, $v['total']);
+                    $this->redis->hIncrBy("counter.time.$k1.$key", $k2, $v['time']);
                 }
 
                 # 更新任务总的统计信息
-                $this->redis->hIncrBy('counter', $uniqid, $allCount);
-                unset($this->flushData['counter'][$uniqid]);
+                $this->redis->hIncrBy('counter', $key, $allCount);
+                unset($this->flushData['counter'][$key]);
             }
         }
 

@@ -78,9 +78,25 @@ class TaskWorker
         list($redis, $ssdb) = self::getRedis();
         if (false === $redis)return false;
 
+        # 监控统计数据的key
+        $keys = [];
+        $time = time();
+        for ($i = 0; $i <= 20; $i++)
+        {
+            $k1     = date('Ymd', $time);
+            $keys[] = "counter.pushtime.$k1.$key";
+            $keys[] = "counter.total.$k1.$key";
+            $keys[] = "counter.time.$k1.$key";
+            $time  -= 86400;
+        }
 
         if ($ssdb)
         {
+            foreach ($keys as $k)
+            {
+                $ssdb->hclear($k);
+            }
+
             foreach (['total', 'dist', 'join'] as $item)
             {
                 while ($keys = $ssdb->hlist("{$item},{$key},", "{$item},{$key},z", 100))
@@ -96,15 +112,22 @@ class TaskWorker
         }
         else
         {
-            foreach (['total', 'dist', 'join'] as $item)
+            # 移除监控统计数据
+            $redis->delete($keys);
+
+            # 移除统计数据
+            if ($keys = $redis->sMembers("totalKeys,$key"))
             {
-                $keys = $redis->keys("{$item},{$key},*");
-                if ($keys)
-                {
-                    $redis->delete($keys);
-                }
+                $redis->delete($keys);
             }
 
+            # 移除唯一序列数据
+            if ($keys = $redis->sMembers("distKeys,$key"))
+            {
+                $redis->delete($keys);
+            }
+
+            # 移除序列信息
             $redis->delete("series.app.$key");
         }
 
