@@ -441,7 +441,6 @@ class Manager
                 {
                     $type      = $this->request->get['type'];
                     $task      = $this->request->get['task'];
-                    $game      = $this->request->get['game'];
                     $firstItem = $this->request->get['first_item'];
                     $lastItem  = $this->request->get['last_item'];
 
@@ -461,16 +460,6 @@ class Manager
                         $conditions .= $task.',';
                     }
 
-                    if ($game)
-                    {
-                        if (!$type || !$task)
-                        {
-                            throw new Exception('缺少前置条件:类型,任务!');
-                        }
-
-                        $conditions .= $game.',';
-                    }
-
                     if (!$this->worker->redis)
                     {
                         $data['status']  = 'error';
@@ -484,7 +473,7 @@ class Manager
                         $datas = $this->worker->ssdb->scan($conditions, $conditions."z", 50);
                     }else{
                         $keys = $this->worker->redis->scan($conditions, $conditions."z", 50);
-                        foreach($keys as $key)
+                        if ($keys)foreach($keys as $key)
                         {
                             $datas[$key] = $this->worker->redis->get($key);
                         }
@@ -516,8 +505,9 @@ class Manager
                         );
                     }
 
-                    $data['status']       = 'ok';
-                    $data['list']         = $list;
+                    $data['status']    = 'ok';
+                    $data['list']      = $list;
+                    $data['last_item'] = $key;
                 }
                 catch (Exception $e)
                 {
