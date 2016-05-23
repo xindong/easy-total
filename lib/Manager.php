@@ -436,7 +436,83 @@ class Manager
                 }
 
                 break;
+            case 'task/series':
+                try
+                {
+                    $type = $this->request->post['type'];
+                    $task = $this->request->post['task'];
+                    $game = $this->request->post['game'];
 
+                    $conditions = '';
+                    if ($type)
+                    {
+                        $conditions .= $type.',';
+                    }
+
+                    if ($task)
+                    {
+                        if (!$type)
+                        {
+                            throw new Exception('缺少前置条件:类型');
+                        }
+
+                        $conditions .= $task.',';
+                    }
+
+                    if ($game)
+                    {
+                        if (!$type || !$task)
+                        {
+                            throw new Exception('缺少前置条件:类型,任务!');
+                        }
+
+                        $conditions .= $game.',';
+                    }
+
+                    if (!$this->worker->redis)
+                    {
+                        $data['status']  = 'error';
+                        $data['message'] = '请检查redis服务器';
+                        goto send;
+                    }
+
+                    $query = $this->worker->ssdb->scan($conditions, $conditions."z", 100);
+
+                    $list = array();
+                    if ($query) foreach($query as $key => $item)
+                    {
+                        $temp_key  = explode(',', $key);
+                        $temp_item = unserialize($item);
+
+                        $result = '';
+                        if (is_array($temp_item))
+                        {
+                            foreach ($temp_item as $k => $v)
+                            {
+                                $result .= $k.':'.json_encode($v)."<br/>";
+                            }
+                        }else{
+                            $result .= $item;
+                        }
+
+                        $list[]     = array(
+                            'tab'       => $temp_key[0],
+                            'time_unit' => $temp_key[2],
+                            'game'      => $temp_key[3],
+                            'time'      => $temp_key[4],
+                            'result'    => $result,
+                        );
+                    }
+
+                    $data['status']       = 'ok';
+                    $data['list']         = $list;
+                }
+                catch (Exception $e)
+                {
+                    $data['status']  = 'error';
+                    $data['message'] = $e->getMessage();
+                }
+                break;
             case 'server/stats':
                 $data['status'] = 'ok';
                 $data['data']   = $this->server->stats();
