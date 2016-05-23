@@ -478,10 +478,20 @@ class Manager
                         goto send;
                     }
 
-                    $query = $this->worker->ssdb->scan($conditions, $conditions."z", 100);
+                    $datas = [];
+                    if ($this->worker->isSSDB)
+                    {
+                        $datas = $this->worker->ssdb->scan($conditions, $conditions."z", 50);
+                    }else{
+                        $keys = $this->worker->redis->scan($conditions, $conditions."z", 50);
+                        foreach($keys as $key)
+                        {
+                            $datas[$key] = $this->worker->redis->get($key);
+                        }
+                    }
 
                     $list = array();
-                    if ($query) foreach($query as $key => $item)
+                    if ($datas) foreach($datas as $key => $item)
                     {
                         $temp_key  = explode(',', $key);
                         $temp_item = unserialize($item);
