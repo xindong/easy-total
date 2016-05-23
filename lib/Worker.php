@@ -1398,7 +1398,7 @@ class Worker
                         # 任务的设置
                         $option    = $this->series[$key];
                         $saveData  = [];
-                        $listLimit = [];
+                        $listLimit = date('YmdHi');
 
                         if ($option)foreach ($arr as $id => $opt)
                         {
@@ -1530,29 +1530,7 @@ class Worker
                                     $saveAs = $queryOption['saveAs'][$timeOptKey];
                                 }
 
-                                if (!isset($listLimit[$timeOptKey]))
-                                {
-                                    switch (substr($timeOptKey, -1))
-                                    {
-                                        case 'm':
-                                        case 'd':
-                                        case 'w':
-                                            # 月, 周, 天的数据向后延迟1小时分一组
-                                            $listLimit[$timeOptKey] = date('YmdH00', time() + 3600);
-                                            break;
-
-                                        case 'h':
-                                            # 小时的数据每10分钟1组, 最长不超过10分钟延迟
-                                            $listLimit[$timeOptKey] = 10 * intval(date('YmdHi', time() + 600) / 10);
-                                            break;
-
-                                        default:
-                                            $listLimit[$timeOptKey] = date('YmdHi');
-                                            break;
-                                    }
-                                }
-
-                                $saveKey = "list,{$queryKey},{$timeOptKey},{$listLimit[$timeOptKey]},{$app},{$saveAs}";
+                                $saveKey = "list,{$queryKey},{$timeOptKey},{$listLimit},{$app},{$saveAs}";
 
                                 # 导出的数据
                                 $saveData[$saveKey][$id] = json_encode([$time, $data], JSON_UNESCAPED_UNICODE);
