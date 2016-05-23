@@ -439,9 +439,11 @@ class Manager
             case 'task/series':
                 try
                 {
-                    $type = $this->request->post['type'];
-                    $task = $this->request->post['task'];
-                    $game = $this->request->post['game'];
+                    $type      = $this->request->get['type'];
+                    $task      = $this->request->get['task'];
+                    $game      = $this->request->get['game'];
+                    $firstItem = $this->request->get['first_item'];
+                    $lastItem  = $this->request->get['last_item'];
 
                     $conditions = '';
                     if ($type)
