@@ -34,17 +34,17 @@ else
 }
 
 $allMemory     = [
-  Worker::$serverName => memory_get_usage(true)
+    MainWorker::$serverName => memory_get_usage(true)
 ];
-$allMemoryTotal = $allMemory[Worker::$serverName];
+$allMemoryTotal = $allMemory[MainWorker::$serverName];
 
 $allMemoryData = $this->worker->redis->hGetAll('server.memory');
 if ($allMemoryData)foreach ($allMemoryData as $item)
 {
   list($mem, $time, $serv, $wid) = unserialize($item);
-  if (Worker::$timed - $time < 60)
+  if (MainWorker::$timed - $time < 60)
   {
-    if ($serv != Worker::$serverName || $wid != $this->worker->id)
+    if ($serv != MainWorker::$serverName || $wid != $this->worker->id)
     {
       $allMemory[$serv] += $mem;
       $allMemoryTotal   += $mem;

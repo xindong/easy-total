@@ -1,6 +1,6 @@
 <?php
 
-class Worker
+class MainWorker
 {
     /**
      * 当前进程ID

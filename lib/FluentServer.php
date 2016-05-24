@@ -396,7 +396,7 @@ class FluentServer
 
             debug("Worker Start, \$id = {$workerId}, \$pid = {$server->worker_pid}");
 
-            $this->worker  = new Worker($server, $workerId);
+            $this->worker  = new MainWorker($server, $workerId);
             $this->worker->init();
             $this->manager = new Manager($server, $this->worker, $workerId);
 
