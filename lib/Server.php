@@ -202,29 +202,6 @@ class Server
             $config['conf']['log_file'] = $logPath;
         }
 
-        if (isset($config['server']['pthreads']) && $config['server']['pthreads'])
-        {
-            if (!class_exists('Threaded', false))
-            {
-                warn('你开启了多线程模式, 但是程序没有安装 pthreads 模块, 请先安装 pthreads 模块, 已停止启动.');
-                exit;
-            }
-            debug('use multi threads mode');
-
-            # 只需要1个
-            $config['conf']['worker_num']      = 1;
-            $config['conf']['task_worker_num'] = 1;
-        }
-        else
-        {
-            $config['server']['pthreads'] = false;
-        }
-
-        /**
-         * 是否使用多线程模式
-         */
-        define('MULTI_THREADED_MODE', $config['server']['pthreads']);
-
         # 更新配置
         self::formatConfig($config);
 

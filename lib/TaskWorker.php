@@ -20,11 +20,7 @@ class TaskWorker
 
     public function init()
     {
-        if (MULTI_THREADED_MODE)
-        {
-            # 多线程模式
-            $this->startThread();
-        }
+
     }
 
     /**

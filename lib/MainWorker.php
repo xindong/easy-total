@@ -1092,14 +1092,7 @@ class MainWorker
         {
             try
             {
-                if (MULTI_THREADED_MODE)
-                {
-                    $this->flushByThreads();
-                }
-                else
-                {
-                    $this->doFlush();
-                }
+                $this->doFlush();
             }
             catch (Exception $e)
             {
