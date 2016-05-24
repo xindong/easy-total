@@ -392,7 +392,7 @@ class FluentServer
             self::setProcessName("php ". implode(' ', $argv) ." [worker]");
 
             require (__DIR__ .'/Manager.php');
-            require (__DIR__ .'/Worker.php');
+            require (__DIR__ .'/MainWorker.php');
 
             debug("Worker Start, \$id = {$workerId}, \$pid = {$server->worker_pid}");
 
