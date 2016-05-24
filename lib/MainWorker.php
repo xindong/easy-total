@@ -1,4 +1,27 @@
 <?php
+# 是否支持 pthreads 线程模式
+define('SUPPORT_THREADS', class_exists('Threaded', false));
+
+if (SUPPORT_THREADS)
+{
+    class my extends Thread
+    {
+        /**
+         * @var Threaded
+         */
+        protected $buffer;
+
+        public function __construct(Threaded $buffer)
+        {
+            $this->buffer = $buffer;
+        }
+
+        public function run()
+        {
+
+        }
+    }
+}
 
 class MainWorker
 {
@@ -95,14 +118,14 @@ class MainWorker
     /**
      * 需要刷新的任务数据
      *
-     * @var array
+     * @var array|Threaded
      */
     protected $flushData = [];
 
     /**
      * 计算中的任务数据
      *
-     * @var array
+     * @var array|Threaded
      */
     protected $flushDataRunTime = [];
 
@@ -155,7 +178,7 @@ class MainWorker
     {
         $this->server   = $server;
         $this->id       = $id;
-        $this->dumpFile = (FluentServer::$config['server']['dump_path'] ?: '/tmp/') . 'total-dump-'. substr(md5(FluentServer::$configFile), 16, 8) . '-'. $id .'.txt';
+        $this->dumpFile = (Server::$config['server']['dump_path'] ?: '/tmp/') . 'total-dump-'. substr(md5(Server::$configFile), 16, 8) . '-'. $id .'.txt';
 
         # 包数据的key
         self::$packKey  = [
@@ -166,7 +189,13 @@ class MainWorker
 
         self::$timed = time();
 
-        self::$serverName = FluentServer::$config['server']['host'].':'.FluentServer::$config['server']['port'];
+        self::$serverName = Server::$config['server']['host'].':'. Server::$config['server']['port'];
+
+        if (SUPPORT_THREADS)
+        {
+            # 会使用多线程的方式进行推送
+            $this->flushData = new Threaded();
+        }
     }
 
     /**
@@ -213,7 +242,7 @@ class MainWorker
         });
 
         # 刷新间隔时间, 单位毫秒
-        $limit = intval(FluentServer::$config['server']['merge_time_ms'] ?: 3000);
+        $limit = intval(Server::$config['server']['merge_time_ms'] ?: 3000);
 
         if ($this->id > 0)
         {
@@ -436,6 +465,12 @@ class MainWorker
             debug("accept data length ". strlen($data));
         }
 
+        if ($this->flushData['jobs'] > 200)
+        {
+            # 积累的任务太多, 不再接受处理新数据
+            return false;
+        }
+
         if ($data[0] === '[')
         {
             # 解析数据
@@ -620,7 +655,7 @@ class MainWorker
                     warn($e->getMessage());
 
                     # 重置临时数据
-                    $this->flushDataRunTime = [];
+                    unset($this->flushDataRunTime);
 
                     # 关闭连接
                     $server->close($fd);
@@ -661,17 +696,12 @@ class MainWorker
             $count = count($records);
             if ($count > 0)
             {
-                FluentServer::$counter->add($count);
+                Server::$counter->add($count);
             }
 
             if (IS_DEBUG)
             {
                 debug('flush data jobs number: '. count($this->flushData['jobs']));
-            }
-
-            if (count($this->flushData['jobs']) > 1000)
-            {
-                $this->flush();
             }
         }
 
@@ -753,8 +783,8 @@ class MainWorker
         try
         {
             $redis = new redis();
-            $host  = FluentServer::$config['redis']['host'];
-            $port  = FluentServer::$config['redis']['port'];
+            $host  = Server::$config['redis']['host'];
+            $port  = Server::$config['redis']['port'];
 
             if (false === $redis->connect($host, $port))
             {
@@ -781,7 +811,7 @@ class MainWorker
         {
             if ($this->id == 0 && time() % 10 == 0)
             {
-                info('redis server is not start, wait start redis://' . FluentServer::$config['redis']['host'] . ':' . FluentServer::$config['redis']['port']);
+                info('redis server is not start, wait start redis://' . Server::$config['redis']['host'] . ':' . Server::$config['redis']['port']);
             }
 
             return false;
@@ -910,7 +940,7 @@ class MainWorker
             $this->flushProcessPID = null;
         }
 
-        if (FluentServer::$config['server']['flush_at_shutdown'])
+        if (Server::$config['server']['flush_at_shutdown'])
         {
             $this->flush();
         }
@@ -1075,7 +1105,7 @@ class MainWorker
         return [
             'stats'      => $this->server->stats(),
             'updateTime' => self::$timed,
-            'api'        => 'http://'. FluentServer::$config['manager']['host'] .':'. FluentServer::$config['manager']['port'] .'/api/',
+            'api'        => 'http://'. Server::$config['manager']['host'] .':'. Server::$config['manager']['port'] .'/api/',
         ];
     }
 
@@ -1092,7 +1122,14 @@ class MainWorker
         {
             try
             {
-                $this->doFlush();
+                if (SUPPORT_THREADS)
+                {
+                    $this->flushByThreads();
+                }
+                else
+                {
+                    $this->doFlush();
+                }
             }
             catch (Exception $e)
             {
@@ -1131,6 +1168,14 @@ class MainWorker
         {
             $this->flushData = array_shift($this->dumpFileData);
         }
+    }
+
+    /**
+     * 通过线程来进行推送数据
+     */
+    protected function flushByThreads()
+    {
+
     }
 
     /**

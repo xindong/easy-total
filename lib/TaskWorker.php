@@ -20,7 +20,11 @@ class TaskWorker
 
     public function init()
     {
-
+        if (MULTI_THREADED_MODE)
+        {
+            # 多线程模式
+            $this->startThread();
+        }
     }
 
     /**
@@ -135,6 +139,14 @@ class TaskWorker
         if ($ssdb)$ssdb->close();
 
         return true;
+    }
+
+    /**
+     * 开启多线程
+     */
+    protected function startThread()
+    {
+
     }
 
     /**
@@ -367,7 +379,7 @@ class TaskWorker
 
             # 整理key
             $currentLimit = date('YmdHi', time() - 30);
-            $outputPrefix = FluentServer::$config['output']['prefix'] ?: '';
+            $outputPrefix = Server::$config['output']['prefix'] ?: '';
             $myKeys       = [];
             foreach ($keys as $key)
             {
@@ -398,7 +410,7 @@ class TaskWorker
 
             # 加载客户端
             require_once (__DIR__ .'/FluentClient.php');
-            $fluent = new FluentClient(FluentServer::$config['output']['link']);
+            $fluent = new FluentClient(Server::$config['output']['link']);
 
             $lastSyncTime = time();
             foreach ($myKeys as $groups)
@@ -457,7 +469,7 @@ class TaskWorker
                 }
                 else
                 {
-                    warn("push data {$keys} fail. fluentd server: ". FluentServer::$config['output']['type'] .': '. FluentServer::$config['output']['link']);
+                    warn("push data {$keys} fail. fluentd server: ". Server::$config['output']['type'] .': '. Server::$config['output']['link']);
                 }
 
                 if (time() - $lastSyncTime > 5)
@@ -569,12 +581,12 @@ class TaskWorker
         {
             $ssdb  = null;
             $redis = new Redis();
-            $redis->pconnect(FluentServer::$config['redis']['host'], FluentServer::$config['redis']['port']);
+            $redis->pconnect(Server::$config['redis']['host'], Server::$config['redis']['port']);
 
             if (false === $redis->time())
             {
                 require_once __DIR__ . '/SSDB.php';
-                $ssdb = new SimpleSSDB(FluentServer::$config['redis']['host'], FluentServer::$config['redis']['port']);
+                $ssdb = new SimpleSSDB(Server::$config['redis']['host'], Server::$config['redis']['port']);
             }
 
             return [$redis, $ssdb];

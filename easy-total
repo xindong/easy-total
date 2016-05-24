@@ -40,8 +40,8 @@ $lightBlue = "\x1b[36m";
 $end       = "\x1b[39m";
 $error     = "{$red}✕{$end}";
 
-require __DIR__ . '/lib/FluentServer.php';
-$server = new FluentServer($options['c'], isset($options['d']), $options['l']);
+require __DIR__ . '/lib/Server.php';
+$server = new Server($options['c'], isset($options['d']), $options['l']);
 
 $server->start();
 

@@ -8,7 +8,7 @@ class Manager
     protected $server;
 
     /**
-     * @var Worker
+     * @var MainWorker
      */
     protected $worker;
 

@@ -82,7 +82,7 @@ function getTimeKey($time, $limit, $type)
     return $timeKey;
 }
 
-class FluentServer
+class Server
 {
     /**
      * @var array
@@ -110,7 +110,7 @@ class FluentServer
     /**
      * Worker对象
      *
-     * @var Worker
+     * @var MainWorker
      */
     protected $worker;
 
@@ -201,6 +201,29 @@ class FluentServer
         {
             $config['conf']['log_file'] = $logPath;
         }
+
+        if (isset($config['server']['pthreads']) && $config['server']['pthreads'])
+        {
+            if (!class_exists('Threaded', false))
+            {
+                warn('你开启了多线程模式, 但是程序没有安装 pthreads 模块, 请先安装 pthreads 模块, 已停止启动.');
+                exit;
+            }
+            debug('use multi threads mode');
+
+            # 只需要1个
+            $config['conf']['worker_num']      = 1;
+            $config['conf']['task_worker_num'] = 1;
+        }
+        else
+        {
+            $config['server']['pthreads'] = false;
+        }
+
+        /**
+         * 是否使用多线程模式
+         */
+        define('MULTI_THREADED_MODE', $config['server']['pthreads']);
 
         # 更新配置
         self::formatConfig($config);
@@ -381,6 +404,7 @@ class FluentServer
             self::setProcessName("php ". implode(' ', $argv) ." [task]");
 
             require (__DIR__ .'/TaskWorker.php');
+
             # 构造新对象
             $this->taskWorker = new TaskWorker($server, $workerId - $this->server->setting['worker_num']);
             $this->taskWorker->init();
@@ -454,6 +478,9 @@ class FluentServer
 
     public function onManagerStart(swoole_server $server)
     {
+        global $argv;
+        self::setProcessName("php ". implode(' ', $argv) ." [manager]");
+
         debug('onManagerStart');
     }
 
