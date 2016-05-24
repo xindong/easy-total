@@ -439,37 +439,63 @@ class Manager
             case 'task/series':
                 try
                 {
-                    $page_type = $this->request->get['type'];
-                    $firstItem = $this->request->get['first_item'];
-                    $lastItem  = $this->request->get['last_item'];
+                    $limit         = 4;
+                    $page_type     = $this->request->get['type'];
+                    $firstItem     = $this->request->get['first_item'];
+                    $lastItem      = $this->request->get['last_item'];
+                    $lastCount     = (int)$this->request->get['last_count']?(int)$this->request->get['last_count']:'';
 
-                    if (!$this->worker->redis)
+                    if (!$this->worker->redis && !$this->worker->ssdb)
                     {
                         $data['status']  = 'error';
-                        $data['message'] = '请检查redis服务器';
+                        $data['message'] = '请检查redis或ssdb服务是否开启!';
                         goto send;
                     }
 
                     $datas = [];
                     if ($this->worker->isSSDB)
                     {
+                        $data['is_ssdb'] = true;
                         switch ($page_type)
                         {
                             case 'next':
-                                $datas = $this->worker->ssdb->scan($lastItem, "z", 100);
+                                $datas = $this->worker->ssdb->scan($lastItem, "z", $limit);
                                 break;
                             case 'prev':
-                                $datas = $this->worker->ssdb->rscan($firstItem, "z", 100);
+                                $datas = $this->worker->ssdb->rscan($firstItem, "z", $limit);
                                 break;
                             default :
-                                $datas = $this->worker->ssdb->scan('', "z", 100);
+                                $datas = $this->worker->ssdb->scan('', "z", $limit);
                                 break;
                         }
                     }else{
-                        $keys = $this->worker->redis->scan('', "z", 100);
-                        if ($keys)foreach($keys as $key)
+                        $data['is_ssdb'] = false;
+                        switch ($page_type)
                         {
-                            $datas[$key] = $this->worker->redis->get($key);
+                            case 'next':
+                                $key_arr = $this->worker->redis->scan($lastCount, "*", $limit);
+                                break;
+                            case 'prev':
+                                $key_arr = $this->worker->redis->scan($lastCount - $limit, "*", $limit);
+                                break;
+                            default :
+                                $key_arr = $this->worker->redis->scan($lastCount, "*", $limit);
+                                break;
+                        }
+
+                        # 当前查询获得记录数
+                        $current_count         = count($key_arr);
+                        $data['current_count'] = $current_count;
+
+                        if ($key_arr)
+                        {
+                            foreach($key_arr as $key)
+                            {
+                                $datas[$key] = $this->worker->redis->get($key);
+                            }
+
+                            $temp_key           = array_keys(array_slice($key_arr, -1, 1, true));
+                            $data['last_count'] = $temp_key[0] + 1;
                         }
                     }
 
@@ -501,6 +527,7 @@ class Manager
 
                     $data['status']    = 'ok';
                     $data['list']      = $list;
+                    $data['limit']     = $limit;
                     $data['last_item'] = $key;
                 }
                 catch (Exception $e)

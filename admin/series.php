@@ -1,4 +1,40 @@
-<?php $queries = array_map('unserialize', $this->worker->redis->hGetAll('queries') ?: []);?>
+<?php
+
+    //$test = $this->worker->redis->scan($val, "*", 11);
+
+//    $start = '';
+//    while(1){
+//        $kvs = $this->worker->redis->scan($start, '*', 5);
+//        if(!$kvs){
+//            break;
+//        }
+//        // do something on key-value pairs...
+//        $keys = array_keys(array_slice($kvs, -1, 1, true));
+//        $max_key = $keys[0];
+//        $start = $max_key;
+//
+//        echo "<pre>";
+//        print_r($start);
+//    }
+
+
+//    $start = '';
+//    $kvs = $this->worker->redis->scan($start, '*', 5);
+//
+//    $keys = array_keys(array_slice($kvs, -1, 1, true));
+//
+//    $max_key = $keys[0];
+//
+//    echo"<pre>";
+//    print_r($kvs);
+//    echo"<pre>";
+//    print_r($start);
+//    echo"<pre>";
+//    print_r($keys);
+//    echo"<pre>";
+//    print_r($max_key);
+
+?>
 <div style="padding:0 15px;margin-top:-15px">
     <div class="row">
         <div class="col-md-12">
@@ -58,10 +94,36 @@
                 });
                 $('#ssdb_data_boday').html(html);
 
+
                 $('.pager').html('');
                 var pager_html = '';
-                pager_html += '<li><a href="javascript:void(0);" onclick="next_page('+formData+');">上一页</a></li>';
-                pager_html += '<li><a href="javascript:void(0);" onclick="previous_page('+formData+');">下一页</a></li>';
+                if (data.is_ssdb == false)
+                {
+                    if (data.last_count == 0)
+                    {
+                        if (data.current_count == data.limit)
+                        {
+                            pager_html += '<li class="disabled"><a href="javascript:void(0);">111上一页</a></li>';
+                            pager_html += '<li><a href="javascript:void(0);" onclick="previous_page('+formData+');">111下一页</a></li>';
+                        }
+                    }else if (data.last_count > 0 && (data.last_count % data.limit) == 0){
+                        if (data.current_count == data.limit)
+                        {
+                            pager_html += '<li><a href="javascript:void(0);" onclick="next_page('+formData+');">222上一页</a></li>';
+                            pager_html += '<li><a href="javascript:void(0);" onclick="previous_page('+formData+');">222下一页</a></li>';
+                        }else{
+                            pager_html += '<li class="disabled"><a href="javascript:void(0);">3333上一页</a></li>';
+                            pager_html += '<li><a href="javascript:void(0);" onclick="next_page('+formData+');">3333上一页</a></li>';
+                        }
+                    }else if (data.last_count > 0 && (data.last_count % data.limit) > 0){
+                        if (data.last_count > data.limit)
+                        {
+                            pager_html += '<li><a href="javascript:void(0);" onclick="next_page('+formData+');">44444上一页</a></li>';
+                            pager_html += '<li class="disabled"><a href="javascript:void(0);">44444下一页</a></li>';
+                        }
+                    }
+                }
+
                 $('.pager').html(pager_html);
             },
             error: function(xhr, status, err)
