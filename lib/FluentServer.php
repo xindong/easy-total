@@ -378,7 +378,7 @@ class FluentServer
         # 实例化资源对象
         if ($server->taskworker)
         {
-            self::setProcessName("php ". implode(' ', $argv) ." [task]");
+            self::setProcessName($_SERVER['_'] ." ". implode(' ', $argv) ." [task]");
 
             require (__DIR__ .'/TaskWorker.php');
             # 构造新对象
@@ -389,7 +389,7 @@ class FluentServer
         }
         else
         {
-            self::setProcessName("php ". implode(' ', $argv) ." [worker]");
+            self::setProcessName($_SERVER['_'] ." ". implode(' ', $argv) ." [worker]");
 
             require (__DIR__ .'/Manager.php');
             require (__DIR__ .'/MainWorker.php');
