@@ -1,28 +1,4 @@
 <?php
-# 是否支持 pthreads 线程模式
-define('SUPPORT_THREADS', class_exists('Threaded', false));
-
-if (SUPPORT_THREADS)
-{
-    class my extends Thread
-    {
-        /**
-         * @var Threaded
-         */
-        protected $buffer;
-
-        public function __construct(Threaded $buffer)
-        {
-            $this->buffer = $buffer;
-        }
-
-        public function run()
-        {
-
-        }
-    }
-}
-
 class MainWorker
 {
     /**
@@ -190,12 +166,6 @@ class MainWorker
         self::$timed = time();
 
         self::$serverName = Server::$config['server']['host'].':'. Server::$config['server']['port'];
-
-        if (SUPPORT_THREADS)
-        {
-            # 会使用多线程的方式进行推送
-            $this->flushData = new Threaded();
-        }
     }
 
     /**
@@ -1122,7 +1092,7 @@ class MainWorker
         {
             try
             {
-                if (SUPPORT_THREADS)
+                if (MULTI_THREADED_MODE)
                 {
                     $this->flushByThreads();
                 }
