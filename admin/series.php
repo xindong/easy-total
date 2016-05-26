@@ -1,4 +1,40 @@
-<?php $queries = array_map('unserialize', $this->worker->redis->hGetAll('queries') ?: []);?>
+<?php
+
+    //$test = $this->worker->redis->scan($val, "*", 11);
+
+//    $start = '';
+//    while(1){
+//        $kvs = $this->worker->redis->scan($start, '*', 5);
+//        if(!$kvs){
+//            break;
+//        }
+//        // do something on key-value pairs...
+//        $keys = array_keys(array_slice($kvs, -1, 1, true));
+//        $max_key = $keys[0];
+//        $start = $max_key;
+//
+//        echo "<pre>";
+//        print_r($start);
+//    }
+
+
+//    $start = 3;
+//    $kvs = $this->worker->redis->scan($start, '*', 4);
+//
+//    $keys = array_keys(array_slice($kvs, -1, 1, true));
+//
+//    $max_key = $keys[0];
+//
+//    echo"<pre>";
+//    print_r($kvs);
+//    echo"<pre>";
+//    print_r($start);
+//    echo"<pre>";
+//    print_r($keys);
+//    echo"<pre>";
+//    print_r($max_key);
+
+?>
 <div style="padding:0 15px;margin-top:-15px">
     <div class="row">
         <div class="col-md-12">
@@ -7,49 +43,6 @@
                 统计序列管理
             </div>
         </div>
-    </div>
-
-    <div class="bs-example" data-example-id="navbar-form">
-        <nav class="navbar navbar-default">
-            <div class="container-fluid">
-                <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-2">
-                    <form class="navbar-form navbar-left" id="search_from" method="get">
-                        <div class="form-group">
-                            类型:
-                            <select name="type" class="btn btn-default">
-                                <option value=''>-请选择-</option>
-                                <option value='dist'>唯一(dist)</option>
-                                <option value='total'>总数(total)</option>
-                                <option value='list'>列表(list)</option>
-                            </select>
-                            任务:
-                            <select name="task" class="btn btn-default">
-                                <option value=''>-请选择-</option>
-                                <?php
-                                    if ($queries) foreach($queries as $key => $query)
-                                    {
-                                ?>
-                                        <option value="<?php echo $key;?>"><?php echo $query['name'];?></option>
-                                <?php
-                                    }
-                                ?>
-                            </select>
-                            游戏:
-                            <select name="game" class="btn btn-default">
-                                <option value=''>-请选择-</option>
-                                <option value='hsqj'>横扫千军</option>
-                                <option value='ttdbl'>天天打波利</option>
-                                <option value='sxd2'>神仙道2</option>
-                                <option value='sglms'>-三国罗曼史</option>
-                                <option value='sxd2016'>神仙道2016</option>
-                                <option value='kd'>快斩狂刀</option>
-                            </select>
-                        </div>
-                        <button type="submit" class="btn btn-default">搜索</button>
-                    </form>
-                </div>
-            </div>
-        </nav>
     </div>
 
     <table class="table table-bordered table-striped table-hover">
@@ -64,49 +57,11 @@
         </thead>
         <tbody id="ssdb_data_boday"></tbody>
     </table>
-    <ul class="pager">
-        <li class="disabled"><a href="#">上一页</a></li>
-        <li><a href="#">下一页</a></li>
-    </ul>
+    <ul class="pager"></ul>
 </div>
 
 <script type="text/javascript">
-    $('#search_from').on('submit', function(e)
-    {
-        e.stopPropagation();
-        e.preventDefault();
-        var formData = {
-            type : this.elements.type.value,
-            task : this.elements.task.value,
-            game : this.elements.game.value
-        };
-
-        if (formData.task != '')
-        {
-            if (formData.type == '')
-            {
-                alert('请选择类型!');
-                return false;
-            }
-        }
-
-        if (formData.game != '')
-        {
-            if (formData.type == '')
-            {
-                alert('请选择类型!');
-                return false;
-            }
-
-            if (formData.task == '')
-            {
-                alert('请选择任务!');
-                return false;
-            }
-        }
-
-        return get_list(formData);
-    });
+    get_list('');
 
     function get_list(formData)
     {
@@ -123,7 +78,6 @@
                     return false;
                 }
 
-                $('#ssdb_data_boday').html('');
                 var html = '';
                 $.each(data.list, function(name, value) {
                     html += '<tr>';
@@ -131,15 +85,27 @@
                     html += '<td style="text-align:center" >'+value.time_unit+'</td>';
                     html += '<td style="text-align:center" >'+value.game+'</td>';
                     html += '<td style="text-align:center" >'+value.time+'</td>';
-                    html += '<td style="text-align:center" >'+value.result+'</td>'
+                    html += '<td style="text-align:center" >'+value.result+'</td>';
                     html += '</tr>';
                 });
-                $('#ssdb_data_boday').html(html);
+                $('#ssdb_data_boday').append(html);
 
                 $('.pager').html('');
                 var pager_html = '';
-                pager_html += '<li><a href="javascript:void(0);" onclick="next_page('+formData+', '+ +');">上一页</a></li>';
-                pager_html += '<li><a href="javascript:void(0);" onclick="previous_page('+formData+', '+ +');">下一页</a></li>';
+                if (data.is_ssdb == false)
+                {
+                    if (data.next_iterator == 0)
+                    {
+                        pager_html += '<li class="disabled"><a href="javascript:void(0);">更多</a></li>';
+                    }else{
+                        pager_html += '<li><a href="javascript:void(0);" onclick="next_page(\'' + data.next_iterator + '\');">更多</a></li>';
+                    }
+
+                    pager_html += '<center>prev_iterator:'+data.curr_iterator+',next_iterator:'+data.next_iterator+'</center>';
+                }else{
+
+                }
+
                 $('.pager').html(pager_html);
             },
             error: function(xhr, status, err)
@@ -150,13 +116,12 @@
         });
     }
 
-    function next_page()
+    function next_page(next_iterator)
     {
-
-    }
-
-    function previous_page()
-    {
-
+        var formData = {
+            page_type     : 'next',
+            next_iterator : next_iterator
+        };
+        get_list(formData);
     }
 </script>

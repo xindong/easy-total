@@ -439,55 +439,56 @@ class Manager
             case 'task/series':
                 try
                 {
-                    $type      = $this->request->get['type'];
-                    $task      = $this->request->get['task'];
-                    $game      = $this->request->get['game'];
-                    $firstItem = $this->request->get['first_item'];
-                    $lastItem  = $this->request->get['last_item'];
+                    $limit         = 4;
+                    $page_type     = $this->request->get['page_type'];
+                    $firstItem     = $this->request->get['first_item'];
+                    $lastItem      = $this->request->get['last_item'];
+                    $nextIterator  = (int)$this->request->get['next_iterator'];
 
-                    $conditions = '';
-                    if ($type)
+                    if (!$this->worker->redis && !$this->worker->ssdb)
                     {
-                        $conditions .= $type.',';
-                    }
-
-                    if ($task)
-                    {
-                        if (!$type)
-                        {
-                            throw new Exception('缺少前置条件:类型');
-                        }
-
-                        $conditions .= $task.',';
-                    }
-
-                    if ($game)
-                    {
-                        if (!$type || !$task)
-                        {
-                            throw new Exception('缺少前置条件:类型,任务!');
-                        }
-
-                        $conditions .= $game.',';
-                    }
-
-                    if (!$this->worker->redis)
-                    {
-                        $data['status']  = 'error';
-                        $data['message'] = '请检查redis服务器';
-                        goto send;
+                        throw new Exception("请检查redis或ssdb服务是否开启!");
                     }
 
                     $datas = [];
                     if ($this->worker->isSSDB)
                     {
-                        $datas = $this->worker->ssdb->scan($conditions, $conditions."z", 50);
-                    }else{
-                        $keys = $this->worker->redis->scan($conditions, $conditions."z", 50);
-                        foreach($keys as $key)
+                        switch ($page_type)
                         {
-                            $datas[$key] = $this->worker->redis->get($key);
+                            case 'next':
+                                $datas = $this->worker->ssdb->scan($lastItem, "z", $limit);
+                                break;
+                            case 'prev':
+                                $datas = $this->worker->ssdb->rscan($firstItem, "z", $limit);
+                                break;
+                            default :
+                                $datas = $this->worker->ssdb->scan('', "z", $limit);
+                                break;
                         }
+                    }else{
+                        switch ($page_type)
+                        {
+                            case 'next':
+                                $tempIterator = $nextIterator;
+                                $key_arr      = $this->worker->redis->scan($tempIterator, "*", $limit);
+                                $data['next_iterator'] = $tempIterator;
+                                break;
+                            default :
+                                $tempIterator = '';
+                                $key_arr      = $this->worker->redis->scan($tempIterator, "*", $limit);
+                                $data['next_iterator'] = $tempIterator;
+                                break;
+                        }
+
+                        if ($key_arr)
+                        {
+                            foreach($key_arr as $key)
+                            {
+                                $datas[$key] = $this->worker->redis->get($key);
+                            }
+                        }
+
+                        $data['data_count'] = count($datas);
                     }
 
                     $list = array();
@@ -516,8 +517,12 @@ class Manager
                         );
                     }
 
-                    $data['status']       = 'ok';
-                    $data['list']         = $list;
+                    $data['status']    = 'ok';
+                    $data['list']      = $list;
+                    $data['is_ssdb']   = $this->worker->isSSDB;
+                    $data['page_type'] = $page_type;
+                    $data['limit']     = $limit;
+                    $data['last_item'] = $key;
                 }
                 catch (Exception $e)
                 {
