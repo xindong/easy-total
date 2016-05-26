@@ -1,40 +1,3 @@
-<?php
-
-    //$test = $this->worker->redis->scan($val, "*", 11);
-
-//    $start = '';
-//    while(1){
-//        $kvs = $this->worker->redis->scan($start, '*', 5);
-//        if(!$kvs){
-//            break;
-//        }
-//        // do something on key-value pairs...
-//        $keys = array_keys(array_slice($kvs, -1, 1, true));
-//        $max_key = $keys[0];
-//        $start = $max_key;
-//
-//        echo "<pre>";
-//        print_r($start);
-//    }
-
-
-//    $start = 3;
-//    $kvs = $this->worker->redis->scan($start, '*', 4);
-//
-//    $keys = array_keys(array_slice($kvs, -1, 1, true));
-//
-//    $max_key = $keys[0];
-//
-//    echo"<pre>";
-//    print_r($kvs);
-//    echo"<pre>";
-//    print_r($start);
-//    echo"<pre>";
-//    print_r($keys);
-//    echo"<pre>";
-//    print_r($max_key);
-
-?>
 <div style="padding:0 15px;margin-top:-15px">
     <div class="row">
         <div class="col-md-12">
@@ -47,13 +10,13 @@
 
     <table class="table table-bordered table-striped table-hover">
         <thead>
-            <tr style="white-space:nowrap">
-                <th style="text-align:center" width="50">统计类型</th>
-                <th width="120" style="text-align:center">时间单位</th>
-                <th width="45" style="text-align:center">所属游戏</th>
-                <th width="130" style="text-align:center">时间</th>
-                <th width="140" style="text-align:center">结果</th>
-            </tr>
+        <tr style="white-space:nowrap">
+            <th style="text-align:center" width="50">统计类型</th>
+            <th width="120" style="text-align:center">时间单位</th>
+            <th width="45" style="text-align:center">所属游戏</th>
+            <th width="130" style="text-align:center">时间</th>
+            <th width="140" style="text-align:center">结果</th>
+        </tr>
         </thead>
         <tbody id="ssdb_data_boday"></tbody>
     </table>
