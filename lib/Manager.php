@@ -440,22 +440,19 @@ class Manager
                 try
                 {
                     $limit         = 4;
-                    $page_type     = $this->request->get['type'];
+                    $page_type     = $this->request->get['page_type'];
                     $firstItem     = $this->request->get['first_item'];
                     $lastItem      = $this->request->get['last_item'];
-                    $lastCount     = (int)$this->request->get['last_count']?(int)$this->request->get['last_count']:'';
+                    $nextIterator  = (int)$this->request->get['next_iterator'];
 
                     if (!$this->worker->redis && !$this->worker->ssdb)
                     {
-                        $data['status']  = 'error';
-                        $data['message'] = '请检查redis或ssdb服务是否开启!';
-                        goto send;
+                        throw new Exception("请检查redis或ssdb服务是否开启!");
                     }
 
                     $datas = [];
                     if ($this->worker->isSSDB)
                     {
-                        $data['is_ssdb'] = true;
                         switch ($page_type)
                         {
                             case 'next':
@@ -469,23 +466,19 @@ class Manager
                                 break;
                         }
                     }else{
-                        $data['is_ssdb'] = false;
                         switch ($page_type)
                         {
                             case 'next':
-                                $key_arr = $this->worker->redis->scan($lastCount, "*", $limit);
-                                break;
-                            case 'prev':
-                                $key_arr = $this->worker->redis->scan($lastCount - $limit, "*", $limit);
+                                $tempIterator = $nextIterator;
+                                $key_arr      = $this->worker->redis->scan($tempIterator, "*", $limit);
+                                $data['next_iterator'] = $tempIterator;
                                 break;
                             default :
-                                $key_arr = $this->worker->redis->scan($lastCount, "*", $limit);
+                                $tempIterator = '';
+                                $key_arr      = $this->worker->redis->scan($tempIterator, "*", $limit);
+                                $data['next_iterator'] = $tempIterator;
                                 break;
                         }
-
-                        # 当前查询获得记录数
-                        $current_count         = count($key_arr);
-                        $data['current_count'] = $current_count;
 
                         if ($key_arr)
                         {
@@ -493,10 +486,9 @@ class Manager
                             {
                                 $datas[$key] = $this->worker->redis->get($key);
                             }
-
-                            $temp_key           = array_keys(array_slice($key_arr, -1, 1, true));
-                            $data['last_count'] = $temp_key[0] + 1;
                         }
+
+                        $data['data_count'] = count($datas);
                     }
 
                     $list = array();
@@ -527,6 +519,8 @@ class Manager
 
                     $data['status']    = 'ok';
                     $data['list']      = $list;
+                    $data['is_ssdb']   = $this->worker->isSSDB;
+                    $data['page_type'] = $page_type;
                     $data['limit']     = $limit;
                     $data['last_item'] = $key;
                 }

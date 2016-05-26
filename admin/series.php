@@ -18,8 +18,8 @@
 //    }
 
 
-//    $start = '';
-//    $kvs = $this->worker->redis->scan($start, '*', 5);
+//    $start = 3;
+//    $kvs = $this->worker->redis->scan($start, '*', 4);
 //
 //    $keys = array_keys(array_slice($kvs, -1, 1, true));
 //
@@ -57,10 +57,7 @@
         </thead>
         <tbody id="ssdb_data_boday"></tbody>
     </table>
-    <ul class="pager">
-        <li class="disabled"><a href="#">上一页</a></li>
-        <li><a href="#">下一页</a></li>
-    </ul>
+    <ul class="pager"></ul>
 </div>
 
 <script type="text/javascript">
@@ -81,7 +78,6 @@
                     return false;
                 }
 
-                $('#ssdb_data_boday').html('');
                 var html = '';
                 $.each(data.list, function(name, value) {
                     html += '<tr>';
@@ -89,39 +85,25 @@
                     html += '<td style="text-align:center" >'+value.time_unit+'</td>';
                     html += '<td style="text-align:center" >'+value.game+'</td>';
                     html += '<td style="text-align:center" >'+value.time+'</td>';
-                    html += '<td style="text-align:center" >'+value.result+'</td>'
+                    html += '<td style="text-align:center" >'+value.result+'</td>';
                     html += '</tr>';
                 });
-                $('#ssdb_data_boday').html(html);
-
+                $('#ssdb_data_boday').append(html);
 
                 $('.pager').html('');
                 var pager_html = '';
                 if (data.is_ssdb == false)
                 {
-                    if (data.last_count == 0)
+                    if (data.next_iterator == 0)
                     {
-                        if (data.current_count == data.limit)
-                        {
-                            pager_html += '<li class="disabled"><a href="javascript:void(0);">111上一页</a></li>';
-                            pager_html += '<li><a href="javascript:void(0);" onclick="previous_page('+formData+');">111下一页</a></li>';
-                        }
-                    }else if (data.last_count > 0 && (data.last_count % data.limit) == 0){
-                        if (data.current_count == data.limit)
-                        {
-                            pager_html += '<li><a href="javascript:void(0);" onclick="next_page('+formData+');">222上一页</a></li>';
-                            pager_html += '<li><a href="javascript:void(0);" onclick="previous_page('+formData+');">222下一页</a></li>';
-                        }else{
-                            pager_html += '<li class="disabled"><a href="javascript:void(0);">3333上一页</a></li>';
-                            pager_html += '<li><a href="javascript:void(0);" onclick="next_page('+formData+');">3333上一页</a></li>';
-                        }
-                    }else if (data.last_count > 0 && (data.last_count % data.limit) > 0){
-                        if (data.last_count > data.limit)
-                        {
-                            pager_html += '<li><a href="javascript:void(0);" onclick="next_page('+formData+');">44444上一页</a></li>';
-                            pager_html += '<li class="disabled"><a href="javascript:void(0);">44444下一页</a></li>';
-                        }
+                        pager_html += '<li class="disabled"><a href="javascript:void(0);">更多</a></li>';
+                    }else{
+                        pager_html += '<li><a href="javascript:void(0);" onclick="next_page(\'' + data.next_iterator + '\');">更多</a></li>';
                     }
+
+                    pager_html += '<center>prev_iterator:'+data.curr_iterator+',next_iterator:'+data.next_iterator+'</center>';
+                }else{
+
                 }
 
                 $('.pager').html(pager_html);
@@ -134,13 +116,12 @@
         });
     }
 
-    function next_page(formData)
+    function next_page(next_iterator)
     {
-
-    }
-
-    function previous_page(formData)
-    {
-
+        var formData = {
+            page_type     : 'next',
+            next_iterator : next_iterator
+        };
+        get_list(formData);
     }
 </script>
