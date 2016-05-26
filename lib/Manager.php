@@ -439,7 +439,7 @@ class Manager
             case 'task/series':
                 try
                 {
-                    $limit         = 4;
+                    $limit         = 100;
                     $page_type     = $this->request->get['page_type'];
                     $firstItem     = $this->request->get['first_item'];
                     $lastItem      = $this->request->get['last_item'];

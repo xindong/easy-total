@@ -100,8 +100,6 @@
                     }else{
                         pager_html += '<li><a href="javascript:void(0);" onclick="next_page(\'' + data.next_iterator + '\');">更多</a></li>';
                     }
-
-                    pager_html += '<center>prev_iterator:'+data.curr_iterator+',next_iterator:'+data.next_iterator+'</center>';
                 }else{
 
                 }
