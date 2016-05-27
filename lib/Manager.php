@@ -549,7 +549,50 @@ class Manager
                 });
 
                 break;
+            case 'series/edit':
+                try
+                {
+                    $seriesKey = $this->request->post['key'];
+                    $use       = $this->request->post['use']?true:false;
+                    $allApp    = $this->request->post['allApp']?true:false;
+                    $start     = $this->request->post['start'];
+                    $end       = $this->request->post['end'];
 
+                    if (!$seriesKey)
+                    {
+                        throw new Exception("缺失参数序列key!");
+                    }
+
+                    if ($this->worker->isSSDB)
+                    {
+                        $serieDetail = unserialize($this->worker->ssdb->hget('series', $seriesKey));
+                    }
+                    else
+                    {
+                        $serieDetail = unserialize($this->worker->redis->hget('series', $seriesKey));
+                    }
+
+                    if (!$serieDetail)
+                    {
+                        throw new Exception("无此序列信息详情!");
+                    }
+
+                    $serieDetail['use']    = $use;
+                    $serieDetail['allApp'] = $allApp;
+                    $serieDetail['start']  = $start;
+                    $serieDetail['end']    = $end;
+
+                    $doSet = $this->worker->redis->hSet('series', $seriesKey, serialize($serieDetail));
+
+                    $data['status'] = 'ok';
+                    $data['data']   = $doSet;
+                }
+                catch (Exception $e)
+                {
+                    $data['status']  = 'error';
+                    $data['message'] = $e->getMessage();
+                }
+                break;
             default:
                 $data['status']  = 'error';
                 $data['message'] = 'unknown action: ' . $uri;
