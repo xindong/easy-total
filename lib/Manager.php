@@ -221,7 +221,8 @@ class Manager
                         $option['end'] = $old['end'];
                     }
 
-                    if ($this->createSeriesByQueryOption($option) && false !== $this->worker->redis->hSet('queries', $key, serialize($option)))
+                    $seriesOption = self::createSeriesByQueryOption($option);
+                    if (false !== $this->worker->redis->hSet('series', $seriesOption['key'], serialize($seriesOption)) && false !== $this->worker->redis->hSet('queries', $key, serialize($option)))
                     {
                         # 处理旧的序列设置
                         if (isset($oldSeries) && $oldSeries)
@@ -297,7 +298,7 @@ class Manager
 
                     $sql = $option['sql'];
                     $key = null;
-                    foreach ($this->worker->queries as $k => $query)
+                    foreach (FlushData::$queries as $k => $query)
                     {
                         if ($sql === $query['sql'])
                         {
@@ -625,72 +626,77 @@ class Manager
      * 创建一个序列设置, 如果存在则合并
      *
      * @param $option
-     * @return bool
+     * @return array
      */
-    protected function createSeriesByQueryOption($option)
+    public static function createSeriesByQueryOption($option)
     {
         $seriesKey = $option['seriesKey'];
 
-        if (isset($this->worker->series[$seriesKey]))
-        {
-            # 已经存在, where 和 group by 是一样的所以不用合并了
-            $seriesOption = $this->worker->series[$seriesKey];
-
-            # 合并函数
-            foreach ($option['function'] as $k => $v)
-            {
-                $seriesOption['function'][$k] = array_merge($seriesOption['function'][$k], $v);
-            }
-            $seriesOption['groupTime'] = array_merge($seriesOption['groupTime'], $option['groupTime']);
-
-            if ($option['for'])
-            {
-                $seriesOption['for'] = array_merge($seriesOption['for'], $option['for']);
-            }
-            else
-            {
-                $option['allApp'] = true;
-            }
-
-            # 开始时间
-            if ($seriesOption['start'] < time() || $option['start'] < time())
-            {
-                $seriesOption['start'] = 0;
-            }
-            else
-            {
-                $seriesOption['start'] = min($option['start'], $seriesOption['start']);
-            }
-
-            # 结束时间
-            if ($seriesOption['end'] == 0 || $option['end'] == 0 || $seriesOption['end'] > time() || $option['end'] > time())
-            {
-                $seriesOption['end'] = 0;
-            }
-            else
-            {
-                $seriesOption['end'] = max($option['end'], $seriesOption['end']);
-            }
-        }
-        else
-        {
-            $seriesOption = [
-                'key'       => $option['seriesKey'],
-                'use'       => $option['use'],
-                'start'     => $option['start'],
-                'end'       => $option['end'],
-                'allApp'    => $option['for'] ? false : true,
-                'for'       => $option['for'],
-                'table'     => $option['table'],
-                'where'     => $option['where'],
-                'groupBy'   => $option['groupBy'],
-                'groupTime' => $option['groupTime'],
-                'function'  => $option['function'],
-                'queries'   => [],
-            ];
-        }
+        $seriesOption = [
+            'key'       => $option['seriesKey'],
+            'use'       => $option['use'],
+            'start'     => $option['start'],
+            'end'       => $option['end'],
+            'allApp'    => $option['for'] ? false : true,
+            'for'       => $option['for'],
+            'table'     => $option['table'],
+            'where'     => $option['where'],
+            'groupBy'   => $option['groupBy'],
+            'groupTime' => $option['groupTime'],
+            'function'  => $option['function'],
+            'queries'   => [],
+        ];
 
         # 设置查询的映射
+        $seriesOption['queries'] = [];
+        foreach(FlushData::$queries as $k => $v)
+        {
+            if ($v['seriesKey'] == $seriesKey)
+            {
+                foreach ($v['groupTime'] as $t => $v2)
+                {
+                    $seriesOption['queries'][$t][] = $k;
+                }
+
+                # 合并函数
+                foreach ($option['function'] as $fk => $fv)
+                {
+                    $seriesOption['function'][$fk] = array_merge($seriesOption['function'][$fk], $fv);
+                }
+
+                $seriesOption['groupTime'] = array_merge($seriesOption['groupTime'], $option['groupTime']);
+
+                if ($option['for'])
+                {
+                    $seriesOption['for'] = array_merge($seriesOption['for'], $option['for']);
+                }
+                else
+                {
+                    $option['allApp'] = true;
+                }
+
+                # 开始时间
+                if ($seriesOption['start'] < time() || $option['start'] < time())
+                {
+                    $seriesOption['start'] = 0;
+                }
+                else
+                {
+                    $seriesOption['start'] = min($option['start'], $seriesOption['start']);
+                }
+
+                # 结束时间
+                if ($seriesOption['end'] == 0 || $option['end'] == 0 || $seriesOption['end'] > time() || $option['end'] > time())
+                {
+                    $seriesOption['end'] = 0;
+                }
+                else
+                {
+                    $seriesOption['end'] = max($option['end'], $seriesOption['end']);
+                }
+            }
+        }
+
         foreach ($option['groupTime'] as $groupKey => $st)
         {
             if (!$seriesOption['queries'][$groupKey] || (is_array($seriesOption['queries'][$groupKey]) && !in_array($option['key'], $seriesOption['queries'][$groupKey])))
@@ -699,7 +705,7 @@ class Manager
             }
         }
 
-        return false !== $this->worker->redis->hSet('series', $seriesKey, serialize($seriesOption));
+        return $seriesOption;
     }
 
     protected function notifyAllWorker($data)

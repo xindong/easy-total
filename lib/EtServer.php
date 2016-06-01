@@ -82,7 +82,7 @@ function getTimeKey($time, $limit, $type)
     return $timeKey;
 }
 
-class Server
+class EtServer
 {
     /**
      * @var array
@@ -92,15 +92,15 @@ class Server
     public static $configFile;
 
     /**
-     * @var Manager
-     */
-    protected $manager;
-
-    /**
      *
      * @var swoole_server
      */
-    protected $server;
+    public static $server;
+
+    /**
+     * @var Manager
+     */
+    protected $manager;
 
     /**
      * @var swoole_server_port
@@ -225,7 +225,7 @@ class Server
         # 开启管理子进程后有bug,先不启用
         $this->createServer();
 
-        $this->serverPort = $this->server->listen(self::$config['server']['host'], self::$config['server']['port'], SWOOLE_SOCK_TCP);
+        $this->serverPort = self::$server->listen(self::$config['server']['host'], self::$config['server']['port'], SWOOLE_SOCK_TCP);
 
         # 设置分包协议
         $config = [
@@ -246,10 +246,10 @@ class Server
         {
             # 载入远程 RemoteShell 控制指令功能
             require __DIR__ . '/RemoteShell.php';
-            RemoteShell::listen($this->server, self::$config['remote']['host'], self::$config['remote']['port']);
+            RemoteShell::listen(self::$server, self::$config['remote']['host'], self::$config['remote']['port']);
         }
 
-        $this->server->start();
+        self::$server->start();
     }
 
     /**
@@ -261,9 +261,8 @@ class Server
     {
         $port = self::$config['manager']['port'] ?: 9200;
         $host = self::$config['manager']['host'] ?: '127.0.0.1';
-//        $this->server = new swoole_http_server($host, $port, SWOOLE_PROCESS);
-        $this->server = new swoole_websocket_server($host, $port);
-        $this->server->set(self::$config['conf']);
+        self::$server = new swoole_websocket_server($host, $port);
+        self::$server->set(self::$config['conf']);
     }
 
 
@@ -283,18 +282,18 @@ class Server
      */
     protected function bind()
     {
-        $this->server->on('WorkerStop',   [$this, 'onWorkerStop']);
-        $this->server->on('Shutdown',     [$this, 'onShutdown']);
-        $this->server->on('WorkerStart',  [$this, 'onWorkerStart']);
-        $this->server->on('PipeMessage',  [$this, 'onPipeMessage']);
-        $this->server->on('ManagerStart', [$this, 'onManagerStart']);
-        $this->server->on('ManagerStop',  [$this, 'onManagerStop']);
-        $this->server->on('Finish',       [$this, 'onFinish']);
-        $this->server->on('Task',         [$this, 'onTask']);
-        $this->server->on('Start',        [$this, 'onStart']);
-        $this->server->on('Request',      [$this, 'onManagerRequest']);
-        $this->server->on('Message',      [$this, 'onManagerMessage']);
-        $this->server->on('Open',         [$this, 'onManagerOpen']);
+        self::$server->on('WorkerStop',   [$this, 'onWorkerStop']);
+        self::$server->on('Shutdown',     [$this, 'onShutdown']);
+        self::$server->on('WorkerStart',  [$this, 'onWorkerStart']);
+        self::$server->on('PipeMessage',  [$this, 'onPipeMessage']);
+        self::$server->on('ManagerStart', [$this, 'onManagerStart']);
+        self::$server->on('ManagerStop',  [$this, 'onManagerStop']);
+        self::$server->on('Finish',       [$this, 'onFinish']);
+        self::$server->on('Task',         [$this, 'onTask']);
+        self::$server->on('Start',        [$this, 'onStart']);
+        self::$server->on('Request',      [$this, 'onManagerRequest']);
+        self::$server->on('Message',      [$this, 'onManagerMessage']);
+        self::$server->on('Open',         [$this, 'onManagerOpen']);
 
         return $this;
     }
@@ -383,7 +382,7 @@ class Server
             require (__DIR__ .'/TaskWorker.php');
 
             # 构造新对象
-            $this->taskWorker = new TaskWorker($server, $workerId - $this->server->setting['worker_num']);
+            $this->taskWorker = new TaskWorker($server, $workerId - $server->setting['worker_num']);
             $this->taskWorker->init();
 
             info("Tasker Start, \$id = {$workerId}, \$pid = {$server->worker_pid}");
@@ -427,7 +426,7 @@ class Server
      */
     public function onPipeMessage(swoole_server $server, $fromWorkerId, $message)
     {
-        if ($this->server->taskworker)
+        if ($server->taskworker)
         {
 //            return $this->taskWorker->onPipeMessage($server, $fromWorkerId, $message);
         }
@@ -481,7 +480,7 @@ class Server
      *
      * @param $name
      */
-    protected static function setProcessName($name)
+    public static function setProcessName($name)
     {
         if (function_exists('cli_set_process_title'))
         {

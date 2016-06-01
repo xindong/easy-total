@@ -87,7 +87,7 @@ if ($this->worker->isSSDB)
 else
 {
   $keys = [];
-  foreach ($this->worker->series as $k => $v)
+  foreach (FlushData::$series as $k => $v)
   {
      $keys[] = "counter.total.$timeKey.$k";
   }
@@ -197,7 +197,7 @@ unset($item);
           </li>
           <li class="list-group-item">
             <span class="badge" style="background:#f0ad4e"><?php
-              echo number_format(Server::getCount(), 0, '.', ',');
+              echo number_format(EtServer::getCount(), 0, '.', ',');
             ?></span>
             启动后处理数据数
           </li>

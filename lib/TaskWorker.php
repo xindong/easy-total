@@ -12,15 +12,41 @@ class TaskWorker
      */
     protected $server;
 
+    /**
+     * 当程序需要终止时如果无法把数据推送出去时临时导出的文件路径（确保数据安全）
+     *
+     * @var string
+     */
+    protected $dumpFile;
+
+    /**
+     * 待推送列表数据
+     *
+     * @var array
+     */
+    protected $list = [];
+
+    protected static $sendEvents = [];
+
     public function __construct(swoole_server $server, $id)
     {
         $this->server   = $server;
         $this->id       = $id;
+        $this->dumpFile = (EtServer::$config['server']['dump_path'] ?: '/tmp/') . 'total-task-dump-'. substr(md5(EtServer::$configFile), 16, 8) . '-'. $id .'.txt';
     }
 
     public function init()
     {
+        if (is_file($this->dumpFile))
+        {
+            $tmp = @unserialize(file_get_contents($this->dumpFile));
+            if ($tmp && is_array($tmp))
+            {
+                $this->list = $tmp;
+            }
 
+            unlink($this->dumpFile);
+        }
     }
 
     /**
@@ -34,14 +60,36 @@ class TaskWorker
     {
         try
         {
-            $arr = explode('|', $data);
-            switch ($arr[0])
+            if (is_array($data))
             {
+                $type = 'list';
+            }
+            else
+            {
+                $data = explode('|', $data);
+                $type = $data[0];
+            }
+
+            switch ($type)
+            {
+                case 'list':
+                    # 处理列表数据
+                    foreach ($data as $key => $item)
+                    {
+                        if (isset($this->list[$key]))
+                        {
+                            $this->list[$key] = array_merge($this->list[$key], $item);
+                        }
+                        else
+                        {
+                            $this->list[$key] = $item;
+                        }
+                    }
+
+                    break;
+
                 case 'output':
-                    # 主进程会同时推送很多任务过来, 这样可以错开处理
-                    usleep(mt_rand(100, 300000));
-                    $this->outputToFluent($arr[1]);
-                    $this->server->finish('output.finish|'.$arr[1]);
+                    $this->outputToFluent();
                     break;
 
                 case 'clean':
@@ -60,9 +108,72 @@ class TaskWorker
 
     public function shutdown()
     {
-        # 没有什么需要处理的
+        if ($this->list)
+        {
+            # 如果有数据推送
+            $this->outputToFluent();
+        }
+
+        if ($this->list)
+        {
+
+            # 把数据dump到本地, 重新启动时加载
+            $this->dumpData();
+        }
+
+        $time = time();
+        while (true)
+        {
+            if (self::$sendEvents)
+            {
+                self::checkAckResponse();
+            }
+            else
+            {
+                break;
+            }
+
+            if (time() - $time > 200)
+            {
+                if (self::$sendEvents)
+                {
+                    # 将推送失败的数据恢复后dump出来, 供下次启动时读取
+                    foreach (self::$sendEvents as $item)
+                    {
+                        list ($key, $data) = $item;
+                        if (!isset($this->list[$key]))
+                        {
+                            $this->list[$key] = $data;
+                        }
+                        else
+                        {
+                            $this->list[$key] = array_merge($data, $this->list[$key]);
+                        }
+                    }
+                    $this->dumpData();
+                }
+                break;
+            }
+
+            # update title
+            EtServer::setProcessName("php easy-total task wait ack update at ". date('H:i:s') ." [do not kill me]");
+
+            usleep(100000);
+        }
     }
 
+
+    /**
+     * 在程序退出时保存数据
+     */
+    public function dumpData()
+    {
+        if ($this->list)
+        {
+            # 有数据
+            file_put_contents($this->dumpFile, serialize($this->list));
+        }
+    }
 
     /**
      * 清理redis中的数据
@@ -135,14 +246,6 @@ class TaskWorker
         if ($ssdb)$ssdb->close();
 
         return true;
-    }
-
-    /**
-     * 开启多线程
-     */
-    protected function startThread()
-    {
-
     }
 
     /**
@@ -251,7 +354,6 @@ class TaskWorker
         }
 
 
-
         # 清理每天的统计数据, 只保留10天内的
         $time = time();
         $k1   = date('Y-m-d', $time - 86400 * 12);
@@ -319,206 +421,132 @@ class TaskWorker
      *
      * @return bool
      */
-    protected function outputToFluent($jobKey)
+    protected function outputToFluent()
     {
-        /**
-         * @var Redis $redis
-         * @var SimpleSSDB $ssdb
-         */
-        list($redis, $ssdb) = self::getRedis();
-        if (false === $redis)return false;
-
-        getLock:
-
-        $lockKey = "output_lock_{$jobKey}";
-        if (!$redis->setNx($lockKey, $lockTime = microtime(1)))
-        {
-            # 抢锁失败
-            if ($lockTime - $redis->get($lockKey) > 60)
-            {
-                # 如果1分钟还没有释放的锁, 强制删除, 防止被死锁
-                $redis->delete($lockKey);
-
-                usleep(mt_rand(1, 1000));
-
-                debug("found and deleted timeout lock: $lockKey.");
-                goto getLock;
-            }
-            else
-            {
-                return false;
-            }
-        }
+        # 加载客户端
+        $outputPrefix = EtServer::$config['output']['prefix'] ?: '';
 
         try
         {
-            if ($ssdb)
+            if (self::$sendEvents)
             {
-                # 读取当前任务的前30个列表
-                # $keys = $ssdb->hlist("list,{$jobKey},", "list,{$jobKey},z" , 30);
-                $keys = $ssdb->hgetall('allListKeys');
-            }
-            else
-            {
-                # 获取列表
-                $keys = $redis->sMembers('allListKeys');
+                self::checkAckResponse();
             }
 
-            if (!$keys)
+            foreach ($this->list as $key => $item)
             {
-                # 没数据
-                goto rt;
-            }
-
-            # 排序, 便于下面整理
-            asort($keys);
-
-            # 整理key
-            $currentLimit = date('YmdHi', time() - 30);
-            $outputPrefix = Server::$config['output']['prefix'] ?: '';
-            $myKeys       = [];
-            foreach ($keys as $key)
-            {
-                if (preg_match('#^list,(?<jobKey>[a-z0-9]+),(?<timeType>[a-z0-9]+),(?<limit>\d+),(?<app>.+),(?<table>.+)$#i', $key, $m))
+                if (!preg_match('#^(?<jobKey>[a-z0-9]+),(?<timeType>[a-z0-9]+),(?<app>.+),(?<table>.+)$#i', $key, $m))
                 {
-                    # 不是当前任务
-                    if ($m['jobKey'] !== $jobKey)continue;
-
-                    # 新的格式, 将时间参数放在前面, 并加入 jobKey
-                    if ($m['limit'] < $currentLimit)
-                    {
-                        # 得到按时间分组的序列key
-                        preg_match('#^(\d+)([a-z]+)$#', $m['timeType'], $mm);
-                        $timeGroup = getTimeKey(strtotime($m['limit']), $mm[1], $mm[2]);
-                        $delayKey  = "{$m['timeType']},{$timeGroup},{$m['app']},{$m['table']}";
-
-                        $myKeys[$delayKey]['tag']    = "{$outputPrefix}{$m['app']}.{$m['table']}";
-                        $myKeys[$delayKey]['limit']  = $m['limit'];
-                        $myKeys[$delayKey]['keys'][] = $key;
-                    }
+                    unset($this->list[$key]);
+                    warn("Unexpected key: $key");
+                    continue;
                 }
-            }
 
-            if (!$myKeys)
-            {
-                goto rt;
-            }
+                $tag = "{$outputPrefix}{$m['app']}.{$m['table']}";;
 
-            # 加载客户端
-            require_once (__DIR__ .'/FluentClient.php');
-            $fluent = new FluentClient(Server::$config['output']['link']);
-
-            $lastSyncTime = time();
-            foreach ($myKeys as $groups)
-            {
-                $tag  = $groups['tag'];
-                $keys = $groups['keys'];
-
-                if (count($keys) > 1)
+                # 发送数据
+                if (self::sendToFluent($tag, $key, $item))
                 {
-                    $data = [];
-                    foreach ($keys as $key)
-                    {
-                        # 数据合并
-                        $data = array_merge($data, $redis->hGetAll($key) ?: []);
-                    }
+                    unset($this->list[$key]);
                 }
                 else
                 {
-                    $key  = $keys[0];
-                    $data = $redis->hGetAll($key);
-                }
-
-                if ((!$data && false !== $redis->ping()) || self::sendToFluent($fluent, $tag, $data))
-                {
-                    # 成功后移除当前key的数据
-                    if ($ssdb)
-                    {
-                        foreach ($keys as $key)
-                        {
-                            $ssdb->hdel('allListKeys', $key);
-                            $ssdb->hclear($key);
-                        }
-                    }
-                    else
-                    {
-                        # 删除数据
-                        if (false !== $redis->delete($keys))
-                        {
-                            # 在列表中移除
-                            if (count($keys) < 20)
-                            {
-                                # 批量删除
-                                call_user_func_array([$redis, 'sRemove'], array_merge(['allListKeys'], $keys));
-                            }
-                            else
-                            {
-                                foreach ($keys as $key)
-                                {
-                                    $redis->sRemove('allListKeys', $key);
-                                }
-                            }
-                        }
-                    }
-
-                    debug("output data {$jobKey} time limit {$groups['limit']}");
-                }
-                else
-                {
-                    warn("push data {$keys} fail. fluentd server: ". Server::$config['output']['type'] .': '. Server::$config['output']['link']);
-                }
-
-                if (time() - $lastSyncTime > 5)
-                {
-                    # 超过10秒钟则更新锁时间值并通知worker进程继续执行
-                    $this->server->finish('output.continue|'. $jobKey);
-
-                    # 更新锁信息
-                    $redis->set($lockKey, $lockTime = microtime(1));
-
-                    # 更新上次同步时间
-                    $lastSyncTime = time();
+                    warn("push data {$key} fail. fluentd server: " . EtServer::$config['output']['type'] . ': ' . EtServer::$config['output']['link']);
                 }
             }
 
-            # 关闭对象
-            $fluent->close();
+            return true;
         }
         catch (Exception $e)
         {
             warn($e->getMessage());
 
-            if (isset($fluent))
+            if (IS_DEBUG)
             {
-                $fluent->close();
+                echo $e->getTraceAsString();
             }
-
-            # 释放锁
-            $redis->delete($lockKey);
-
-            # 关闭连接
-            $redis->close();
-            if ($ssdb)$ssdb->close();
 
             return false;
         }
-
-        rt:
-        # 释放锁
-        $redis->delete($lockKey);
-
-        # 关闭连接
-        $redis->close();
-        if ($ssdb)$ssdb->close();
-
-        return true;
     }
 
-    protected static function sendToFluent(FluentClient $fluent, $tag, $data)
+    /**
+     * 检查ACK返回
+     */
+    protected static function checkAckResponse()
     {
-        $len = 0;
-        $str = '';
+        foreach (self::$sendEvents as $k => $event)
+        {
+            list ($key, $data, $time, $tag, $socket, $acks) = $event;
 
+            try
+            {
+                if ($rs = fread($socket, 10240))
+                {
+                    # 如果提交多个数据提交, 会一次返回多个,类似: {"ack":"f123"}{"ack":"f456"}
+                    foreach (explode('}{', $rs) as $item)
+                    {
+                        $item = json_decode('{'. trim($item, '{}') .'}', true);
+                        if ($item)
+                        {
+                            $ack = $item['ack'];
+                            if (isset($acks[$ack]))
+                            {
+                                unset($acks[$ack]);
+                                unset(self::$sendEvents[$k][4][$ack]);
+
+                                if (!$acks)
+                                {
+                                    # 成功
+                                    fclose(@$socket);
+                                    unset(self::$sendEvents[$k]);
+                                }
+                            }
+                        }
+                    }
+                }
+                elseif (microtime(1) - $time > 300)
+                {
+                    # 超时300秒认为失败
+                    # 发送新的
+                    self::sendToFluent($tag, $key, $data);
+
+                    # 关闭
+                    fclose(@$socket);
+                    unset(self::$sendEvents[$k]);
+                }
+            }
+            catch (Exception $e)
+            {
+                warn($e->getMessage());
+            }
+        }
+
+        self::$sendEvents = array_values(self::$sendEvents);
+    }
+
+    /**
+     * 将数据发送到Fluent上
+     *
+     * @param $tag
+     * @param $data
+     * @return bool
+     */
+    protected static function sendToFluent($tag, $key, $data)
+    {
+        $len    = 0;
+        $str    = '';
+        $link   = EtServer::$config['output']['link'];
+        $socket = @stream_socket_client($link, $errno, $errstr, 1, STREAM_CLIENT_CONNECT);
+        stream_set_timeout($socket, 0, 1000);
+
+        if (!$socket)
+        {
+            warn($errstr);
+            return false;
+        }
+
+        $acks = [];
         foreach ($data as $item)
         {
             $len += strlen($item);
@@ -527,18 +555,20 @@ class TaskWorker
             if ($len > 3000000)
             {
                 # 每 3M 分开一次推送, 避免一次发送的数据包太大
-                $ack    = uniqid('fluent');
+                $ack    = uniqid('f');
                 $buffer =  '["'. $tag .'",['. substr($str, 0, -1) .'], {"chunk":"'. $ack .'"}]';
-                if ($fluent->push_by_buffer($tag, $buffer, $ack))
+
+                if (@fwrite($socket, $buffer))
                 {
                     # 重置后继续
                     $len = 0;
                     $str = '';
+                    $acks[$ack] = 1;
                 }
                 else
                 {
                     # 如果推送失败
-                    $fluent->close();
+                    @fclose($socket);
                     return false;
                 }
             }
@@ -546,22 +576,25 @@ class TaskWorker
 
         if ($len > 0)
         {
-            $ack    = uniqid('fluent');
+            $ack    = uniqid('f');
             $buffer = '["'. $tag .'",['. substr($str, 0, -1) .'], {"chunk":"'. $ack .'"}]';
 
-            if ($fluent->push_by_buffer($tag, $buffer, $ack))
+            if (@fwrite($socket, $buffer))
             {
                 # 全部推送完毕
+                $acks[$ack] = 1;
+                self::$sendEvents[] = [$key, $data, microtime(1), $tag, $socket, $acks];
                 return true;
             }
             else
             {
-                $fluent->close();
+                @fclose($socket);
                 return false;
             }
         }
         else
         {
+            self::$sendEvents[] = [$key, $data, microtime(1), $tag, $socket, $acks];
             return true;
         }
     }
@@ -577,12 +610,12 @@ class TaskWorker
         {
             $ssdb  = null;
             $redis = new Redis();
-            $redis->pconnect(Server::$config['redis']['host'], Server::$config['redis']['port']);
+            $redis->pconnect(EtServer::$config['redis']['host'], EtServer::$config['redis']['port']);
 
             if (false === $redis->time())
             {
                 require_once __DIR__ . '/SSDB.php';
-                $ssdb = new SimpleSSDB(Server::$config['redis']['host'], Server::$config['redis']['port']);
+                $ssdb = new SimpleSSDB(EtServer::$config['redis']['host'], EtServer::$config['redis']['port']);
             }
 
             return [$redis, $ssdb];
