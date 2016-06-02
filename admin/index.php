@@ -28,9 +28,21 @@ if ($this->worker->isSSDB)
 }
 else
 {
-  $maxSize = 2000;
+  $maxSize = 8000;
   $type = 'Redis内存';
-  $info = $this->worker->redis->info();
+  if ($this->worker->redis instanceof Redis)
+  {
+    $info = $this->worker->redis->info();
+  }
+  else
+  {
+    $info = ['used_memory' => 0];
+    foreach (EtServer::$config['redis']['hosts'] as $i => $v)
+    {
+      $tmp = $this->worker->redis->info($i);
+      $info['used_memory'] += $tmp;
+    }
+  }
 }
 
 $allMemory     = [
