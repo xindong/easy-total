@@ -661,13 +661,34 @@ class TaskWorker
         try
         {
             $ssdb  = null;
-            $redis = new Redis();
-            $redis->pconnect(EtServer::$config['redis']['host'], EtServer::$config['redis']['port']);
+            if (EtServer::$config['redis'][0])
+            {
+                list ($host, $port) = explode(':', EtServer::$config['redis'][0]);
+            }
+            else
+            {
+                $host = EtServer::$config['redis']['host'];
+                $port = EtServer::$config['redis']['port'];
+            }
 
-            if (false === $redis->time())
+            if (EtServer::$config['redis']['hosts'] && count(EtServer::$config['redis']) > 1)
+            {
+                $redis = new RedisCluster(null, EtServer::$config['redis']['hosts']);
+            }
+            else
+            {
+                $redis = new redis();
+
+                if (false === $redis->connect($host, $port))
+                {
+                    throw new Exception('connect redis error');
+                }
+            }
+
+            if (false === $redis->time(0))
             {
                 require_once __DIR__ . '/SSDB.php';
-                $ssdb = new SimpleSSDB(EtServer::$config['redis']['host'], EtServer::$config['redis']['port']);
+                $ssdb = new SimpleSSDB($host, $port);
             }
 
             return [$redis, $ssdb];

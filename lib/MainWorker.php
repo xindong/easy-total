@@ -64,7 +64,7 @@ class MainWorker
     /**
      * ssdb 对象
      *
-     * @var redis
+     * @var redis|RedisCluster
      */
     public $redis;
 
@@ -733,18 +733,33 @@ class MainWorker
     {
         try
         {
-            $redis = new redis();
-            $host  = EtServer::$config['redis']['host'];
-            $port  = EtServer::$config['redis']['port'];
-
-            if (false === $redis->connect($host, $port))
+            if (EtServer::$config['redis'][0])
             {
-                throw new Exception('connect redis error');
+                list ($host, $port) = explode(':', EtServer::$config['redis'][0]);
+            }
+            else
+            {
+                $host = EtServer::$config['redis']['host'];
+                $port = EtServer::$config['redis']['port'];
+            }
+
+            if (EtServer::$config['redis']['hosts'] && count(EtServer::$config['redis']) > 1)
+            {
+                $redis = new RedisCluster(null, EtServer::$config['redis']['hosts']);
+            }
+            else
+            {
+                $redis = new redis();
+
+                if (false === $redis->connect($host, $port))
+                {
+                    throw new Exception('connect redis error');
+                }
             }
 
             $this->redis = $redis;
 
-            if (false === $redis->time())
+            if (false === $redis->time(0))
             {
                 # 大部分用redis的操作, 部分不兼容的用这个对象来处理
                 $this->isSSDB = true;
@@ -1086,7 +1101,9 @@ class MainWorker
 //                }
 //                else
 //                {
+                    $time = microtime(1);
                     FlushData::doFlush($this->flushData);
+                    debug('do flush use time: '. (microtime(1) - $time) .'s');
 //                }
             }
             catch (Exception $e)
@@ -1338,7 +1355,7 @@ class MainWorker
     {
         try
         {
-            if ($this->redis && false === @$this->redis->ping())
+            if ($this->redis && false === @$this->redis->ping(0))
             {
                 throw new Exception('redis closed');
             }
