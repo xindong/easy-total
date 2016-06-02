@@ -749,7 +749,7 @@ class MainWorker
                 {
                     debug('redis hosts: '. implode(', ', EtServer::$config['redis']['hosts']));
                 }
-                
+
                 $redis = new RedisCluster(null, EtServer::$config['redis']['hosts']);
             }
             else

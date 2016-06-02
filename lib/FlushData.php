@@ -562,7 +562,7 @@ class FlushData extends FlushBase
                         }
 
                         # 释放锁
-                        $redis->delete($lockKey);
+                        $redis->del($lockKey);
 
                         # 使用时间（微妙）
                         $useTime = 1000000 * (microtime(1) - $beginTime);
@@ -575,7 +575,7 @@ class FlushData extends FlushBase
                         if (microtime(1) - $redis->get($lockKey) > 30)
                         {
                             # 30 秒还没解锁, 直接删除, 防止死锁
-                            $redis->delete($lockKey);
+                            $redis->del($lockKey);
                         }
                     }
                 }

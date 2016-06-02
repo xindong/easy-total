@@ -224,22 +224,22 @@ class TaskWorker
         else
         {
             # 移除监控统计数据
-            $redis->delete($keys);
+            $redis->del($keys);
 
             # 移除统计数据
             if ($keys = $redis->sMembers("totalKeys,$key"))
             {
-                $redis->delete($keys);
+                $redis->del($keys);
             }
 
             # 移除唯一序列数据
             if ($keys = $redis->sMembers("distKeys,$key"))
             {
-                $redis->delete($keys);
+                $redis->del($keys);
             }
 
             # 移除序列信息
-            $redis->delete("series.app.$key");
+            $redis->del("series.app.$key");
         }
 
         $redis->close();
@@ -283,7 +283,7 @@ class TaskWorker
                     else
                     {
                         # 批量移除
-                        $redis->delete($listKeys);
+                        $redis->del($listKeys);
                     }
                 }
 
@@ -391,7 +391,7 @@ class TaskWorker
                     {
                         foreach ($keys as $k)
                         {
-                            $redis->delete($k);
+                            $redis->del($k);
                         }
                     }
 
@@ -400,14 +400,14 @@ class TaskWorker
                     {
                         foreach ($keys as $k)
                         {
-                            $redis->delete($k);
+                            $redis->del($k);
                         }
                     }
                 }
             }
 
-            $redis->delete("counter.allpushtime.$k1");
-            $redis->delete("counter.allpushtime.$k2");
+            $redis->del("counter.allpushtime.$k1");
+            $redis->del("counter.allpushtime.$k2");
         }
 
         $redis->close();
