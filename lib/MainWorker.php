@@ -731,20 +731,25 @@ class MainWorker
 
     protected function reConnectRedis()
     {
+        if (EtServer::$config['redis'][0])
+        {
+            list ($host, $port) = explode(':', EtServer::$config['redis'][0]);
+        }
+        else
+        {
+            $host = EtServer::$config['redis']['host'];
+            $port = EtServer::$config['redis']['port'];
+        }
+
         try
         {
-            if (EtServer::$config['redis'][0])
+            if (EtServer::$config['redis']['hosts'] && count(EtServer::$config['redis']['hosts']) > 1)
             {
-                list ($host, $port) = explode(':', EtServer::$config['redis'][0]);
-            }
-            else
-            {
-                $host = EtServer::$config['redis']['host'];
-                $port = EtServer::$config['redis']['port'];
-            }
-
-            if (EtServer::$config['redis']['hosts'] && count(EtServer::$config['redis']) > 1)
-            {
+                if (IS_DEBUG && $this->id == 0)
+                {
+                    debug('redis hosts: '. implode(', ', EtServer::$config['redis']['hosts']));
+                }
+                
                 $redis = new RedisCluster(null, EtServer::$config['redis']['hosts']);
             }
             else
@@ -780,7 +785,8 @@ class MainWorker
         {
             if ($this->id == 0 && time() % 10 == 0)
             {
-                info('redis server is not start, wait start redis://' . EtServer::$config['redis']['host'] . ':' . EtServer::$config['redis']['port']);
+                debug($e->getMessage());
+                info('redis server is not start, wait start redis://' . (EtServer::$config['redis']['hosts'] ? implode(', ', EtServer::$config['redis']['hosts']) : $host .':'. $port));
             }
 
             return false;

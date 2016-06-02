@@ -671,7 +671,7 @@ class TaskWorker
                 $port = EtServer::$config['redis']['port'];
             }
 
-            if (EtServer::$config['redis']['hosts'] && count(EtServer::$config['redis']) > 1)
+            if (EtServer::$config['redis']['hosts'] && count(EtServer::$config['redis']['hosts']) > 1)
             {
                 $redis = new RedisCluster(null, EtServer::$config['redis']['hosts']);
             }
