@@ -501,7 +501,7 @@ class FlushData extends FlushBase
                                 //$saveData[$saveKey][$id] = json_encode([$time, $data], JSON_UNESCAPED_UNICODE);
                                 $taskKey = "{$queryKey},{$timeOptKey},{$app},{$saveAs}";
 
-                                $saveData[$taskKey][$taskKey][$id] = [$time, $data];
+                                $saveData[$taskKey][$taskKey][$id] = json_encode([$time, $data], JSON_UNESCAPED_UNICODE);
                             }
                         }
 

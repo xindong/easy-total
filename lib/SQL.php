@@ -106,7 +106,7 @@ class SQL
                         # 匹配 select sum(abc), sum(abc) as def
                         $field = trim($mSelect['field'], " \n\r,");
                         $type  = strtolower(trim($mSelect['type']));
-                        $as    = str_replace(',', '_', trim($mSelect['as'] ?: "{$type}_{$field}"));
+                        $as    = str_replace(',', '_', trim($mSelect['as'] ?: ($field === '*' ? $type : "{$type}_{$field}")));
 
 
                         if ($field === '*' && $type !== 'count')

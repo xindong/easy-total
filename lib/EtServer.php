@@ -448,7 +448,7 @@ class EtServer
 
     public function onStart(swoole_server $server)
     {
-        info("Manager Server: http://".self::$config['manager']['host'].":".self::$config['manager']['port']."/");
+        info("Manager Server: http://".self::$config['manager']['host'].":".self::$config['manager']['port']. '/admin/');
         info("ServerStart, tcp://".self::$config['server']['host'].":".self::$config['server']['port']."/");
     }
 

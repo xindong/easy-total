@@ -126,7 +126,7 @@ class TaskWorker
         {
             if (self::$sendEvents)
             {
-                self::checkAckResponse();
+                self::checkAck();
             }
             else
             {
@@ -430,7 +430,7 @@ class TaskWorker
         {
             if (self::$sendEvents)
             {
-                self::checkAckResponse();
+                self::checkAck();
             }
 
             foreach ($this->list as $key => $item)
@@ -473,52 +473,24 @@ class TaskWorker
     /**
      * 检查ACK返回
      */
-    protected static function checkAckResponse()
+    protected static function checkAck()
     {
-        foreach (self::$sendEvents as $k => $event)
+        foreach (self::$sendEvents as $k => & $event)
         {
-            list ($key, $data, $time, $tag, $socket, $acks) = $event;
-
-            try
+            $rs = self::checkAckByEvent($event);
+            if ($rs)
             {
-                if ($rs = fread($socket, 10240))
-                {
-                    # 如果提交多个数据提交, 会一次返回多个,类似: {"ack":"f123"}{"ack":"f456"}
-                    foreach (explode('}{', $rs) as $item)
-                    {
-                        $item = json_decode('{'. trim($item, '{}') .'}', true);
-                        if ($item)
-                        {
-                            $ack = $item['ack'];
-                            if (isset($acks[$ack]))
-                            {
-                                unset($acks[$ack]);
-                                unset(self::$sendEvents[$k][4][$ack]);
-
-                                if (!$acks)
-                                {
-                                    # 成功
-                                    fclose(@$socket);
-                                    unset(self::$sendEvents[$k]);
-                                }
-                            }
-                        }
-                    }
-                }
-                elseif (microtime(1) - $time > 300)
-                {
-                    # 超时300秒认为失败
-                    # 发送新的
-                    self::sendToFluent($tag, $key, $data);
-
-                    # 关闭
-                    fclose(@$socket);
-                    unset(self::$sendEvents[$k]);
-                }
+                unset(self::$sendEvents[$k]);
             }
-            catch (Exception $e)
+            elseif (false === $rs)
             {
-                warn($e->getMessage());
+                list ($key, $data, $tag) = $event;
+
+                # 移除当前的对象
+                unset(self::$sendEvents[$k]);
+
+                # 重新发送
+                self::sendToFluent($tag, $key, $data);
             }
         }
 
@@ -526,7 +498,82 @@ class TaskWorker
     }
 
     /**
+     * 检查ACK返回
+     *
+     *   * true  - 成功
+     *   * false - 失败（超时）
+     *   * 0     - 还需要再检测
+     *
+     * @param $event
+     * @return bool|int
+     */
+    protected static function checkAckByEvent(& $event)
+    {
+        list ($key, $data, $tag, $time, $socket, $acks) = $event;
+
+        try
+        {
+            if ($rs = @fread($socket, 10240))
+            {
+                # 如果提交多个数据提交, 会一次返回多个,类似: {"ack":"f123"}{"ack":"f456"}
+                foreach (explode('}{', $rs) as $item)
+                {
+                    $item = json_decode('{'. trim($item, '{}') .'}', true);
+                    if ($item)
+                    {
+                        $ack = $item['ack'];
+                        if (isset($acks[$ack]))
+                        {
+                            unset($acks[$ack]);
+                            unset($event[5][$ack]);
+                        }
+                    }
+                }
+
+                if (!$acks)
+                {
+                    # 成功
+                    @fclose($socket);
+
+                    if (IS_DEBUG)
+                    {
+                        debug("get ack response : $rs, use time " . (microtime(1) - $time) . 's.');
+                    }
+
+                    return true;
+                }
+                else
+                {
+                    return 0;
+                }
+            }
+            elseif (microtime(1) - $time > 300)
+            {
+                # 超时300秒认为失败
+                # 关闭
+                @fclose($socket);
+
+                warn("get ack response timeout, tag: {$tag}, key: {$key}");
+
+                return false;
+            }
+            else
+            {
+                return 0;
+            }
+        }
+        catch (Exception $e)
+        {
+            warn($e->getMessage());
+
+            return 0;
+        }
+    }
+
+    /**
      * 将数据发送到Fluent上
+     *
+     * [!!] 此处返回 true 只是表示成功投递, 并不表示服务器返回了ACK确认, 系统会每隔几秒去读取一次ACK确认
      *
      * @param $tag
      * @param $data
@@ -534,11 +581,9 @@ class TaskWorker
      */
     protected static function sendToFluent($tag, $key, $data)
     {
-        $len    = 0;
-        $str    = '';
         $link   = EtServer::$config['output']['link'];
         $socket = @stream_socket_client($link, $errno, $errstr, 1, STREAM_CLIENT_CONNECT);
-        stream_set_timeout($socket, 0, 1000);
+        stream_set_timeout($socket, 0, 3000);
 
         if (!$socket)
         {
@@ -546,6 +591,8 @@ class TaskWorker
             return false;
         }
 
+        $len  = 0;
+        $str  = '';
         $acks = [];
         foreach ($data as $item)
         {
@@ -583,8 +630,6 @@ class TaskWorker
             {
                 # 全部推送完毕
                 $acks[$ack] = 1;
-                self::$sendEvents[] = [$key, $data, microtime(1), $tag, $socket, $acks];
-                return true;
             }
             else
             {
@@ -592,11 +637,18 @@ class TaskWorker
                 return false;
             }
         }
-        else
+
+        $event = [$key, $data, $tag, microtime(1), $socket, $acks];
+
+        # 尝试去读取ACK
+        $rs = self::checkAckByEvent($event);
+        if (!$rs)
         {
-            self::$sendEvents[] = [$key, $data, microtime(1), $tag, $socket, $acks];
-            return true;
+            # 没有成功返回则放到队列里
+            self::$sendEvents[] = $event;
         }
+
+        return true;
     }
 
     /**
