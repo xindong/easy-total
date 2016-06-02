@@ -288,7 +288,7 @@ class FlushData extends FlushBase
                     $redis->sAdd("distKeys,{$sk}", $k);
 
                     $c = count($v);
-                    if ($c > 100)
+                    if ($c > 10)
                     {
                         # 超过100个则分批提交
                         $rs   = false;
@@ -299,7 +299,7 @@ class FlushData extends FlushBase
                             $i++;
                             $tmp[] = $kk;
 
-                            if ($i % 100 === 0 || $i === $c)
+                            if ($i % 10 === 0 || $i === $c)
                             {
                                 # 每100条提交一次
                                 $rs = false !== call_user_func_array([$redis, 'sAdd'], $tmp);
