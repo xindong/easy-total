@@ -484,13 +484,25 @@ class TaskWorker
             }
             elseif (false === $rs)
             {
-                list ($key, $data, $tag) = $event;
+                list ($key, $data, $tag, $retryNum) = $event;
 
                 # 移除当前的对象
                 unset(self::$sendEvents[$k]);
 
-                # 重新发送
-                self::sendToFluent($tag, $key, $data);
+                if ($data)
+                {
+                    # 切分成2分重新发送
+                    $len = ceil(count($data) / 2);
+                    if ($len > 1)
+                    {
+                        self::sendToFluent($tag, $key, array_slice($data, 0, $len), $retryNum + 1);
+                        self::sendToFluent($tag, $key, array_slice($data, $len), $retryNum + 1);
+                    }
+                    else
+                    {
+                        self::sendToFluent($tag, $key, $data, $retryNum + 1);
+                    }
+                }
             }
         }
 
@@ -509,7 +521,7 @@ class TaskWorker
      */
     protected static function checkAckByEvent(& $event)
     {
-        list ($key, $data, $tag, $time, $socket, $acks) = $event;
+        list ($key, $data, $tag, $retryNumm, $time, $socket, $acks) = $event;
 
         try
         {
@@ -553,7 +565,7 @@ class TaskWorker
                 # 关闭
                 @fclose($socket);
 
-                warn("get ack response timeout, tag: {$tag}, key: {$key}");
+                warn("get ack response timeout, tag: {$tag}, key: {$key}, tryNum: {$retryNum}");
 
                 return false;
             }
@@ -575,11 +587,13 @@ class TaskWorker
      *
      * [!!] 此处返回 true 只是表示成功投递, 并不表示服务器返回了ACK确认, 系统会每隔几秒去读取一次ACK确认
      *
-     * @param $tag
-     * @param $data
+     * @param string $tag
+     * @param string $key
+     * @param array $data
+     * @param int $retryNum
      * @return bool
      */
-    protected static function sendToFluent($tag, $key, $data)
+    protected static function sendToFluent($tag, $key, $data, $retryNum = 0)
     {
         $link   = EtServer::$config['output']['link'];
         $socket = @stream_socket_client($link, $errno, $errstr, 1, STREAM_CLIENT_CONNECT);
@@ -594,12 +608,34 @@ class TaskWorker
         $len  = 0;
         $str  = '';
         $acks = [];
+
+        if ($retryNum > 2)
+        {
+            # 大于2次错误后, 将数据分割小块投递
+            $limitLen = 300000;
+        }
+        else
+        {
+            $limitLen = 3000000;
+        }
+
         foreach ($data as $item)
         {
+            if ($retryNum > 2)
+            {
+                # 检查下数据是否有问题, 有问题的直接跳过
+                $test = @json_decode($item, false);
+                if (!$test)
+                {
+                    warn("ignore error fluent data: $item");
+                    continue;
+                }
+            }
+
             $len += strlen($item);
             $str .= $item .',';
 
-            if ($len > 3000000)
+            if ($len > $limitLen)
             {
                 # 每 3M 分开一次推送, 避免一次发送的数据包太大
                 $ack    = uniqid('f');
@@ -638,7 +674,7 @@ class TaskWorker
             }
         }
 
-        $event = [$key, $data, $tag, microtime(1), $socket, $acks];
+        $event = [$key, $data, $tag, $retryNum, microtime(1), $socket, $acks];
 
         # 尝试去读取ACK
         $rs = self::checkAckByEvent($event);
