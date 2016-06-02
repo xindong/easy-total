@@ -290,7 +290,7 @@ class FlushData extends FlushBase
                     $c = count($v);
                     if ($c > 10)
                     {
-                        # 超过100个则分批提交
+                        # 超过10个则分批提交
                         $rs   = false;
                         $tmp = [$k];
                         $i    = 0;
@@ -307,6 +307,10 @@ class FlushData extends FlushBase
                                 {
                                     # 有错误, 退出循环
                                     break;
+                                }
+                                else
+                                {
+                                    $tmp = [$k];
                                 }
                             }
                         }
