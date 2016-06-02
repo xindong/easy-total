@@ -5,7 +5,7 @@
 <?php
 if ($this->worker->isSSDB)
 {
-  $maxSize = 10000;
+  $maxSize = 1000;
   $info = [];
   $type = 'SSDB磁盘';
 
@@ -28,7 +28,7 @@ if ($this->worker->isSSDB)
 }
 else
 {
-  $maxSize = 8000;
+  $maxSize = 16;
   $type = 'Redis内存';
   if ($this->worker->redis instanceof Redis)
   {
@@ -312,14 +312,14 @@ unset($item);
 
       series: [{
         name: '内存占用',
-        data: [<?php echo number_format($info['used_memory'] / 1024 / 1024, 2, '.', '');?>],
+        data: [<?php echo number_format($info['used_memory'] / 1024 / 1024 / 1024, 2, '.', '');?>],
         dataLabels: {
           format: '<div style="text-align:center"><span style="font-size:25px;color:' +
           ((Highcharts.theme && Highcharts.theme.contrastTextColor) || 'black') + '">{y}</span><br/>' +
-          '<span style="font-size:12px;color:silver">MB</span></div>'
+          '<span style="font-size:12px;color:silver">GB</span></div>'
         },
         tooltip: {
-          valueSuffix: ' MB'
+          valueSuffix: ' GB'
         }
       }]
     }));
