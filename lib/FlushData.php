@@ -243,7 +243,7 @@ class FlushData extends FlushBase
         if (!$redis)return false;
 
         # 更新唯一值
-        if ($flushData->dist)
+        if ($flushData->dist->count())
         {
             if ($ssdb)
             {
@@ -332,14 +332,14 @@ class FlushData extends FlushBase
         }
 
         # 更新任务
-        if ($flushData->jobs)
+        if ($flushData->jobs->count())
         {
             $tryNum    = 0;
             $distCache = [];
 
             while (true)
             {
-                if (!$flushData->jobs)break;
+                if ($flushData->jobs->count() == 0)break;
 
                 foreach ($flushData->jobs as $jobKey => $arr)
                 {
@@ -580,7 +580,7 @@ class FlushData extends FlushBase
                     }
                 }
 
-                if ($flushData->jobs)
+                if ($flushData->jobs->count())
                 {
                     # 重试
                     $tryNum++;
@@ -595,7 +595,7 @@ class FlushData extends FlushBase
 
 
         # 更新APP相关数据
-        if ($flushData->apps)
+        if ($flushData->apps->count())
         {
             $appData = [];
             foreach ($flushData->apps as $uniqid => $value)
@@ -642,7 +642,7 @@ class FlushData extends FlushBase
 
 
         # 同步统计信息
-        if ($flushData->counter)
+        if ($flushData->counter->count())
         {
             # 按每分钟分开
             foreach ($flushData->counter as $key => $value)
@@ -666,7 +666,7 @@ class FlushData extends FlushBase
         }
 
         # 同步APP统计信息
-        if ($flushData->counterApp)
+        if ($flushData->counterApp->count())
         {
             foreach ($flushData->counterApp as $app => $value)
             {
@@ -688,11 +688,11 @@ class FlushData extends FlushBase
 
         # 标记是否有更新数据
         if ($flushData['dist']
-            || $flushData->total
-            || $flushData->jobs
-            || $flushData->apps
-            || $flushData->counter
-            || $flushData->counterApp
+            || $flushData->total->count()
+            || $flushData->jobs->count()
+            || $flushData->apps->count()
+            || $flushData->counter->count()
+            || $flushData->counterApp->count()
         )
         {
             $flushData->updated = true;
