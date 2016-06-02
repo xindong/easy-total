@@ -521,7 +521,7 @@ class TaskWorker
      */
     protected static function checkAckByEvent(& $event)
     {
-        list ($key, $data, $tag, $retryNumm, $time, $socket, $acks) = $event;
+        list ($key, $data, $tag, $retryNum, $time, $socket, $acks) = $event;
 
         try
         {
@@ -565,7 +565,7 @@ class TaskWorker
                 # 关闭
                 @fclose($socket);
 
-                warn("get ack response timeout, tag: {$tag}, key: {$key}, tryNum: {$retryNum}");
+                warn("get ack response timeout, tag: {$tag}, key: {$key}, retryNum: {$retryNum}");
 
                 return false;
             }
