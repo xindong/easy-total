@@ -40,7 +40,7 @@ else
     foreach (EtServer::$config['redis']['hosts'] as $i => $v)
     {
       $tmp = $this->worker->redis->info($i);
-      $info['used_memory'] += $tmp;
+      $info['used_memory'] += $tmp['used_memory'];
     }
   }
 }
