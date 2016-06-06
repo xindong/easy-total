@@ -77,6 +77,8 @@ class FlushData extends FlushBase
      */
     public static $series = [];
 
+    protected static $timed;
+
     public function __construct()
     {
         $this->dist       = new FlushBase();
@@ -230,6 +232,11 @@ class FlushData extends FlushBase
         }
     }
 
+    public function flush()
+    {
+        self::doFlush($this);
+    }
+
     /**
      * 实施推送数据到redis, ssdb
      *
@@ -345,6 +352,7 @@ class FlushData extends FlushBase
             {
                 if ($flushData->jobs->count() == 0)break;
 
+                self::$timed = time();
                 foreach ($flushData->jobs as $jobKey => $arr)
                 {
                     $lockKey = "lock,{$jobKey}";
@@ -370,23 +378,8 @@ class FlushData extends FlushBase
                             list($uniqid, $time, $timeKey, $app, $value) = $opt;
 
                             # 获取所有统计相关数据
-                            $totalKey = "total,{$uniqid}";
-                            $total    = $redis->get($totalKey);
-                            if (!$total)
-                            {
-                                $total = [];
-
-                                # 更新数据
-                                if (!$ssdb)
-                                {
-                                    # redis 服务器需要将 key 加入到 totalKeys 里方便后续数据维护
-                                    $redis->sAdd("totalKeys,$key", $totalKey);
-                                }
-                            }
-                            else
-                            {
-                                $total = @unserialize($total) ?: [];
-                            }
+                            # $totalKey = "total,{$uniqid}";
+                            $total    = self::getTotalData($uniqid);
 
                             # 更新统计数据
                             if (isset($flushData->total[$uniqid]))
@@ -394,7 +387,8 @@ class FlushData extends FlushBase
                                 # 合并统计数据
                                 $total = self::totalDataMerge($total, $flushData->total[$uniqid], $option['function']);
 
-                                if ($redis->set($totalKey, serialize($total)))
+                                # 设置到内存表里
+                                if (self::setTotalData($uniqid, $total))
                                 {
                                     unset($flushData->total[$uniqid]);
                                 }
@@ -514,10 +508,11 @@ class FlushData extends FlushBase
                             $error = false;
 
                             # 投递任务
-                            $taskNum = EtServer::$server->setting['task_worker_num'];
+                            $taskNum = EtServer::$server->setting['task_worker_num'] - 1;
                             foreach ($saveData as $taskKey => $data)
                             {
-                                if (false === EtServer::$server->task($data, crc32($taskKey) % $taskNum))
+                                # task id = 0 的任务不投递, 这个进程用来处理数据清理的
+                                if (false === EtServer::$server->task($data, 1 + (crc32($taskKey) % $taskNum)))
                                 {
                                     # 投递失败
                                     $error = true;
@@ -704,6 +699,116 @@ class FlushData extends FlushBase
         else
         {
             $flushData->updated = false;
+        }
+
+        return true;
+    }
+
+    /**
+     * 获取统计
+     *
+     * @param $totalKey
+     * @return array
+     */
+    protected static function getTotalData($totalKey)
+    {
+        /*
+        # 老的代码, 直接在 redis里获取
+        $total = $redis->get($totalKey);
+        if (!$total)
+        {
+            $total = [];
+
+            # 更新数据
+            if (!$ssdb)
+            {
+                # redis 服务器需要将 key 加入到 totalKeys 里方便后续数据维护
+                $redis->sAdd("totalKeys,$key", $totalKey);
+            }
+        }
+        else
+        {
+            $total = @unserialize($total) ?: [];
+        }
+        */
+
+        $total = EtServer::$totalTable->get($totalKey);
+        if ($total)
+        {
+            $total = $total['value'];
+
+            if (substr($total, -3) === '>>>')
+            {
+                # 超过1024后分片保存的
+                preg_match('#^(.*)<<<(\d+)>>>$#', $total, $m);
+                $total     = $m[1];
+                $subLength = $m[2];
+                for ($i = 1; $i <= $subLength; $i++)
+                {
+                    $tmp = EtServer::$totalTable->get($totalKey .'@'. $i);
+                    if ($tmp)
+                    {
+                        $total .= $tmp['value'];
+                    }
+                }
+            }
+
+            $total = @json_decode($total, true);
+            if (!$total)
+            {
+                warn("get error total data: $total");
+                $total = [];
+            }
+        }
+        else
+        {
+            $total = [];
+        }
+
+        return $total;
+    }
+
+    /**
+     * 设置内存变量
+     *
+     * @param $totalKey
+     * @param $total
+     */
+    protected static function setTotalData($totalKey, $total)
+    {
+        # $redis->set($totalKey, serialize($total));
+
+        $totalString = json_encode($total);
+        $totalLen    = strlen($totalString);
+        if ($totalLen > 1024)
+        {
+            # 长度限定1024
+            $subLength = floor(($totalLen - 1) / 1000);
+            EtServer::$totalTable->set($totalKey, ['value' => substr($totalString, 0, 1000) ."<<<". $subLength .">>>", 'time' => self::$timed]);
+
+            for ($i = 1; $i <= $subLength; $i++)
+            {
+                EtServer::$totalTable->set($totalKey .'@'. $i , ['value' => substr($totalString, $i * 1000, 1000), 'time' => self::$timed]);
+            }
+
+            # 移除可能多余的key
+            while (true)
+            {
+                $i++;
+                if (EtServer::$totalTable->exist($totalKey .'@'. $i))
+                {
+                    # 移除以前设置的多余的序列
+                    EtServer::$totalTable->del($totalKey .'@'. $i);
+                }
+                else
+                {
+                    break;
+                }
+            }
+        }
+        else
+        {
+            EtServer::$totalTable->set($totalKey, ['value' => $totalString, 'time' => self::$timed]);
         }
 
         return true;

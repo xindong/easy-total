@@ -143,6 +143,11 @@ class MainWorker
 
     protected static $packKey;
 
+    /**
+     * 当前时间, 会一直更新
+     *
+     * @var int
+     */
     public static $timed;
 
     public static $serverName;
@@ -260,6 +265,12 @@ class MainWorker
 
             # 加载task
             $this->reloadSetting();
+
+            # 加载log的时间记录
+            if ($this->id == 0)
+            {
+                $this->loadLogTime();
+            }
         }
         else
         {
@@ -270,6 +281,7 @@ class MainWorker
                 {
                     $this->updateServerStatus();
                     $this->reloadSetting();
+                    $this->loadLogTime();
 
                     # 退出循环
                     swoole_timer_clear($id);
@@ -319,6 +331,12 @@ class MainWorker
             }
         });
 
+        # 进程定时重启, 避免数据没清理占用较大内存的情况
+        swoole_timer_tick(mt_rand(1000 * 3600, 1000 * 3600 * 3), function()
+        {
+            info('now restart worker: '. $this->id);
+            $this->server->stop();
+        });
 
         # 只有需要第一个进程处理
         if ($this->id == 0)
@@ -329,14 +347,28 @@ class MainWorker
                 self::$timed = time();
 
                 # 通知 taskWorker 处理, 不占用当前 worker 资源
-                for($i = 0; $i < $this->server->setting['task_worker_num']; $i++)
+                for($i = 1; $i < $this->server->setting['task_worker_num']; $i++)
                 {
-                    $this->server->task('output', $i);
+                    $status = EtServer::$taskWorkerStatusTable->get("task{$i}");
+                    # 1表示成功, 2表示运行中
+                    if ($status['status'] == 1)
+                    {
+                        # 更新状态
+                        EtServer::$taskWorkerStatusTable->set("task{$i}", ['status' => 0, 'time' => self::$timed]);
+
+                        # 调用任务
+                        $this->server->task('output', $i);
+                    }
+                    elseif (self::$timed - $status['time'] > 300)
+                    {
+                        # 5分钟还没反应, 也许是卡死了, 发送一个重启信号, 这种情况下可能会丢失部分数据
+                        warn("task worker {$i} is die, now restart it.");
+                        swoole_process::kill($i + $this->server->setting['worker_num'], 9);
+                    }
                 }
             });
 
-            # 每分钟处理
-            swoole_timer_tick(60000, function()
+            swoole_timer_tick(1000 * 30, function()
             {
                 # 更新服务器信息
                 $this->updateServerStatus();
@@ -348,10 +380,10 @@ class MainWorker
                 info("fork sql({$key}): {$query['sql']}");
             }
 
-            # 每小时清理1次
-            swoole_timer_tick(3600 * 1000, function()
+            # 数据清理
+            swoole_timer_tick(1000 * 60 * 5, function()
             {
-                $this->server->task('clean');
+                $this->server->task('clean', 0);
             });
         }
 
@@ -370,6 +402,17 @@ class MainWorker
      */
     public function onReceive(swoole_server $server, $fd, $fromId, $data)
     {
+        if (!$this->redis)
+        {
+            # 没有连接上redis 则直接关闭连接, 不接受任何数据
+            unset($this->buffer[$fromId]);
+            unset($this->bufferTime[$fromId]);
+            unset($this->bufferLen[$fromId]);
+
+            $server->close($fd);
+            return false;
+        }
+
         if (substr($data, -3) !== "==\n")
         {
             $this->buffer[$fromId]    .= $data;
@@ -527,6 +570,9 @@ class MainWorker
             $isSend  = true;
         }
 
+        $time    = self::$timed;
+        $logTime = [];
+
         if ($haveTask)
         {
             # 有任务需要处理
@@ -590,13 +636,15 @@ class MainWorker
                         foreach ($records as $record)
                         {
                             # 处理数据
-                            $this->doJob($job, $app, isset($record[1]['time']) && $record[1]['time'] > 0 ? $record[1]['time'] : $record[0], $record[1]);
+                            $time = isset($record[1]['time']) && $record[1]['time'] > 0 ? $record[1]['time'] : $record[0];
+                            $this->doJob($job, $app, $time, $record[1]);
                         }
 
                         # 序列的统计数据
                         $this->flushData->counter[$key][$dayKey]['total'] += $count;
                         $this->flushData->counter[$key][$dayKey]['time']  += 1000000 * (microtime(1) - $beginTime);
                     }
+                    $logTime["{$app}_{$table}"] = ['time' => $time, 'update' => self::$timed];
 
                     # APP的统计数据
                     $this->flushData->counterApp[$app][$dayKey]['total'] += $count;
@@ -651,8 +699,14 @@ class MainWorker
             if ($isSend)
             {
                 # 发送成功
+
                 # 标记为任务完成
                 $this->flushData->endJob();
+
+                if ($logTime)foreach ($logTime as $k => $v)
+                {
+                    EtServer::$logTimeTable->set($k, $v);
+                }
 
                 # 计数器增加
                 $count = count($records);
@@ -900,6 +954,54 @@ class MainWorker
      */
     public function shutdown()
     {
+        $saveTime = EtServer::$dataSaveTime->get();
+        $time     = intval(microtime(1) * 1000000);
+
+        if (EtServer::$dataSaveTime->cmpset($saveTime, $time))
+        {
+            # 设置成功后保存数据
+            if (false === EtServer::saveTotalData($afterTime = $saveTime / 1000000))
+            {
+                # 没有保存成功
+                $data = [];
+                foreach (EtServer::$totalTable as $k => $v)
+                {
+                    if ($v['time'] >= $afterTime)
+                    {
+                        $data[$k] = $v['value'];
+                    }
+                }
+
+                # 临时存入本地
+                warn('保存统计信息失败, 临时存入到' . $this->dumpFile . '.save_fail_total.txt 文件');
+
+                file_put_contents(EtServer::$totalDumpFile, serialize($data));
+            }
+
+            # 保存日志时间
+            $time = time();
+            foreach (EtServer::$logTimeTable as $k => $v)
+            {
+                try
+                {
+                    if ($time - $v['update'] > 86400)
+                    {
+                        # 清理1天还没有更新的数据
+                        EtServer::$logTimeTable->del($k);
+                    }
+                    elseif ($time - $v['update'] < 3660)
+                    {
+                        # 在1小时内有更新的数据更新到redis里
+                        $this->redis->set('logTime', $k, $v['time'] . ',' . $v['update']);
+                    }
+                }
+                catch (Exception $e)
+                {
+
+                }
+            }
+        }
+
         if ($this->flushProcess && $this->flushProcessPID)
         {
             # 结束子进程
@@ -1084,6 +1186,19 @@ class MainWorker
             'updateTime' => self::$timed,
             'api'        => 'http://'. EtServer::$config['manager']['host'] .':'. EtServer::$config['manager']['port'] .'/api/',
         ];
+    }
+
+    /**
+     * 更新日志的时间记录
+     */
+    protected function loadLogTime()
+    {
+        $rs = $this->redis->hGetAll('logTime');
+        if ($rs)foreach ($rs as $k => $v)
+        {
+            list($time, $update) = explode(',', $v);
+            EtServer::$logTimeTable->set($k, ['time' => $time, 'update' => $update]);
+        }
     }
 
     /**

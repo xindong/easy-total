@@ -26,13 +26,22 @@ class TaskWorker
      */
     protected $list = [];
 
+    /**
+     * 当前进程启动时间
+     *
+     * @var int
+     */
+    protected $startTime;
+
     protected static $sendEvents = [];
+
 
     public function __construct(swoole_server $server, $id)
     {
-        $this->server   = $server;
-        $this->id       = $id;
-        $this->dumpFile = (EtServer::$config['server']['dump_path'] ?: '/tmp/') . 'total-task-dump-'. substr(md5(EtServer::$configFile), 16, 8) . '-'. $id .'.txt';
+        $this->server    = $server;
+        $this->id        = $id;
+        $this->dumpFile  = (EtServer::$config['server']['dump_path'] ?: '/tmp/') . 'total-task-dump-'. substr(md5(EtServer::$configFile), 16, 8) . '-'. $id .'.txt';
+        $this->startTime = time();
     }
 
     public function init()
@@ -93,7 +102,7 @@ class TaskWorker
                     break;
 
                 case 'clean':
-                    # 每天清理数据
+                    # 每小时清理数据
                     $this->clean();
 
                     info("clean date at ". date('Y-m-d H:i:s'));
@@ -103,6 +112,23 @@ class TaskWorker
         catch (Exception $e)
         {
             warn($e->getMessage());
+        }
+
+        # 标记状态为成功
+        $this->updateStatus(1);
+
+        # 如果启动超过1小时
+        if (time() - $this->startTime > 3600)
+        {
+            if (mt_rand(1, 100) === 1)
+            {
+                # 重启进程避免数据溢出,未清理数据暂用超大内存
+                $this->shutdown();
+
+                info('now restart task worker: '. $this->id);
+
+                exit(0);
+            }
         }
     }
 
@@ -154,6 +180,9 @@ class TaskWorker
                 }
                 break;
             }
+
+            # 更新状态
+            $this->updateStatus();
 
             # update title
             EtServer::setProcessName("php easy-total task wait ack update at ". date('H:i:s') ." [do not kill me]");
@@ -260,32 +289,126 @@ class TaskWorker
          * @var SimpleSSDB $ssdb
          */
         list($redis, $ssdb) = self::getRedis();
+
+        if (!FlushData::$series && $redis)
+        {
+            # 获取所有序列的配置
+            FlushData::$series = array_map('unserialize', $redis->hGetAll('series'));
+        }
+
+        # 清理过期的统计信息, EtServer::$totalTable 里可能有上万甚至更多数据
+        $delKeys  = [];
+        $time     = time();
+        $oldCount = count(EtServer::$totalTable);
+        $index    = 0;
+        foreach (EtServer::$totalTable as $key => $item)
+        {
+            $index++;
+            if (preg_match('#(?<seriesKey>[0-9a-z]+),(?<limit>\d+)(?<type>[a-z]+),(?<app>[a-z0-9_\-]+),(?<timeKey>\d+)_#i', $key, $m))
+            {
+                if ($index % 1000 === 0)
+                {
+                    # 每1条更新下
+                    $time = time();
+                    $this->updateStatus();
+                }
+
+                $seriesOption = FlushData::$series[$m['seriesKey']] ?: [];
+                $table        = $seriesOption['table'];
+                $logTime      = EtServer::$logTimeTable->get("{$m['app']}_{$table}");
+                if (!$logTime)
+                {
+                    # 如果没有获取到最后的log的时间
+                    $logTime = $time - 1800;
+                }
+
+                # 根据当前分组获取下一个时间点的时间戳
+                $nextTime = self::getNextTimestampByTimeKey($m['timeKey'], $m['limit'], $m['type']);
+
+                if ($oldCount > 100000 && $logTime - $nextTime >= 600)
+                {
+                    # 当已记录的数据比较庞大, 则清理过期数据
+                    $delKeys[] = $key;
+                    EtServer::$totalTable->del($key);
+                }
+                elseif ($redis && $time - $item['time'] < 300)
+                {
+                    # 5分钟内更新的数据, 同步到 redis
+                    $redis->set($key, $item['value']);
+                }
+            }
+            else
+            {
+                $delKeys[] = $key;
+                EtServer::$totalTable->del($key);
+                warn("unexpected total key: $key");
+            }
+        }
+
+        $currentCount = count(EtServer::$totalTable);
+        $cleanCount   = $currentCount - $oldCount;
+        if ($cleanCount)
+        {
+            info("clean " . $cleanCount . " total item, current total item count: {$currentCount}.");
+        }
+
+        static $lastClean = null;
+        if (null === $lastClean)
+        {
+            $lastClean = time();
+        }
+
+        if (time() - $lastClean > 3600)
+        {
+            $this->cleanOldData($redis, $ssdb);
+            $lastClean = time();
+        }
+    }
+
+    /**
+     * 清理一些旧数据, 1小时执行1次
+     *
+     * @param $redis
+     * @param $ssdb
+     * @return bool
+     */
+    protected function cleanOldData($redis, $ssdb)
+    {
+        $this->updateStatus();
+
+        /**
+         * @var Redis $redis
+         * @var SimpleSSDB $ssdb
+         */
         if (false === $redis)return false;
+
+        $time = time();
+        foreach (EtServer::$logTimeTable as $k => $v)
+        {
+            if ($time - $v['update'] > 86400)
+            {
+                # 清理1天还没有更新的数据
+                EtServer::$logTimeTable->del($k);
+            }
+            elseif ($time - $v['update'] < 3660)
+            {
+                # 在1小时内有更新的数据更新到redis里
+                $redis->set('logTime', $k, $v['time'] . ',' . $v['update']);
+            }
+        }
+
+        if (time() - $time > 3)
+        {
+            self::updateStatus();
+        }
 
         # 清理已经删除的任务
         $queries = array_map('unserialize', $redis->hGetAll('queries'));
         foreach ($queries as $key => $query)
         {
-            if ($query['deleteTime'] > 0)
+            if ($query['deleteTime'] > 0 && $time - $query['deleteTime'] > 86400)
             {
                 unset($queries[$key]);
-                $listKeys = $redis->keys("list,$key,*");
-                if ($listKeys)
-                {
-                    if ($ssdb)
-                    {
-                        foreach ($listKeys as $listKey)
-                        {
-                            # 一个个的移除
-                            $ssdb->hclear($listKey);
-                        }
-                    }
-                    else
-                    {
-                        # 批量移除
-                        $redis->del($listKeys);
-                    }
-                }
 
                 $redis->hDel('queries', $key);
                 info("clean data, remove sql({$key}): {$query['sql']}");
@@ -295,6 +418,7 @@ class TaskWorker
 
         $updateSeries = [];
         $series       = array_map('unserialize', $redis->hGetAll('series'));
+        FlushData::$series = $series;
         foreach ($series as $key => $item)
         {
             if ($item['queries'])
@@ -349,6 +473,9 @@ class TaskWorker
                         # 移除任务
                         $redis->hDel('series', $key);
                     }
+
+                    # 更新状态
+                    $this->updateStatus();
                 }
             }
         }
@@ -453,6 +580,9 @@ class TaskWorker
                 {
                     warn("push data {$key} fail. fluentd server: " . EtServer::$config['output']['type'] . ': ' . EtServer::$config['output']['link']);
                 }
+
+                # 更新状态
+                $this->updateStatus();
             }
 
             return true;
@@ -468,6 +598,16 @@ class TaskWorker
 
             return false;
         }
+    }
+
+    /**
+     * 更新状态
+     *
+     * @param int $status 1 - 成功, 2 - 运行中
+     */
+    protected function updateStatus($status = 2)
+    {
+        EtServer::$taskWorkerStatusTable->set("task{$this->id}", ['status' => $status, 'time' => time()]);
     }
 
     /**
@@ -733,5 +873,77 @@ class TaskWorker
         {
             return [false, false];
         }
+    }
+
+    function getNextTimestampByTimeKey($timeKey, $limit, $type)
+    {
+        static $cache = [];
+        $key = "$timeKey$limit$type";
+
+        if (isset($cache[$key]))return $cache[$key];
+        $year     = intval(substr($timeKey, 0, 4));
+        $nextYear = strtotime(($year + 1) .'-01-01 00:00:00');
+        switch ($type)
+        {
+            case 'm':
+                # 月
+                preg_match('#(\d{4})(\d{2})#', $timeKey, $m);
+                $month = $limit + $m[2];
+                if ($month > 12)
+                {
+                    $m[1] += 1;
+                    $month = 1;
+                }
+
+                $time = strtotime("{$year}-{$month}-01 00:00:00");
+                $time = min($nextYear, $time);
+                break;
+
+            case 'w':
+                # 周
+                preg_match('#(\d{4})(\d{2})#', $timeKey, $m);
+                $time = strtotime("{$year}-01-01 00:00:00") + ($m[2] + $limit) * (86400 * 7);
+                $time = min($nextYear, $time);
+                break;
+
+            case 'd':
+                preg_match('#(\d{4})(\d{3})#', $timeKey, $m);
+                var_dump($limit);
+                $time = strtotime("{$year}-01-01 00:00:00") + ($m[2] - 1 + $limit) * 86400;
+                $time = min($nextYear, $time);
+                break;
+
+            case 'M':
+            case 'i':
+                # 分钟 201604100900
+                preg_match('#(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})#', $timeKey, $m);
+                $time  = strtotime("{$year}-{$m[2]}-{$m[3]} {$m[4]}:00:00");
+                $time += min(3600, 60 * ($m[5] + $limit));
+                break;
+
+            case 's':
+                # 秒 20160410090000
+                preg_match('#(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})#', $timeKey, $m);
+                $time  = strtotime("{$year}-{$m[2]}-{$m[3]} {$m[4]}:{$m[5]}:00");
+                $time += min(60, ($m[6] + $limit));
+                break;
+
+            case 'h':
+            default:
+                # 小时 2016041000
+                preg_match('#(\d{4})(\d{2})(\d{2})(\d{2})#', $timeKey, $m);
+                $time  = strtotime("{$year}-{$m[2]}-{$m[3]} 00:00:00");
+                $time += min(86400, 3600 * ($m[4] + $limit));
+
+                break;
+        }
+
+        if (count($cache) > 100)
+        {
+            $cache = array_slice($cache, -10, null, true);
+        }
+
+        $cache[$key] = $time;
+        return $time;
     }
 }
