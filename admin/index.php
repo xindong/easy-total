@@ -54,7 +54,7 @@ $allMemoryData = $this->worker->redis->hGetAll('server.memory');
 if ($allMemoryData)foreach ($allMemoryData as $item)
 {
   list($mem, $time, $serv, $wid) = unserialize($item);
-  if (MainWorker::$timed - $time < 60)
+  if (MainWorker::$timed - $time < 80)
   {
     if ($serv != MainWorker::$serverName || $wid != $this->worker->id)
     {
