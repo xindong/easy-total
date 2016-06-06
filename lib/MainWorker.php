@@ -955,10 +955,12 @@ class MainWorker
     public function shutdown()
     {
         $saveTime = EtServer::$dataSaveTime->get();
-        $time     = intval(microtime(1) * 1000000);
+        usleep(mt_rand(100, 3000));
+        $time = intval(microtime(1) * 1000000);
 
         if (EtServer::$dataSaveTime->cmpset($saveTime, $time))
         {
+            debug("save total data by worker id {$this->id}");
             # 设置成功后保存数据
             if (false === EtServer::saveTotalData($afterTime = $saveTime / 1000000))
             {

@@ -627,7 +627,7 @@ class EtServer
             }
         }
 
-        info('成功保存了 ' .$i. '条统计信息数据');
+        info('成功保存了 ' .$i. ' 条统计信息数据');
 
         return $rs;
     }
