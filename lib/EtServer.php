@@ -570,6 +570,8 @@ class EtServer
 
     public static function loadData()
     {
+        debug("now load total data");
+
         # 从文件中读取上来
         if (is_file(self::$totalDumpFile))
         {
@@ -636,7 +638,7 @@ class EtServer
 
     protected static function loadFromRedis()
     {
-        $redis = self::getRedis();
+        list($redis, $ssdb) = self::getRedis();
         if (!$redis)
         {
             warn("redis ". self::$config['server']['data_link'] ." 连接失败, 请检查服务器");
@@ -645,16 +647,35 @@ class EtServer
 
         $i    = 0;
         $time = time();
-        $it   = null;
-        $redis->setOption(Redis::OPT_SCAN, Redis::SCAN_RETRY);
-        while($arrKeys = $redis->hScan('total', $it))
+        if ($ssdb)
         {
-            foreach($arrKeys as $key => $value)
+            $it  = 'a';
+            $key = null;
+            while($arrKeys = $ssdb->hScan('total', $it, 'z', 1000))
             {
-                $i++;
-                self::$totalTable->set($key, ['value' => $value, 'time' => $time]);
+                foreach ($arrKeys as $key => $value)
+                {
+                    $i++;
+                    self::$totalTable->set($key, ['value' => $value, 'time' => $time]);
+                }
+                $it = $key;
             }
         }
+        else
+        {
+            # redis
+            $it = null;
+            $redis->setOption(Redis::OPT_SCAN, Redis::SCAN_RETRY);
+            while($arrKeys = $redis->hScan('total', $it))
+            {
+                foreach($arrKeys as $key => $value)
+                {
+                    $i++;
+                    self::$totalTable->set($key, ['value' => $value, 'time' => $time]);
+                }
+            }
+        }
+        $redis->close();
 
         info("loading data count: {$i}");
     }
@@ -662,20 +683,21 @@ class EtServer
     /**
      * 获取Redis连接
      *
-     * @return bool|redis|RedisCluster
+     * @return array
      */
     protected static function getRedis()
     {
         try
         {
             $link = explode(',', self::$config['server']['data_link']);
+            list($host, $port) = explode(':', $link[0]);
+
             if (count($link) > 1)
             {
                 $redis = new RedisCluster(null, $link);
             }
             else
             {
-                list($host, $port) = explode(':', $link[0]);
                 $redis = new redis();
 
                 if (false === $redis->connect($host, $port))
@@ -684,11 +706,20 @@ class EtServer
                 }
             }
 
-            return $redis;
+            $ssdb = false;
+
+            if (false === $redis->time(0))
+            {
+                # ssdb
+                require_once __DIR__ . '/SSDB.php';
+                $ssdb = new SimpleSSDB($host, $port);
+            }
+
+            return [$redis, $ssdb];
         }
         catch (Exception $e)
         {
-            return false;
+            return [false, false];
         }
     }
 
