@@ -351,7 +351,7 @@ class MainWorker
                 {
                     $status = EtServer::$taskWorkerStatusTable->get("task{$i}");
                     # 1表示成功, 2表示运行中
-                    if ($status['status'] == 1)
+                    if (!$status || $status['status'] == 1)
                     {
                         # 更新状态
                         EtServer::$taskWorkerStatusTable->set("task{$i}", ['status' => 0, 'time' => self::$timed]);
