@@ -338,7 +338,7 @@ class TaskWorker
                 elseif ($redis && $time - $item['time'] < 300)
                 {
                     # 5分钟内更新的数据, 同步到 redis
-                    $redis->set($key, $item['value']);
+                    $redis->hSet('total', $key, $item['value']);
                 }
             }
             else
