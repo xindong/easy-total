@@ -1131,6 +1131,19 @@ class swoole_server
     }
 
     /**
+     * 使当前worker进程停止运行，并立即触发onWorkerStop回调函数。
+     *
+     *  * 使用此函数代替exit/die结束Worker进程的生命周期
+     *  * 如果要结束其他Worker进程，可以使用swoole_process::kill($worker_pid)
+     *
+     * @since 1.8.2
+     */
+    public function stop()
+    {
+
+    }
+
+    /**
      * 关闭服务器
      *
      * 此函数可以用在worker进程内。向主进程发送SIGTERM也可以实现关闭服务器。
@@ -1861,7 +1874,7 @@ class swoole_http_response
 /**
  * 创建内存表
  */
-class swoole_table
+class swoole_table extends ArrayIterator
 {
     const TYPE_INT = 1;
     const TYPE_STRING = 2;
@@ -1912,6 +1925,17 @@ class swoole_table
      * @param int $len
      */
     function column($name, $type, $len = 4) {}
+
+    /**
+     * 检查table中是否存在某一个key
+     *
+     * @param $key
+     * @return bool
+     */
+    function exist($key)
+    {
+        return true;
+    }
 
     /**
      * 创建表，这里会申请操作系统内存
