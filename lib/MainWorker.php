@@ -955,7 +955,7 @@ class MainWorker
     public function shutdown()
     {
         $saveTime = EtServer::$dataSaveTime->get();
-        usleep(mt_rand(100, 3000));
+        usleep(mt_rand(10000, 30000));
         $time = intval(microtime(1) * 1000000);
 
         if (EtServer::$dataSaveTime->cmpset($saveTime, $time))

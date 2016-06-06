@@ -269,8 +269,8 @@ class EtServer
         self::$dataSaveTime = new swoole_atomic();
         self::$dataSaveTime->set(intval(microtime() * 1000000));
 
-        # 创建共享内存表, 2 << 16 = 131072, 为 2 的 15次方
-        self::$totalTable = new swoole_table(2 << 16);
+        # 创建共享内存表, 2 << 17 = 262144
+        self::$totalTable = new swoole_table(2 << 17);
         self::$totalTable->column('value', swoole_table::TYPE_STRING, 1024);
         self::$totalTable->column('time', swoole_table::TYPE_INT, 10);
         self::$totalTable->create();
