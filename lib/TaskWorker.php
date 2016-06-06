@@ -321,6 +321,10 @@ class TaskWorker
                     # 如果没有获取到最后的log的时间
                     $logTime = $time - 1800;
                 }
+                else
+                {
+                    $logTime = $logTime['time'];
+                }
 
                 # 根据当前分组获取下一个时间点的时间戳
                 $nextTime = self::getNextTimestampByTimeKey($m['timeKey'], $m['limit'], $m['type']);

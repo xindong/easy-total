@@ -599,6 +599,8 @@ class EtServer
                 self::loadFromRedis();
                 break;
         }
+
+        debug("load total data count:" . count(self::$totalTable));
     }
 
     protected static function saveToRedis($afterTime)
