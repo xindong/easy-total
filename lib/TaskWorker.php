@@ -785,7 +785,7 @@ class TaskWorker
                 $ack    = uniqid('f');
                 $buffer =  '["'. $tag .'",['. substr($str, 0, -1) .'], {"chunk":"'. $ack .'"}]';
 
-                if (@fwrite($socket, $buffer))
+                if (@fwrite($socket, $buffer, strlen($buffer)))
                 {
                     # 重置后继续
                     $len = 0;
