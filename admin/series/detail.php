@@ -45,7 +45,9 @@
     {
 ?>
         <p class="bg-danger"><?php echo $data['message'];?></p>
+</div>
 <?php
+        exit;
     }
 ?>
 

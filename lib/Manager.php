@@ -593,6 +593,17 @@ class Manager
                     $data['message'] = $e->getMessage();
                 }
                 break;
+            case 'series/data':
+                try
+                {
+
+                }
+                catch (Exception $e)
+                {
+                    $data['status']  = 'error';
+                    $data['message'] = $e->getMessage();
+                }
+                break;
             default:
                 $data['status']  = 'error';
                 $data['message'] = 'unknown action: ' . $uri;
