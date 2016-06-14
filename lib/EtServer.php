@@ -95,6 +95,88 @@ function getTimeKey($time, $limit, $type)
     return $timeKey;
 }
 
+
+/**
+ * 获取下一个时间分组的时间戳
+ *
+ * @param $timeKey
+ * @param $limit
+ * @param $type
+ * @return int|mixed
+ */
+function getNextTimestampByTimeKey($timeKey, $limit, $type)
+{
+    static $cache = [];
+    $key = "$timeKey$limit$type";
+
+    if (isset($cache[$key]))return $cache[$key];
+    $year     = intval(substr($timeKey, 0, 4));
+    $nextYear = strtotime(($year + 1) .'-01-01 00:00:00');
+    switch ($type)
+    {
+        case 'm':
+            # 月
+            preg_match('#(\d{4})(\d{2})#', $timeKey, $m);
+            $month = $limit + $m[2];
+            if ($month > 12)
+            {
+                $m[1] += 1;
+                $month = 1;
+            }
+
+            $time = strtotime("{$year}-{$month}-01 00:00:00");
+            $time = min($nextYear, $time);
+            break;
+
+        case 'w':
+            # 周
+            preg_match('#(\d{4})(\d{2})#', $timeKey, $m);
+            $time = strtotime("{$year}-01-01 00:00:00") + ($m[2] + $limit) * (86400 * 7);
+            $time = min($nextYear, $time);
+            break;
+
+        case 'd':
+            preg_match('#(\d{4})(\d{3})#', $timeKey, $m);
+            var_dump($limit);
+            $time = strtotime("{$year}-01-01 00:00:00") + ($m[2] - 1 + $limit) * 86400;
+            $time = min($nextYear, $time);
+            break;
+
+        case 'M':
+        case 'i':
+            # 分钟 201604100900
+            preg_match('#(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})#', $timeKey, $m);
+            $time  = strtotime("{$year}-{$m[2]}-{$m[3]} {$m[4]}:00:00");
+            $time += min(3600, 60 * ($m[5] + $limit));
+            break;
+
+        case 's':
+            # 秒 20160410090000
+            preg_match('#(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})#', $timeKey, $m);
+            $time  = strtotime("{$year}-{$m[2]}-{$m[3]} {$m[4]}:{$m[5]}:00");
+            $time += min(60, ($m[6] + $limit));
+            break;
+
+        case 'h':
+        default:
+            # 小时 2016041000
+            preg_match('#(\d{4})(\d{2})(\d{2})(\d{2})#', $timeKey, $m);
+            $time  = strtotime("{$year}-{$m[2]}-{$m[3]} 00:00:00");
+            $time += min(86400, 3600 * ($m[4] + $limit));
+
+            break;
+    }
+
+    if (count($cache) > 100)
+    {
+        $cache = array_slice($cache, -10, null, true);
+    }
+
+    $cache[$key] = $time;
+    return $time;
+}
+
+
 class EtServer
 {
     /**
@@ -135,39 +217,11 @@ class EtServer
     protected $taskWorker;
 
     /**
-     * 数据保存的微妙时间
-     *
-     * @var swoole_atomic
-     */
-    public static $dataSaveTime;
-
-    /**
-     * 统计数据在保存失败后临时保存的文件路径
-     *
-     * @var string
-     */
-    public static $totalDumpFile;
-
-    /**
-     * 统计数据暂存内存表
-     *
-     * @var swoole_table
-     */
-    public static $totalTable;
-
-    /**
-     * 记录日志的时间
-     *
-     * @var swoole_table
-     */
-    public static $logTimeTable;
-
-    /**
      * 记录任务状态的表
      *
      * @var swoole_table
      */
-    public static $taskWorkerStatusTable;
+    public static $taskWorkerStatus;
 
     /**
      * 计数器
@@ -255,40 +309,19 @@ class EtServer
 
         $lightBlue = "\x1b[36m";
         $end       = "\x1b[39m";
-        echo "{$lightBlue}======= Swoole Config ========\n", json_encode($config['conf'], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE), "{$end}\n";
+        info("{$lightBlue}======= Swoole Config ========\n". json_encode($config['conf'], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE). "{$end}");
 
-        self::$config = $config;
-
-        self::$totalDumpFile = (EtServer::$config['server']['dump_path'] ?: '/tmp/') . 'save_fail_total.txt';
+        self::$config        = $config;
 
         # 初始化计数器
         self::$counter  = new swoole_atomic();
         self::$counterX = new swoole_atomic();
 
-        # 数据保存时间
-        self::$dataSaveTime = new swoole_atomic();
-        self::$dataSaveTime->set(time());
-
-        # 创建共享内存表, 2 << 17 = 262144
-        self::$totalTable = new swoole_table(2 << 17);
-        self::$totalTable->column('value', swoole_table::TYPE_STRING, 1024);
-        self::$totalTable->column('time', swoole_table::TYPE_INT, 10);
-        self::$totalTable->create();
-
-        # 记录日志的时间
-        self::$logTimeTable = new swoole_table(1024);
-        self::$logTimeTable->column('time', swoole_table::TYPE_INT, 10);
-        self::$logTimeTable->column('update', swoole_table::TYPE_INT, 10);
-        self::$logTimeTable->create();
-
         # 任务进程状态
-        self::$taskWorkerStatusTable = new swoole_table($config['conf']['task_worker_num']);
-        self::$taskWorkerStatusTable->column('status', swoole_table::TYPE_INT, 1);
-        self::$taskWorkerStatusTable->column('time', swoole_table::TYPE_INT, 10);
-        self::$taskWorkerStatusTable->create();
-
-        # 加载历史数据
-        self::loadData();
+        self::$taskWorkerStatus = new swoole_table((($config['conf']['task_worker_num'] % 2) + $config['conf']['task_worker_num']) * 4);
+        self::$taskWorkerStatus->column('status', swoole_table::TYPE_INT, 1);
+        self::$taskWorkerStatus->column('time', swoole_table::TYPE_INT, 10);
+        self::$taskWorkerStatus->create();
     }
 
     /**
@@ -448,6 +481,13 @@ class EtServer
     {
         global $argv;
 
+        # 内存限制
+        ini_set('memory_limit', self::$config['server']['memory_limit'] ?: '4G');
+        if ($workerId == 0)
+        {
+            info("current server memory limit is: ". ini_get('memory_limit'));
+        }
+
         # 实例化资源对象
         if ($server->taskworker)
         {
@@ -456,7 +496,7 @@ class EtServer
             require (__DIR__ .'/TaskWorker.php');
 
             # 构造新对象
-            $this->taskWorker = new TaskWorker($server, $workerId - $server->setting['worker_num']);
+            $this->taskWorker = new TaskWorker($server, $workerId - $server->setting['worker_num'], $workerId);
             $this->taskWorker->init();
 
             info("Tasker Start, \$id = {$workerId}, \$pid = {$server->worker_pid}");
@@ -537,404 +577,6 @@ class EtServer
     public function onManagerStop($server)
     {
         debug('onManagerStop');
-    }
-
-    public static function saveTotalData($afterTime)
-    {
-        try
-        {
-            switch (self::$config['server']['data_type'])
-            {
-                case 'leveldb':
-                    $rs = self::saveToLevelDB($afterTime);
-                    break;
-
-                case 'sqlite':
-                    $rs = self::saveToSQLite($afterTime);
-                    break;
-
-                case 'redis':
-                default:
-                    $rs = self::saveToRedis($afterTime);
-                    break;
-            }
-        }
-        catch (Exception $e)
-        {
-            warn($e->getMessage());
-            $rs = false;
-        }
-
-        return $rs;
-    }
-
-    public static function loadData()
-    {
-        debug("now load total data");
-
-        # 从文件中读取上来
-        if (is_file(self::$totalDumpFile))
-        {
-            $time = time();
-            $data = @unserialize(file_get_contents(self::$totalDumpFile));
-            if ($data)
-            {
-                foreach ($data as $k => $v)
-                {
-                    self::$totalTable->set($k, ['value' => $v, 'time' => $time]);
-                }
-            }
-        }
-
-        switch (self::$config['server']['data_type'])
-        {
-            case 'leveldb':
-                self::loadFromLevelDB();
-                break;
-
-            case 'sqlite':
-                self::loadFromSQLite();
-                break;
-
-            case 'redis':
-            default:
-                self::loadFromRedis();
-                break;
-        }
-
-        debug("load total data count:" . count(self::$totalTable));
-    }
-
-    protected static function saveToRedis($afterTime)
-    {
-        $redis = self::getRedis();
-        if (!$redis)
-        {
-            return false;
-        }
-
-        $rs = true;
-        $i  = 0;
-
-        foreach (self::$totalTable as $k => $v)
-        {
-            if ($v['time'] >= $afterTime)
-            {
-                if (false === $redis->hSet('total', $k, $v['value']))
-                {
-                    $rs = false;
-                }
-                else
-                {
-                    $i++;
-                }
-            }
-        }
-
-        info('成功保存了 ' .$i. ' 条统计信息数据');
-
-        return $rs;
-    }
-
-    protected static function loadFromRedis()
-    {
-        list($redis, $ssdb) = self::getRedis();
-        if (!$redis)
-        {
-            warn("redis ". self::$config['server']['data_link'] ." 连接失败, 请检查服务器");
-            exit;
-        }
-
-        $i    = 0;
-        $time = time();
-        if ($ssdb)
-        {
-            $it  = 'a';
-            $key = null;
-            while($arrKeys = $ssdb->hScan('total', $it, 'z', 1000))
-            {
-                foreach ($arrKeys as $key => $value)
-                {
-                    $i++;
-                    self::$totalTable->set($key, ['value' => $value, 'time' => $time]);
-                }
-                $it = $key;
-            }
-        }
-        else
-        {
-            # redis
-            $it = null;
-            $redis->setOption(Redis::OPT_SCAN, Redis::SCAN_RETRY);
-            while($arrKeys = $redis->hScan('total', $it))
-            {
-                foreach($arrKeys as $key => $value)
-                {
-                    $i++;
-                    self::$totalTable->set($key, ['value' => $value, 'time' => $time]);
-                }
-            }
-        }
-        $redis->close();
-
-        info("loading data count: {$i}");
-    }
-
-    /**
-     * 获取Redis连接
-     *
-     * @return array
-     */
-    protected static function getRedis()
-    {
-        try
-        {
-            $link = explode(',', self::$config['server']['data_link']);
-            list($host, $port) = explode(':', $link[0]);
-
-            if (count($link) > 1)
-            {
-                $redis = new RedisCluster(null, $link);
-            }
-            else
-            {
-                $redis = new redis();
-
-                if (false === $redis->connect($host, $port))
-                {
-                    throw new Exception('connect redis error');
-                }
-            }
-
-            $ssdb = false;
-
-            if (false === $redis->time(0))
-            {
-                # ssdb
-                require_once __DIR__ . '/SSDB.php';
-                $ssdb = new SimpleSSDB($host, $port);
-            }
-
-            return [$redis, $ssdb];
-        }
-        catch (Exception $e)
-        {
-            return [false, false];
-        }
-    }
-
-    protected static function saveToLevelDB($afterTime)
-    {
-        $options = [
-            'create_if_missing' => true,    // if the specified database didn't exist will create a new one
-            'error_if_exists'   => false,   // if the opened database exsits will throw exception
-            'paranoid_checks'   => false,
-            'block_cache_size'  => 2 << 10,
-            'write_buffer_size' => 4 << 20,
-            'block_size'        => 4096,
-            'max_open_files'    => 1000,
-            'block_restart_interval' => 16,
-            'compression'       => LEVELDB_SNAPPY_COMPRESSION,
-            'comparator'        => NULL,   // any callable parameter which returns 0, -1, 1
-        ];
-
-        /* default readoptions */
-        $readoptions = [
-            'verify_check_sum'  => false,
-            'fill_cache'        => true,
-            'snapshot'          => null
-        ];
-
-        /* default write options */
-        $writeoptions = [
-            'sync' => true
-        ];
-
-        $file = self::$config['server'] ['data_link'] . '/easy-total.leveldb.db';
-
-        try
-        {
-            $db = new LevelDB($file, $options, $readoptions, $writeoptions);
-            $rs = true;
-            $i  = 0;
-
-            foreach (self::$totalTable as $k => $v)
-            {
-                if ($v['time'] >= $afterTime)
-                {
-                    if (false === $db->set($k, $v['value']))
-                    {
-                        $rs = false;
-                    }
-                    else
-                    {
-                        $i++;
-                    }
-                }
-            }
-
-            info('成功保存了 ' . $i . '条统计信息数据');
-        }
-        catch (Exception $e)
-        {
-            warn($e->getMessage());
-            $rs = false;
-        }
-
-        return $rs;
-    }
-
-    protected static function loadFromLevelDB()
-    {
-        if (!class_exists('LevelDB', false))
-        {
-            warn('你设置的数据类型是 LevelDB, 但没没有安装LevelDB扩展, 请先安装扩展, see https://github.com/reeze/php-leveldb');
-            exit;
-        }
-
-        if (!self::$config['server'] ['data_link'])
-        {
-            warn('配置不正确, 必须有 sever[data_link] 参数');
-            exit;
-        }
-
-        if (!is_writeable(self::$config['server'] ['data_link']))
-        {
-            warn("配置 sever[data_link] = " .self::$config['server'] ['data_link'].' , 目录不可写');
-            exit;
-        }
-
-        $options = [
-            'create_if_missing' => true,    // if the specified database didn't exist will create a new one
-            'error_if_exists'   => false,   // if the opened database exsits will throw exception
-            'paranoid_checks'   => false,
-            'block_cache_size'  => 2 << 10,
-            'write_buffer_size' => 4 << 20,
-            'block_size'        => 4096,
-            'max_open_files'    => 1000,
-            'block_restart_interval' => 16,
-            'compression'       => LEVELDB_SNAPPY_COMPRESSION,
-            'comparator'        => NULL,   // any callable parameter which returns 0, -1, 1
-        ];
-
-        /* default readoptions */
-        $readoptions = [
-            'verify_check_sum'  => false,
-            'fill_cache'        => true,
-            'snapshot'          => null
-        ];
-
-        /* default write options */
-        $writeoptions = [
-            'sync' => true
-        ];
-
-        $file = self::$config['server'] ['data_link'] . '/easy-total.leveldb.db';
-        $db   = new LevelDB($file, $options, $readoptions, $writeoptions);
-        $it   = new LevelDBIterator($db);
-
-        # 加载数据
-        $time = time();
-        $i    = 0;
-        while($it->valid())
-        {
-            $i++;
-            self::$totalTable->set($it->key(), ['value' => $it->current(), 'time' => $time]);
-        }
-        $db->close();
-        info("loading data count: {$i}");
-
-        unset($db);
-    }
-
-
-    protected static function saveToSQLite($afterTime)
-    {
-        try
-        {
-            $file = self::$config['server'] ['data_link'] . '/easy-total.sqlite.db';
-            $db   = new SQLite3($file);
-            $rs   = true;
-            $i    = 0;
-
-            foreach (self::$totalTable as $k => $v)
-            {
-                if ($v['time'] >= $afterTime)
-                {
-                    try
-                    {
-                        $sql = "INSERT OR REPLACE INTO total ('key', 'value', 'time') VALUES ('$k', '" . str_replace("'", "\\'", $v['value']) . "', " . $v['time'] . ")";
-                        if (false === $db->query($sql))
-                        {
-                            $rs = false;
-                        }
-                        else
-                        {
-                            $i++;
-                        }
-                    }
-                    catch (Exception $e)
-                    {
-                        $rs = false;
-                        warn($e->getMessage());
-                    }
-                }
-            }
-
-            info('成功保存了 ' . $i . '条统计信息数据');
-        }
-        catch (Exception $e)
-        {
-            warn($e->getMessage());
-            $rs = false;
-        }
-
-        return $rs;
-    }
-
-    protected static function loadFromSQLite()
-    {
-        if (!class_exists('SQLite3', false))
-        {
-            warn('你设置的数据类型是 SQLite, 但没没有安装 SQLite 扩展, 请先安装扩展');
-            exit;
-        }
-
-        if (!self::$config['server'] ['data_link'])
-        {
-            warn('配置不正确, 必须有 sever[data_link] 参数');
-            exit;
-        }
-
-        if (!is_writeable(self::$config['server'] ['data_link']))
-        {
-            warn("配置 sever[data_link] = " .self::$config['server'] ['data_link'].' , 目录不可写');
-            exit;
-        }
-
-        $file = self::$config['server'] ['data_link'] . '/easy-total.sqlite.db';
-
-        if (!$file)
-        {
-            $db = new SQLite3($file);
-            $sql = 'CREATE TABLE total (key CHAR(255) PRIMARY KEY NOT NULL, value TEXT NOT NULL,time INT NOT NULL)';
-            $db->query($sql);
-            $db->close();
-        }
-        else
-        {
-            $db = new SQLite3($file);
-            $i  = 0;
-            $rs = $db->query('SELECT * FROM "total"');
-            while ($row = $rs->fetchArray())
-            {
-                $i++;
-                self::$totalTable->set($row['key'], ['value' => $row['value'], 'time' => $row['time']]);
-            }
-            info("loading data count: {$i}");
-
-            $db->close();
-        }
     }
 
     /**
@@ -1054,7 +696,26 @@ class EtServer
             }
         }
 
+        # 临时存档目录
+        if (!EtServer::$config['server']['dump_path'])
+        {
+            EtServer::$config['server']['dump_path'] = '/tmp/';
+        }
+
         # 强制设置成2
         $config['fluent']['dispatch_mode'] = 2;
+
+        if (!$config['conf']['task_tmpdir'])
+        {
+            $config['conf']['task_tmpdir'] = is_dir('/dev/shm') ? '/dev/shm' : '/tmp/';
+        }
+        else
+        {
+            if (!is_dir($config['conf']['task_tmpdir']))
+            {
+                debug("change task_tmpdir from {$config['conf']['task_tmpdir']} to /tmp/");
+                $config['conf']['task_tmpdir'] = '/tmp/';
+            }
+        }
     }
 }

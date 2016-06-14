@@ -51,7 +51,7 @@ $allMemory     = [
 $allMemoryTotal = $allMemory[MainWorker::$serverName];
 
 $allMemoryData = $this->worker->redis->hGetAll('server.memory');
-if ($allMemoryData)foreach ($allMemoryData as $item)
+if ($allMemoryData)foreach ($allMemoryData as $key => $item)
 {
   list($mem, $time, $serv, $wid) = unserialize($item);
   if (MainWorker::$timed - $time < 80)
@@ -61,6 +61,11 @@ if ($allMemoryData)foreach ($allMemoryData as $item)
       $allMemory[$serv] += $mem;
       $allMemoryTotal   += $mem;
     }
+  }
+  else
+  {
+    # 清理过期的数据
+    $this->worker->redis->hDel('server.memory', $key);
   }
 }
 
@@ -99,7 +104,7 @@ if ($this->worker->isSSDB)
 else
 {
   $keys = [];
-  foreach (FlushData::$series as $k => $v)
+  foreach ($this->worker->series as $k => $v)
   {
      $keys[] = "counter.total.$timeKey.$k";
   }

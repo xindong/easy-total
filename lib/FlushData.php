@@ -1,20 +1,5 @@
 <?php
 
-if (class_exists('Thread', false))
-{
-    class FlushBase extends Thread
-    {
-
-    }
-}
-else
-{
-    class FlushBase extends ArrayIterator
-    {
-
-    }
-}
-
 class FlushDataBak
 {
     public static $openRestore = false;
@@ -25,68 +10,75 @@ class FlushDataBak
 }
 
 
+
 /**
  * 数据推送处理的对象
  *
- * 兼容多线程 Thread 的处理方式, 需要安装 pthreads 扩展 see http://php.net/manual/zh/book.pthreads.php
+ * 这个对象在 task worker 中无用
  *
  * Class FlushData
  */
-class FlushData extends FlushBase
+class FlushData
 {
     /**
      * 唯一数据列表
      *
-     * @var FlushBase
+     * @var array
      */
     public $dist;
 
-    public $counter;
-
-    public $jobs;
-
-    public $total;
-
-    public $apps;
-
-    public $counterApp;
-
-    public $updated;
-
-    public $runTime;
-
     /**
-     * @var Redis
-     */
-    public static $redis;
-
-    /**
-     * @var SimpleSSDB
-     */
-    public static $ssdb;
-
-    /**
-     * @var array
-     */
-    public static $queries = [];
-
-    /**
-     * 序列的设置对象
+     * 统计数据
      *
      * @var array
      */
-    public static $series = [];
+    public $total;
+
+    /**
+     * 计数器
+     *
+     * @var array
+     */
+    public $counter;
+
+    /**
+     * 任务列表
+     *
+     * @var array
+     */
+    public $jobs;
+
+    /**
+     * 项目列表
+     *
+     * @var array
+     */
+    public $apps;
+
+    /**
+     * 项目的计数器
+     *
+     * @var array
+     */
+    public $counterApp;
+
+    /**
+     * 是否需要更新
+     *
+     * @var bool
+     */
+    public $updated;
 
     protected static $timed;
 
     public function __construct()
     {
-        $this->dist       = new FlushBase();
-        $this->counter    = new FlushBase();
-        $this->jobs       = new FlushBase();
-        $this->total      = new FlushBase();
-        $this->apps       = new FlushBase();
-        $this->counterApp = new FlushBase();
+        $this->dist       = [];
+        $this->total      = [];
+        $this->jobs       = [];
+        $this->counter    = [];
+        $this->apps       = [];
+        $this->counterApp = [];
     }
 
     /**
@@ -124,37 +116,78 @@ class FlushData extends FlushBase
         $this->updated = $updated;
     }
 
-    public function setDist($key, $hash)
+    /**
+     * 设置唯一数据
+     *
+     * @param $taskKey
+     * @param $uniqueId
+     * @param $value
+     */
+    public function setDist($taskKey, $uniqueId, $field, $value)
     {
-        if (FlushDataBak::$openRestore && !isset($this->dist[$key][$hash]))
+        if (FlushDataBak::$openRestore && !isset($this->dist[$taskKey][$uniqueId][$field][$value]))
         {
             # 原来的数据中没有设置, 则标记下
-            FlushDataBak::$DataDist[$key][$hash] = 1;
+            FlushDataBak::$DataDist[$uniqueId][$field] = [$value, $taskKey];
         }
 
-        $this->dist[$key][$hash] = 1;
+        if (!isset($this->dist[$taskKey]))
+        {
+            $this->dist[$taskKey]            = new DataDist();
+            $this->dist[$taskKey][$uniqueId] = new DataObject();
+        }
+
+        if (!$this->dist[$taskKey][$uniqueId][$field])
+        {
+            $this->dist[$taskKey][$uniqueId][$field] = [];
+        }
+
+        $this->dist[$taskKey][$uniqueId][$field][$value] = 1;
     }
 
-    public function setTotal($uniqid, $total)
+    /**
+     * 设置统计数据
+     *
+     * @param $taskKey
+     * @param $uniqueId
+     * @param $value
+     */
+    public function setTotal($taskKey, $uniqueId, $value)
     {
-        if (FlushDataBak::$openRestore && !isset(FlushDataBak::$DataTotal[$uniqid]))
+        if (FlushDataBak::$openRestore && !isset(FlushDataBak::$DataTotal[$taskKey][$uniqueId]))
         {
-
             # 原来的数据中没有设置, 则增加一个
-            FlushDataBak::$DataTotal[$uniqid] = isset($this->total[$uniqid]) ? $this->total[$uniqid] : 0;
+            FlushDataBak::$DataTotal[$taskKey][$uniqueId] = $this->total[$taskKey][$uniqueId] ?: 0;
         }
 
-        $this->total[$uniqid] = $total;
+        if (!isset($this->total[$taskKey]))
+        {
+            $this->total[$taskKey] = new DataTotal();
+        }
+
+        $this->total[$taskKey][$uniqueId] = $value;
     }
 
-    public function setJobs($key, $id, $value)
+    /**
+     * 设置任务数据
+     *
+     * @param $taskKey
+     * @param $uniqueId
+     * @param $value
+     */
+    public function setJobs($taskKey, $uniqueId, $value)
     {
-        if (FlushDataBak::$openRestore && !isset(FlushDataBak::$DataJobs[$key][$id]))
+        if (FlushDataBak::$openRestore && !isset(FlushDataBak::$DataJobs[$taskKey][$uniqueId]))
         {
-            FlushDataBak::$DataJobs[$key][$id] = isset($this->jobs[$key][$id]) ? $this->jobs[$key][$id] : 0;
+            FlushDataBak::$DataJobs[$taskKey][$uniqueId] = $this->jobs[$taskKey][$uniqueId] ?: 0;
         }
 
-        $this->jobs[$key][$id] = $value;
+        if (!isset($this->jobs[$taskKey]))
+        {
+            $this->jobs[$taskKey] = new DataJobs();
+        }
+
+        $this->jobs[$taskKey][$uniqueId] = $value;
     }
 
     /**
@@ -165,439 +198,115 @@ class FlushData extends FlushBase
         $this->updated = FlushDataBak::$DataUpdated;
 
         # 恢复唯一数值
-        foreach (FlushDataBak::$DataDist as $key => $v)
+        foreach (FlushDataBak::$DataDist as $uniqueId => $value)
         {
-            foreach ($v as $hash => $tmp)
+            foreach ($value as $filed => $v)
             {
-                unset($this->dist[$key][$hash]);
+                list ($hash, $taskKey) = $v;
+                unset($this->dist[$uniqueId][$uniqueId][$hash]);
+
+                if (!count($this->dist[$taskKey][$uniqueId]))
+                {
+                    unset($this->dist[$taskKey][$uniqueId]);
+                }
+
+                if (!count($this->dist[$taskKey]))
+                {
+                    unset($this->dist[$taskKey]);
+                }
             }
         }
 
         # 恢复统计数据
-        foreach (FlushDataBak::$DataTotal as $uniqid => $v)
+        foreach (FlushDataBak::$DataTotal as $taskKey => $value)
         {
-            if (0 === $v)
+            foreach ($value as $uniqueId => $v)
             {
-                unset($this->total[$uniqid]);
-            }
-            else
-            {
-                $this->total[$uniqid] = $v;
+                if (0 === $v)
+                {
+                    unset($this->total[$taskKey][$uniqueId]);
+                    if (!count($this->total[$taskKey]))
+                    {
+                        unset($this->total[$taskKey]);
+                    }
+                }
+                else
+                {
+                    $this->total[$taskKey][$uniqueId] = $v;
+                }
             }
         }
 
         # 恢复任务数据
-        foreach (FlushDataBak::$DataJobs as $key => $value)
+        foreach (FlushDataBak::$DataJobs as $taskKey => $value)
         {
-            foreach ($value as $id => $v)
+            foreach ($value as $uniqueId => $v)
             {
                 if (0 === $v)
                 {
-                    unset($this->jobs[$key][$id]);
-                    if (!$this->jobs[$key])
+                    unset($this->jobs[$taskKey][$uniqueId]);
+                    if (!count($this->jobs[$taskKey]))
                     {
-                        unset($this->jobs[$key]);
+                        unset($this->jobs[$taskKey]);
                     }
                 }
                 else
                 {
-                    $this->jobs[$key][$id] = $v;
+                    $this->jobs[$taskKey][$uniqueId] = $v;
                 }
             }
         }
+
+        # 清理数据
+        $this->endJob();
     }
 
-    /**
-     * 执行推送数据操作
-     */
-    public function run()
+    public function flush($redis)
     {
-        # 线程中处理数据
-        $tryNum = 0;
-        while (true)
+        /**
+         * @var Redis $redis
+         */
+
+        # 投递任务处理唯一值
+        if ($this->dist)foreach ($this->dist as $taskKey => $value)
         {
-            $this->runTime = time();
-            self::doFlush($this);
-
-            # 处理完毕
-            if ($this->updated)
+            # 投递数据
+            if (EtServer::$server->task($value, self::getTaskId($taskKey)))
             {
-                $tryNum++;
-                usleep(30000);
-            }
-            else
-            {
-                break;
-            }
-        }
-    }
-
-    public function flush()
-    {
-        self::doFlush($this);
-    }
-
-    /**
-     * 实施推送数据到redis, ssdb
-     *
-     * @return bool
-     */
-    public static function doFlush(FlushData $flushData)
-    {
-        $redis = self::$redis;
-        $ssdb  = self::$ssdb;
-
-        if (!$redis)return false;
-
-        # 更新唯一值
-        if ($flushData->dist->count())
-        {
-            if ($ssdb)
-            {
-                foreach ($flushData->dist as $k => $v)
-                {
-                    if (($c = count($v)) > 3000)
-                    {
-                        # 数据很多
-                        $err = false;
-                        for ($i = 0; $i < $c; $i += 2000)
-                        {
-                            if (false === $redis->hMSet($k, array_slice($v, $i, 2000, true)))
-                            {
-                                $err = true;
-                                break;
-                            }
-                        }
-                        if (!$err)
-                        {
-                            unset($flushData->dist[$k]);
-                        }
-                    }
-                    else
-                    {
-                        if (false !== $redis->hMSet($k, $v))
-                        {
-                            # 成功
-                            unset($flushData->dist[$k]);
-                        }
-                    }
-                }
-            }
-            else
-            {
-                # 使用 Sets 设置
-                foreach ($flushData->dist as $k => $v)
-                {
-                    # 记录下所有唯一值的key列表
-                    list($d, $sk) = explode(',', $k, 3);
-
-                    # 记录每个任务的唯一序列, 用于后续数据管理
-                    $redis->sAdd("distKeys,{$sk}", $k);
-
-                    $c = count($v);
-                    if ($c > 10)
-                    {
-                        # 超过10个则分批提交
-                        $rs   = false;
-                        $tmp = [$k];
-                        $i    = 0;
-                        foreach ($v as $kk => $t)
-                        {
-                            $i++;
-                            $tmp[] = $kk;
-
-                            if ($i % 10 === 0 || $i === $c)
-                            {
-                                # 每100条提交一次
-                                $rs = false !== call_user_func_array([$redis, 'sAdd'], $tmp);
-                                if (false === $rs)
-                                {
-                                    # 有错误, 退出循环
-                                    break;
-                                }
-                                else
-                                {
-                                    $tmp = [$k];
-                                }
-                            }
-                        }
-                    }
-                    else
-                    {
-                        $tmp = [$k];
-                        foreach ($v as $kk => $t)
-                        {
-                            $tmp[] = $kk;
-                        }
-                        $rs = false !== call_user_func_array([$redis, 'sAdd'], $tmp);
-                    }
-                    unset($tmp);
-
-                    if (false !== $rs)
-                    {
-                        # 成功
-                        unset($flushData->dist[$k]);
-                    }
-                }
+                # 投递成功移除对象
+                unset($this->dist[$taskKey]);
             }
         }
 
-        # 更新任务
-        if ($flushData->jobs->count())
+        # 投递任务处理任务数据
+        if ($this->jobs)foreach ($this->jobs as $taskKey => $value)
         {
-            $tryNum    = 0;
-            $distCache = [];
-
-            while (true)
+            # 投递数据
+            if (EtServer::$server->task($value, self::getTaskId($taskKey)))
             {
-                if ($flushData->jobs->count() == 0)break;
-
-                self::$timed = time();
-                foreach ($flushData->jobs as $jobKey => $arr)
-                {
-                    $lockKey = "lock,{$jobKey}";
-
-                    # 没用 $redis->set($lockKey, microtime(1), ['nx', 'ex' => 10]); 这样过期设置是因为ssdb不支持
-                    if ($redis->setNx($lockKey, microtime(1)))
-                    {
-                        # 统计用的key
-                        list($k1, $k2) = explode(',', date('Ymd,H:i'));
-
-                        # 抢锁成功
-                        $beginTime = microtime(1);
-
-                        # 获取序列key
-                        list($key, $timeOptKey) = explode(',', $jobKey, 2);
-
-                        # 任务的设置
-                        $option    = self::$series[$key];
-                        $saveData  = [];
-
-                        if ($option)foreach ($arr as $id => $opt)
-                        {
-                            list($uniqid, $time, $timeKey, $app, $value) = $opt;
-
-                            # 获取所有统计相关数据
-                            # $totalKey = "total,{$uniqid}";
-                            $total    = self::getTotalData($uniqid);
-
-                            # 更新统计数据
-                            if (isset($flushData->total[$uniqid]))
-                            {
-                                # 合并统计数据
-                                $total = self::totalDataMerge($total, $flushData->total[$uniqid], $option['function']);
-
-                                # 设置到内存表里
-                                if (self::setTotalData($uniqid, $total))
-                                {
-                                    unset($flushData->total[$uniqid]);
-                                }
-                            }
-
-                            # 根据查询中的设置设置导出数据内容
-                            if (is_array($option['queries'][$timeOptKey]))foreach ($option['queries'][$timeOptKey] as $queryKey)
-                            {
-                                # 获取查询的配置
-                                $queryOption = self::$queries[$queryKey];
-
-                                # 查询已经被移除
-                                if (!$queryOption)continue;
-
-                                # 查询已经更改
-                                if ($queryOption['seriesKey'] !== $key)continue;
-
-                                # 生成数据
-                                $data = [
-                                    '_id'    => $id,
-                                    '_group' => $timeKey,
-                                ];
-
-                                if ($queryOption['allField'])
-                                {
-                                    $data += $value;
-                                }
-
-                                # 排除字段
-                                if (isset($queryOption['function']['exclude']))
-                                {
-                                    # 示例: select *, exclude(test), exclude(abc) from ...
-                                    foreach ($queryOption['function']['exclude'] as $field => $t)
-                                    {
-                                        unset($data[$field]);
-                                    }
-                                }
-
-                                foreach ($queryOption['fields'] as $as => $saveOpt)
-                                {
-                                    $field = $saveOpt['field'];
-                                    switch ($saveOpt['type'])
-                                    {
-                                        case 'count':
-                                        case 'sum':
-                                        case 'min':
-                                        case 'max':
-                                            $data[$as] = $total[$saveOpt['type']][$field];
-                                            break;
-
-                                        case 'first':
-                                        case 'last':
-                                            $data[$as] = $total[$saveOpt['type']][$field][0];
-                                            break;
-
-                                        case 'dist':
-                                            $k = "dist,{$uniqid},{$field}";
-                                            if (!isset($distCache[$k]))
-                                            {
-                                                # 获取唯一值的长度
-                                                if ($ssdb)
-                                                {
-                                                    $distCache[$k] = (int)$redis->hLen($k);
-                                                }
-                                                else
-                                                {
-                                                    $distCache[$k] = (int)$redis->sCard($k);
-                                                }
-                                            }
-                                            $data[$as] = $distCache[$k];
-                                            break;
-
-                                        case 'exclude':
-                                            # 排除
-                                            unset($data[$as]);
-                                            break;
-
-                                        case 'value':
-                                        default:
-                                            $data[$as] = $value[$field];
-                                            break;
-                                    }
-                                }
-
-                                # 导出的数据key
-                                if (is_array($queryOption['saveAs'][$timeOptKey]))
-                                {
-                                    $tmp = $queryOption['saveAs'][$timeOptKey];
-                                    switch ($tmp[1])
-                                    {
-                                        case 'date':
-                                            # 处理时间变量替换
-                                            $saveAs = str_replace($tmp[2], explode(',', date($tmp[3], $time)), $tmp[0]);
-                                            break;
-
-                                        default:
-                                            $saveAs = $tmp[0];
-                                            break;
-                                    }
-                                    unset($tmp);
-                                }
-                                else
-                                {
-                                    $saveAs = $queryOption['saveAs'][$timeOptKey];
-                                }
-
-                                # 导出的数据
-                                //$saveData[$saveKey][$id] = json_encode([$time, $data], JSON_UNESCAPED_UNICODE);
-                                $taskKey = "{$queryKey},{$timeOptKey},{$app},{$saveAs}";
-
-                                $saveData[$taskKey][$taskKey][$id] = json_encode([$time, $data], JSON_UNESCAPED_UNICODE);
-                            }
-                        }
-
-                        if ($saveData)
-                        {
-                            $error = false;
-
-                            # 投递任务
-                            $taskNum = EtServer::$server->setting['task_worker_num'] - 1;
-                            foreach ($saveData as $taskKey => $data)
-                            {
-                                # task id = 0 的任务不投递, 这个进程用来处理数据清理的
-                                if (false === EtServer::$server->task($data, 1 + (crc32($taskKey) % $taskNum)))
-                                {
-                                    # 投递失败
-                                    $error = true;
-                                    break;
-                                }
-                            }
-
-                            /*
-                            if ($ssdb)
-                            {
-                                foreach ($saveData as $saveKey => $data)
-                                {
-                                    # ssdb 没有 sAdd 的功能, 所以存到 hash 中
-                                    if (false === $redis->hSet('allListKeys', $saveKey, $saveKey) || false === $redis->hMset($saveKey, $data))
-                                    {
-                                        $error = true;
-                                        break;
-                                    }
-                                }
-                            }
-                            else
-                            {
-                                foreach ($saveData as $saveKey => $data)
-                                {
-                                    if (false === $redis->sAdd('allListKeys', $saveKey) || false === $redis->hMset($saveKey, $data))
-                                    {
-                                        $error = true;
-                                        break;
-                                    }
-                                }
-                            }
-                            */
-
-                            # 清除数据释放内存
-                            unset($saveData);
-                        }
-                        else
-                        {
-                            $error = false;
-                        }
-
-                        if (!$error)
-                        {
-                            # 清除数据
-                            unset($flushData->jobs[$jobKey]);
-                        }
-
-                        # 释放锁
-                        $redis->del($lockKey);
-
-                        # 使用时间（微妙）
-                        $useTime = 1000000 * (microtime(1) - $beginTime);
-
-                        # 更新推送消耗时间统计
-                        $redis->hIncrBy("counter.pushtime.$k1.$key", $k2, $useTime);
-                    }
-                    else if ($tryNum % 100 === 0)
-                    {
-                        if (microtime(1) - $redis->get($lockKey) > 30)
-                        {
-                            # 30 秒还没解锁, 直接删除, 防止死锁
-                            $redis->del($lockKey);
-                        }
-                    }
-                }
-
-                if ($flushData->jobs->count())
-                {
-                    # 重试
-                    $tryNum++;
-                    usleep(mt_rand(1, 1000));
-                }
-                else
-                {
-                    break;
-                }
+                # 投递成功移除对象
+                unset($this->jobs[$taskKey]);
             }
         }
 
+        # 投递任务处理统计数据
+        if ($this->total)foreach ($this->total as $taskKey => $value)
+        {
+            # 投递数据
+            if (EtServer::$server->task($value, self::getTaskId($taskKey)))
+            {
+                # 投递成功移除对象
+                unset($this->total[$taskKey]);
+            }
+        }
+
+        if (!$redis)return;
 
         # 更新APP相关数据
-        if ($flushData->apps->count())
+        if ($this->apps)
         {
             $appData = [];
-            foreach ($flushData->apps as $uniqid => $value)
+            foreach ($this->apps as $uniqueId => $value)
             {
                 foreach ($value as $app => $time)
                 {
@@ -609,9 +318,9 @@ class FlushData extends FlushBase
                 }
 
                 # 更新序列对应的APP的最后请求时间
-                if (false !== $redis->hMset("series.app.{$uniqid}", $value))
+                if (false !== $redis->hMset("series.app.{$uniqueId}", $value))
                 {
-                    unset($flushData->apps[$uniqid]);
+                    unset($this->apps[$uniqueId]);
                 }
             }
 
@@ -639,12 +348,11 @@ class FlushData extends FlushBase
             }
         }
 
-
         # 同步统计信息
-        if ($flushData->counter->count())
+        if ($this->counter)
         {
             # 按每分钟分开
-            foreach ($flushData->counter as $key => $value)
+            foreach ($this->counter as $key => $value)
             {
                 $allCount = 0;
                 foreach ($value as $timeKey => $v)
@@ -660,14 +368,14 @@ class FlushData extends FlushBase
 
                 # 更新任务总的统计信息
                 $redis->hIncrBy('counter', $key, $allCount);
-                unset($flushData->counter[$key]);
+                unset($this->counter[$key]);
             }
         }
 
         # 同步APP统计信息
-        if ($flushData->counterApp->count())
+        if ($this->counterApp)
         {
-            foreach ($flushData->counterApp as $app => $value)
+            foreach ($this->counterApp as $app => $value)
             {
                 $allCount = 0;
                 foreach ($value as $timeKey => $v)
@@ -681,148 +389,57 @@ class FlushData extends FlushBase
                 }
 
                 $redis->hIncrBy('counterApp', $app, $allCount);
-                unset($flushData->counterApp[$app]);
+                unset($this->counterApp[$app]);
             }
         }
 
         # 标记是否有更新数据
-        if ($flushData['dist']
-            || $flushData->total->count()
-            || $flushData->jobs->count()
-            || $flushData->apps->count()
-            || $flushData->counter->count()
-            || $flushData->counterApp->count()
-        )
+        if ($this->jobs || $this->dist || $this->total || $this->counter || $this->counterApp || $this->apps)
         {
-            $flushData->updated = true;
+            $this->updated = true;
         }
         else
         {
-            $flushData->updated = false;
+            $this->updated = false;
         }
 
-        return true;
+        return;
     }
 
     /**
-     * 获取统计
+     * 根据任务key获取taskId
      *
-     * @param $totalKey
+     * 不分配id = 0的任务
+     *
+     * @param $taskKey
+     * @return int
+     */
+    public static function getTaskId($taskKey)
+    {
+        $taskNum = EtServer::$server->setting['task_worker_num'] - 1;
+
+        return (crc32($taskKey) % ($taskNum - 1)) + 1;
+    }
+
+    /**
+     * 统计数据
+     *
+     * @param $total
+     * @param $item
+     * @param $fun
+     * @param $time
      * @return array
      */
-    protected static function getTotalData($totalKey)
+    public static function totalData($total, $item, $fun, $time)
     {
-        /*
-        # 老的代码, 直接在 redis里获取
-        $total = $redis->get($totalKey);
-        if (!$total)
-        {
-            $total = [];
+        if (!$total)$total = new DataTotalItem();
 
-            # 更新数据
-            if (!$ssdb)
-            {
-                # redis 服务器需要将 key 加入到 totalKeys 里方便后续数据维护
-                $redis->sAdd("totalKeys,$key", $totalKey);
-            }
-        }
-        else
-        {
-            $total = @unserialize($total) ?: [];
-        }
-        */
-
-        $total = EtServer::$totalTable->get($totalKey);
-        if ($total)
-        {
-            $total = $total['value'];
-
-            if (substr($total, -3) === '>>>')
-            {
-                # 超过1024后分片保存的
-                preg_match('#^(.*)<<<(\d+)>>>$#', $total, $m);
-                $total     = $m[1];
-                $subLength = $m[2];
-                for ($i = 1; $i <= $subLength; $i++)
-                {
-                    $tmp = EtServer::$totalTable->get($totalKey .'@'. $i);
-                    if ($tmp)
-                    {
-                        $total .= $tmp['value'];
-                    }
-                }
-            }
-
-            $total = @json_decode($total, true);
-            if (!$total)
-            {
-                warn("get error total data: $total");
-                $total = [];
-            }
-        }
-        else
-        {
-            $total = [];
-        }
-
-        return $total;
-    }
-
-    /**
-     * 设置内存变量
-     *
-     * @param $totalKey
-     * @param $total
-     */
-    protected static function setTotalData($totalKey, $total)
-    {
-        # $redis->set($totalKey, serialize($total));
-
-        $totalString = json_encode($total);
-        $totalLen    = strlen($totalString);
-        if ($totalLen > 1024)
-        {
-            # 长度限定1024
-            $subLength = floor(($totalLen - 1) / 1000);
-            EtServer::$totalTable->set($totalKey, ['value' => substr($totalString, 0, 1000) ."<<<". $subLength .">>>", 'time' => self::$timed]);
-
-            for ($i = 1; $i <= $subLength; $i++)
-            {
-                EtServer::$totalTable->set($totalKey .'@'. $i , ['value' => substr($totalString, $i * 1000, 1000), 'time' => self::$timed]);
-            }
-
-            # 移除可能多余的key
-            while (true)
-            {
-                $i++;
-                if (EtServer::$totalTable->exist($totalKey .'@'. $i))
-                {
-                    # 移除以前设置的多余的序列
-                    EtServer::$totalTable->del($totalKey .'@'. $i);
-                }
-                else
-                {
-                    break;
-                }
-            }
-        }
-        else
-        {
-            EtServer::$totalTable->set($totalKey, ['value' => $totalString, 'time' => self::$timed]);
-        }
-
-        return true;
-    }
-
-
-    protected static function totalDataMerge($total, $totalMerge, $fun)
-    {
         if (isset($fun['sum']))
         {
             # 相加的数值
             foreach ($fun['sum'] as $field => $t)
             {
-                $total['sum'][$field] += $totalMerge['sum'][$field];
+                $total->sum[$field] += $item[$field];
             }
         }
 
@@ -830,7 +447,7 @@ class FlushData extends FlushBase
         {
             foreach ($fun['count'] as $field => $t)
             {
-                $total['count'][$field] += $totalMerge['count'][$field];
+                $total->count[$field] += 1;
             }
         }
 
@@ -838,11 +455,11 @@ class FlushData extends FlushBase
         {
             foreach ($fun['last'] as $field => $t)
             {
-                $tmp = $total['last'][$field];
+                $tmp = $total->last[$field];
 
-                if (!$tmp || $tmp[1] < $totalMerge['last'][$field][1])
+                if (!$tmp || $tmp[1] < $time)
                 {
-                    $total['last'][$field] = $totalMerge['last'][$field];
+                    $total->last[$field] = [$item[$field], $time];
                 }
             }
         }
@@ -851,11 +468,11 @@ class FlushData extends FlushBase
         {
             foreach ($fun['first'] as $field => $t)
             {
-                $tmp = $total['first'][$field];
+                $tmp = $total->first[$field];
 
-                if (!$tmp || $tmp[1] > $totalMerge['first'][$field][1])
+                if (!$tmp || $tmp[1] > $time)
                 {
-                    $total['first'][$field] = $totalMerge['first'][$field];
+                    $total->first[$field] = [$item[$field], $time];
                 }
             }
         }
@@ -864,13 +481,13 @@ class FlushData extends FlushBase
         {
             foreach ($fun['min'] as $field => $t)
             {
-                if (isset($totalMerge['min'][$field]))
+                if (isset($total->min[$field]))
                 {
-                    $total['min'][$field] = min($totalMerge['min'][$field], $total['min'][$field]);
+                    $total->min[$field] = min($total['min'][$field], $item[$field]);
                 }
                 else
                 {
-                    $total['min'][$field] = $totalMerge['min'][$field];
+                    $total->min[$field] = $item[$field];
                 }
             }
         }
@@ -879,13 +496,13 @@ class FlushData extends FlushBase
         {
             foreach ($fun['max'] as $field => $t)
             {
-                if (isset($totalMerge['max'][$field]))
+                if (isset($total->max[$field]))
                 {
-                    $total['max'][$field] = max($totalMerge['max'][$field], $total['max'][$field]);
+                    $total->max[$field] = max($total['max'][$field], $item[$field]);
                 }
                 else
                 {
-                    $total['max'][$field] = $totalMerge['max'][$field];
+                    $total->max[$field] = $item[$field];
                 }
             }
         }

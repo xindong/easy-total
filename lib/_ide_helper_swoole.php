@@ -472,6 +472,7 @@ function swoole_version() {
  * 将标准的Unix Errno错误码转换成错误信息
  *
  * @param int $errno
+ * @return string
  */
 function swoole_strerror($errno) {
 }
@@ -482,6 +483,7 @@ function swoole_strerror($errno) {
  * @return int
  */
 function swoole_errno() {
+    return 0;
 }
 
 

@@ -52,7 +52,9 @@ else
             $newOption['end']        = $option['end'];
 
             $this->worker->redis->hset('queries', $key, serialize($newOption));
-            $this->createSeriesByQueryOption($newOption);
+            $this->worker->queries[$key] = $newOption;
+
+            Manager::createSeriesByQueryOption($newOption, $this->worker->queries);
         }
     }
 

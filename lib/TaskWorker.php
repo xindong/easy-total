@@ -3,7 +3,16 @@
 class TaskWorker
 {
     /**
+     * 任务进程ID, 从0开始
+     *
      * @var int
+     */
+    protected $taskId;
+
+    /**
+     * 进程ID, 序号接着work进程序号后
+     *
+     * @var
      */
     protected $id;
 
@@ -20,42 +29,81 @@ class TaskWorker
     protected $dumpFile;
 
     /**
-     * 待推送列表数据
-     *
-     * @var array
-     */
-    protected $list = [];
-
-    /**
      * 当前进程启动时间
      *
      * @var int
      */
     protected $startTime;
 
-    protected static $sendEvents = [];
+    /**
+     * 记录各个功能的执行时间
+     *
+     * @var array
+     */
+    protected $doTime = [];
 
+    /**
+     * @var array
+     */
+    protected $taskThreaded = [];
 
-    public function __construct(swoole_server $server, $id)
+    protected $autoPause = false;
+
+    /**
+     * @var array
+     */
+    public static $dist = [];
+    /**
+     * @var array
+     */
+    public static $total = [];
+    /**
+     * @var array
+     */
+    public static $jobs = [];
+
+    /**
+     * 分配任务执行时间
+     *
+     * @var array
+     */
+    public static $jobTime = [];
+
+    public static $serverName;
+
+    /**
+     * 单个任务最多积压的任务数
+     *
+     * @var int
+     */
+    public static $maxJobs = 10000;
+
+    public function __construct(swoole_server $server, $id, $workerId)
     {
+        require_once __DIR__ .'/TaskData.php';
+        include_once __DIR__ .'/DataDriver.php';
+
         $this->server    = $server;
-        $this->id        = $id;
-        $this->dumpFile  = (EtServer::$config['server']['dump_path'] ?: '/tmp/') . 'total-task-dump-'. substr(md5(EtServer::$configFile), 16, 8) . '-'. $id .'.txt';
+        $this->taskId    = $id;
+        $this->id        = $workerId;
+        $this->dumpFile  = EtServer::$config['server']['dump_path'] . 'total-task-dump-'. substr(md5(EtServer::$configFile), 16, 8) . '-'. $id .'.txt';
         $this->startTime = time();
+
+        # 更新状态
+        $this->updateStatus(1);
+
+        # 设置配置
+        self::$serverName           = EtServer::$config['server']['host'] .':'. EtServer::$config['server']['port'];
+        self::$maxJobs              = EtServer::$config['server']['max_jobs'] ?: 10000;
+        TaskThreaded::$distConfig   = EtServer::$config['dist'];
+        TaskThreaded::$redisConfig  = EtServer::$config['redis'];
+        TaskThreaded::$outputConfig = EtServer::$config['output'];
+        TaskThreaded::$dumpPath     = EtServer::$config['server']['dump_path'];
     }
 
     public function init()
     {
-        if (is_file($this->dumpFile))
-        {
-            $tmp = @unserialize(file_get_contents($this->dumpFile));
-            if ($tmp && is_array($tmp))
-            {
-                $this->list = $tmp;
-            }
-
-            unlink($this->dumpFile);
-        }
+        $this->loadDumpData();
     }
 
     /**
@@ -67,9 +115,16 @@ class TaskWorker
      */
     public function onTask(swoole_server $server, $taskId, $fromId, $data)
     {
+        usleep(10000 * $this->taskId);
+
         try
         {
-            if (is_array($data))
+            if (is_object($data))
+            {
+                # 获取数据类型
+                $type = get_class($data);
+            }
+            elseif (is_array($data))
             {
                 $type = 'list';
             }
@@ -81,31 +136,118 @@ class TaskWorker
 
             switch ($type)
             {
-                case 'list':
-                    # 处理列表数据
-                    foreach ($data as $key => $item)
+                case 'DataDist':
+                    # 唯一数
+                    foreach ($data as $uniqueId => $value)
                     {
-                        if (isset($this->list[$key]))
+                        if (isset(self::$dist[$uniqueId]))
                         {
-                            $this->list[$key] = array_merge($this->list[$key], $item);
+                            foreach ($value as $field => $items)
+                            {
+                                if (isset(self::$dist[$uniqueId][$field]))
+                                {
+                                    self::$dist[$uniqueId][$field] = array_merge(self::$dist[$uniqueId][$field], $items);
+                                }
+                                else
+                                {
+                                    self::$dist[$uniqueId][$field] = $items;
+                                }
+                            }
                         }
                         else
                         {
-                            $this->list[$key] = $item;
+                            self::$dist[$uniqueId] = $value;
+                        }
+
+                        if (!isset(self::$jobTime[$uniqueId]))
+                        {
+                            self::setJobTime($uniqueId);
                         }
                     }
 
                     break;
 
-                case 'output':
-                    $this->outputToFluent();
+                case 'DataTotal':
+                    # 合并统计数
+                    foreach ($data as $uniqueId => $value)
+                    {
+                        if (!isset(self::$total[$uniqueId]) || !self::$total[$uniqueId]->lastLoadTime)
+                        {
+                            if (!isset($driver))
+                            {
+                                $driver = new DataDriver(TaskThreaded::$distConfig);
+                            }
+
+                            # 在以前记录的数据里获取历史统计数据
+                            $rs = $driver->getTotal($uniqueId);
+
+                            if ($rs)
+                            {
+                                if (!isset(self::$total[$uniqueId]))
+                                {
+                                    self::$total[$uniqueId] = $rs;
+                                }
+                                else
+                                {
+                                    # 数据合并
+                                    TaskThreaded::totalDataMerge(self::$total[$uniqueId], $rs);
+                                }
+
+                                # 更新加载时间
+                                self::$total[$uniqueId]->lastLoadTime = time();
+                            }
+                        }
+
+                        # 合并已存在的统计数据
+                        TaskThreaded::totalDataMerge(self::$total[$uniqueId], $value);
+
+                        if (!isset(self::$jobTime[$uniqueId]))
+                        {
+                            self::setJobTime($uniqueId);
+                        }
+                    }
+                    break;
+
+                case 'DataJobs':
+                    # 任务数据
+                    foreach ($data as $uniqueId => $value)
+                    {
+                        if (isset(self::$jobs[$uniqueId]))
+                        {
+                            foreach ($value as $k => $v)
+                            {
+                                self::$jobs[$uniqueId][$k] = $v;
+                            }
+                        }
+                        else
+                        {
+                            self::$jobs[$uniqueId] = $value;
+                        }
+
+                        if (!isset(self::$jobTime[$uniqueId]))
+                        {
+                            self::setJobTime($uniqueId);
+                        }
+                    }
+
+                    # 当前任务数
+                    if (!$this->autoPause && ($count = count(self::$jobs)) > self::$maxJobs)
+                    {
+                        # 积压的任务数非常多
+                        debug("task $this->id jobs num: $count");
+                        info("the jobs is too much, now notify server pause accept new data.");
+                        $this->notifyWorkerPause();
+                    }
+                    break;
+
+                case 'job':
+                    # 每3秒会被调用1次
+                    $this->saveData();
                     break;
 
                 case 'clean':
-                    # 每小时清理数据
+                    # 清理数据, 只有 taskId = 0 的进程会被调用
                     $this->clean();
-
-                    info("clean date at ". date('Y-m-d H:i:s'));
                     break;
             }
         }
@@ -114,80 +256,234 @@ class TaskWorker
             warn($e->getMessage());
         }
 
+        # 更新内存占用
+        if (!isset($doTime['updateMemory']) || time() - $doTime['updateMemory'] >= 60)
+        {
+            list($redis) = self::getRedis();
+            if ($redis)
+            {
+                /**
+                 * @var Redis $redis
+                 */
+                $redis->hSet('server.memory', self::$serverName .'_'. $this->id, serialize([memory_get_usage(true), time(), self::$serverName, $this->id]));
+            }
+            $doTime['updateMemory'] = time();
+        }
+
         # 标记状态为成功
         $this->updateStatus(1);
+
+        # 任务数小余一定程度后继续执行
+        if ($this->autoPause)
+        {
+            if (count(self::$jobs) < self::$maxJobs / 10)
+            {
+                info("now notify server continue accept new data.");
+                $this->notifyWorkerContinue();
+            }
+        }
 
         # 如果启动超过1小时
         if (time() - $this->startTime > 3600)
         {
-            if (mt_rand(1, 100) === 1)
+            if (mt_rand(1, 200) === 1)
             {
-                # 重启进程避免数据溢出,未清理数据暂用超大内存
+                # 重启进程避免数据溢出、未清理数据占用超大内存
                 $this->shutdown();
 
-                info('now restart task worker: '. $this->id);
+                info('now restart task worker: '. $this->taskId);
 
                 exit(0);
             }
         }
+
+//        usleep($this->taskId * 100);
+//        echo "================={$this->taskId}\n";
+//        if (self::$dist)
+//        {
+//            echo 'self::$dist=';
+//            print_r(self::$dist);
+//        }
+//        if (self::$total)
+//        {
+//            echo 'self::$total=';
+//            print_r(self::$total);
+//        }
+//        if (self::$jobs)
+//        {
+//            echo 'self::$jobs=';
+//            print_r(self::$jobs);
+//        }
+//        if (self::$jobs)
+//        {
+//            echo 'self::$jobTime=';
+//            print_r(self::$jobTime);
+//        }
     }
 
-    public function shutdown()
+    /**
+     * 当积压的数据很多时, 通知进程暂停接受新数据
+     */
+    protected function notifyWorkerPause()
     {
-        if ($this->list)
+        $this->autoPause = true;
+
+        for ($i = 0; $i < $this->server->setting['worker_num']; $i++)
         {
-            # 如果有数据推送
-            $this->outputToFluent();
+            $this->server->sendMessage('pause', $i);
         }
+    }
 
-        if ($this->list)
+    /**
+     * 通知进程继续处理
+     */
+    protected function notifyWorkerContinue()
+    {
+        $this->autoPause = false;
+
+        for ($i = 0; $i < $this->server->setting['worker_num']; $i++)
         {
-
-            # 把数据dump到本地, 重新启动时加载
-            $this->dumpData();
+            $this->server->sendMessage('continue', $i);
         }
+    }
 
-        $time = time();
-        while (true)
+    /**
+     * 保存数据
+     */
+    public function saveData()
+    {
+        if ($this->taskThreaded)
         {
-            if (self::$sendEvents)
+            $this->checkTaskThreaded();
+
+            # 最对3个线程（进程）同时处理
+            if (count($this->taskThreaded) >= 3)
             {
-                self::checkAck();
+                return;
+            }
+        }
+
+        $now  = time();
+        # 构造一个新的任务对象（支持多线程或多进程）
+        $task = new TaskThreaded();
+        # 设置当前任务的id
+        $task->taskId = $this->taskId;
+
+        # 获取需要处理的任务
+        foreach (self::$jobTime as $uniqueId => $time)
+        {
+            echo ($now - $time);
+            if ($now >= $time)
+            {
+                # 到达执行任务的时间了
+                if (isset(self::$dist[$uniqueId]))
+                {
+                    $task->dist[$uniqueId] = self::$dist[$uniqueId];
+                    unset(self::$dist[$uniqueId]);
+                }
+
+                if (isset(self::$jobs[$uniqueId]))
+                {
+                    $task->jobs[$uniqueId] = self::$jobs[$uniqueId];
+                    unset(self::$jobs[$uniqueId]);
+                }
+
+                if (!isset(self::$total[$uniqueId]))
+                {
+                    self::$total[$uniqueId] = new DataTotalItem();
+                }
+
+                # 任务统计数值
+                $task->total[$uniqueId] = self::$total[$uniqueId];
+
+                # 移除任务时间
+                unset(self::$jobTime[$uniqueId]);
+            }
+        }
+
+        if (count($task->jobs) || count($task->dist))
+        {
+            # 有任务数据
+            $this->taskThreaded[] = $task;
+
+            # 执行
+            $task->start();
+        }
+    }
+
+
+    protected function checkTaskThreaded()
+    {
+        $c = false;
+        foreach ($this->taskThreaded as $key => $item)
+        {
+            /**
+             * @var DataThreaded $item
+             */
+            if ($item->isRunning())
+            {
+                if (time() - $item->getLastRunTime() > 300)
+                {
+                    # 一直更新的执行时间超过 5 分钟, 可能是进程死掉了
+                    warn("task process has been dead more than 10 minutes, now kill it.");
+                    $item->kill();
+
+                    unset($this->taskThreaded[$key]);
+                    $c = true;
+                }
             }
             else
             {
-                break;
+                $item->close();
+                unset($this->taskThreaded[$key]);
+                $c = true;
             }
+        }
 
-            if (time() - $time > 200)
+        if ($c)
+        {
+            # 整理数组
+            $this->taskThreaded = array_values($this->taskThreaded);
+        }
+    }
+
+
+    public function shutdown()
+    {
+        # 将数据保存下来
+        $this->dumpData();
+
+        # 清空数据
+        self::$jobTime = [];
+        self::$dist    = [];
+        self::$jobs    = [];
+
+        if ($this->taskThreaded)
+        {
+            $time = time();
+            # 有跑着的任务
+            while ($this->taskThreaded)
             {
-                if (self::$sendEvents)
+                warn("task $this->taskId have ". count($this->taskThreaded) ." process is running, have been waiting for ". (time() - $time) ."s.");
+
+                # 检查任务状态
+                $this->checkTaskThreaded();
+
+                if (time() - $time > 300)
                 {
-                    # 将推送失败的数据恢复后dump出来, 供下次启动时读取
-                    foreach (self::$sendEvents as $item)
+                    # 超过5分钟还没有处理完毕, 通知进程 dump 数据
+                    foreach ($this->taskThreaded as $item)
                     {
-                        list ($key, $data) = $item;
-                        if (!isset($this->list[$key]))
-                        {
-                            $this->list[$key] = $data;
-                        }
-                        else
-                        {
-                            $this->list[$key] = array_merge($data, $this->list[$key]);
-                        }
+                        /**
+                         * @var TaskThreaded $item
+                         */
+                        $item->dump();
                     }
-                    $this->dumpData();
+                    break;
                 }
-                break;
+
+                sleep(1);
             }
-
-            # 更新状态
-            $this->updateStatus();
-
-            # update title
-            EtServer::setProcessName("php easy-total task wait ack update at ". date('H:i:s') ." [do not kill me]");
-
-            usleep(100000);
         }
     }
 
@@ -197,10 +493,54 @@ class TaskWorker
      */
     public function dumpData()
     {
-        if ($this->list)
+        if (self::$jobTime || self::$dist || self::$jobs)
         {
-            # 有数据
-            file_put_contents($this->dumpFile, serialize($this->list));
+            $dump = [
+                'jobTime' => self::$jobTime,
+                'dist'    => self::$dist,
+                'jobs'    => self::$jobs,
+            ];
+
+            # 写入到临时数据里, 下次启动时载入
+            file_put_contents($this->dumpFile, serialize($dump));
+        }
+    }
+
+    protected function loadDumpData()
+    {
+        if (is_file($this->dumpFile))
+        {
+            $tmp = @unserialize(file_get_contents($this->dumpFile));
+            if ($tmp && is_array($tmp))
+            {
+                self::$jobTime = $tmp['jobTime'];
+                self::$dist    = $tmp['dist'];
+                self::$jobs    = $tmp['jobs'];
+            }
+
+            unlink($this->dumpFile);
+        }
+
+        # 读取子进（线）程dump出的数据
+        $dumpFile = EtServer::$config['server']['dump_path'] . 'total-task-process-dump-' . $this->taskId . '.txt';
+        if (is_file($dumpFile))
+        {
+            foreach (explode("\r\n", rtrim(file_get_contents($dumpFile))) as $item)
+            {
+                $tmp = @unserialize($item);
+                if ($tmp && is_array($tmp))
+                {
+                    $task = new TaskThreaded();
+                    $task->taskId = $this->taskId;
+                    $task->restore($tmp);
+
+                    $this->taskThreaded[] = $task;
+                }
+
+                ////////////debug
+                break;
+            }
+            unlink($dumpFile);
         }
     }
 
@@ -284,78 +624,6 @@ class TaskWorker
      */
     protected function clean()
     {
-        /**
-         * @var Redis $redis
-         * @var SimpleSSDB $ssdb
-         */
-        list($redis, $ssdb) = self::getRedis();
-
-        if (!FlushData::$series && $redis)
-        {
-            # 获取所有序列的配置
-            FlushData::$series = array_map('unserialize', $redis->hGetAll('series'));
-        }
-
-        # 清理过期的统计信息, EtServer::$totalTable 里可能有上万甚至更多数据
-        $delKeys  = [];
-        $time     = time();
-        $oldCount = count(EtServer::$totalTable);
-        $index    = 0;
-        foreach (EtServer::$totalTable as $key => $item)
-        {
-            $index++;
-            if (preg_match('#(?<seriesKey>[0-9a-z]+),(?<limit>\d+)(?<type>[a-z]+),(?<app>[a-z0-9_\-]+),(?<timeKey>\d+)_#i', $key, $m))
-            {
-                if ($index % 1000 === 0)
-                {
-                    # 每1条更新下
-                    $time = time();
-                    $this->updateStatus();
-                }
-
-                $seriesOption = FlushData::$series[$m['seriesKey']] ?: [];
-                $table        = $seriesOption['table'];
-                $logTime      = EtServer::$logTimeTable->get("{$m['app']}_{$table}");
-                if (!$logTime)
-                {
-                    # 如果没有获取到最后的log的时间
-                    $logTime = $time - 1800;
-                }
-                else
-                {
-                    $logTime = $logTime['time'];
-                }
-
-                # 根据当前分组获取下一个时间点的时间戳
-                $nextTime = self::getNextTimestampByTimeKey($m['timeKey'], $m['limit'], $m['type']);
-
-                if ($oldCount > 100000 && $logTime - $nextTime >= 600)
-                {
-                    # 当已记录的数据比较庞大, 则清理过期数据
-                    $delKeys[] = $key;
-                    EtServer::$totalTable->del($key);
-                }
-                elseif ($redis && $time - $item['time'] < 300)
-                {
-                    # 5分钟内更新的数据, 同步到 redis
-                    $redis->hSet('total', $key, $item['value']);
-                }
-            }
-            else
-            {
-                $delKeys[] = $key;
-                EtServer::$totalTable->del($key);
-                warn("unexpected total key: $key");
-            }
-        }
-
-        $currentCount = count(EtServer::$totalTable);
-        $cleanCount   = $currentCount - $oldCount;
-        if ($cleanCount)
-        {
-            info("clean " . $cleanCount . " total item, current total item count: {$currentCount}.");
-        }
-
         static $lastClean = null;
         if (null === $lastClean)
         {
@@ -364,6 +632,7 @@ class TaskWorker
 
         if (time() - $lastClean > 3600)
         {
+            list($redis, $ssdb) = self::getRedis();
             $this->cleanOldData($redis, $ssdb);
             $lastClean = time();
         }
@@ -387,24 +656,6 @@ class TaskWorker
         if (false === $redis)return false;
 
         $time = time();
-        foreach (EtServer::$logTimeTable as $k => $v)
-        {
-            if ($time - $v['update'] > 86400)
-            {
-                # 清理1天还没有更新的数据
-                EtServer::$logTimeTable->del($k);
-            }
-            elseif ($time - $v['update'] < 3660)
-            {
-                # 在1小时内有更新的数据更新到redis里
-                $redis->set('logTime', $k, $v['time'] . ',' . $v['update']);
-            }
-        }
-
-        if (time() - $time > 3)
-        {
-            self::updateStatus();
-        }
 
         # 清理已经删除的任务
         $queries = array_map('unserialize', $redis->hGetAll('queries'));
@@ -419,10 +670,8 @@ class TaskWorker
             }
         }
 
-
         $updateSeries = [];
         $series       = array_map('unserialize', $redis->hGetAll('series'));
-        FlushData::$series = $series;
         foreach ($series as $key => $item)
         {
             if ($item['queries'])
@@ -548,287 +797,41 @@ class TaskWorker
     }
 
     /**
-     * 将数据重新分发到 Fluent
-     *
-     * @return bool
-     */
-    protected function outputToFluent()
-    {
-        # 加载客户端
-        $outputPrefix = EtServer::$config['output']['prefix'] ?: '';
-
-        try
-        {
-            if (self::$sendEvents)
-            {
-                self::checkAck();
-            }
-
-            foreach ($this->list as $key => $item)
-            {
-                if (!preg_match('#^(?<jobKey>[a-z0-9]+),(?<timeType>[a-z0-9]+),(?<app>.+),(?<table>.+)$#i', $key, $m))
-                {
-                    unset($this->list[$key]);
-                    warn("Unexpected key: $key");
-                    continue;
-                }
-
-                $tag = "{$outputPrefix}{$m['app']}.{$m['table']}";;
-
-                # 发送数据
-                if (self::sendToFluent($tag, $key, $item))
-                {
-                    unset($this->list[$key]);
-                }
-                else
-                {
-                    warn("push data {$key} fail. fluentd server: " . EtServer::$config['output']['type'] . ': ' . EtServer::$config['output']['link']);
-                }
-
-                # 更新状态
-                $this->updateStatus();
-            }
-
-            return true;
-        }
-        catch (Exception $e)
-        {
-            warn($e->getMessage());
-
-            if (IS_DEBUG)
-            {
-                echo $e->getTraceAsString();
-            }
-
-            return false;
-        }
-    }
-
-    /**
      * 更新状态
      *
      * @param int $status 1 - 成功, 2 - 运行中
      */
-    protected function updateStatus($status = 2)
+    public function updateStatus($status = 2)
     {
-        EtServer::$taskWorkerStatusTable->set("task{$this->id}", ['status' => $status, 'time' => time()]);
+        EtServer::$taskWorkerStatus->set("task{$this->taskId}", ['status' => $status, 'time' => time()]);
     }
 
-    /**
-     * 检查ACK返回
-     */
-    protected static function checkAck()
+    protected static function setJobTime($uniqueId)
     {
-        foreach (self::$sendEvents as $k => & $event)
+        # $key = abcde123af32,1d,hsqj,2016001,123_abc
+        list($seriesKey, $timeOptKey) = explode(',', $uniqueId, 3);
+
+        # 保存策略（兼顾数据堆积的内存开销和插入频率对性能的影响）:
+        # 时间序列为分钟,秒以及无时间分组的, 每分钟保存一次; 其它时间序列每10分钟保存1次
+        switch (substr($timeOptKey, -1))
         {
-            $rs = self::checkAckByEvent($event);
-            if ($rs)
-            {
-                unset(self::$sendEvents[$k]);
-            }
-            elseif (false === $rs)
-            {
-                list ($key, $data, $tag, $retryNum) = $event;
+            case 'M':   // 分钟
+            case 'i':   // 分钟
+            case 's':   // 秒
+            case 'e':   // none
+                # 保存间隔1分钟
+                $timeLimit = 60;
+                break;
 
-                # 移除当前的对象
-                unset(self::$sendEvents[$k]);
-
-                if ($data)
-                {
-                    # 切分成2分重新发送
-                    $len = ceil(count($data) / 2);
-                    if ($len > 1)
-                    {
-                        self::sendToFluent($tag, $key, array_slice($data, 0, $len), $retryNum + 1);
-                        self::sendToFluent($tag, $key, array_slice($data, $len), $retryNum + 1);
-                    }
-                    else
-                    {
-                        self::sendToFluent($tag, $key, $data, $retryNum + 1);
-                    }
-                }
-            }
+            default:
+                # 其它的保存间隔为10分钟
+                $timeLimit = 600;
+                break;
         }
 
-        self::$sendEvents = array_values(self::$sendEvents);
-    }
-
-    /**
-     * 检查ACK返回
-     *
-     *   * true  - 成功
-     *   * false - 失败（超时）
-     *   * 0     - 还需要再检测
-     *
-     * @param $event
-     * @return bool|int
-     */
-    protected static function checkAckByEvent(& $event)
-    {
-        list ($key, $data, $tag, $retryNum, $time, $socket, $acks) = $event;
-
-        try
-        {
-            if ($rs = @fread($socket, 10240))
-            {
-                # 如果提交多个数据提交, 会一次返回多个,类似: {"ack":"f123"}{"ack":"f456"}
-                foreach (explode('}{', $rs) as $item)
-                {
-                    $item = json_decode('{'. trim($item, '{}') .'}', true);
-                    if ($item)
-                    {
-                        $ack = $item['ack'];
-                        if (isset($acks[$ack]))
-                        {
-                            unset($acks[$ack]);
-                            unset($event[5][$ack]);
-                        }
-                    }
-                }
-
-                if (!$acks)
-                {
-                    # 成功
-                    @fclose($socket);
-
-                    if (IS_DEBUG)
-                    {
-                        debug("get ack response : $rs, use time " . (microtime(1) - $time) . 's.');
-                    }
-
-                    return true;
-                }
-                else
-                {
-                    return 0;
-                }
-            }
-            elseif (microtime(1) - $time > 300)
-            {
-                # 超时300秒认为失败
-                # 关闭
-                @fclose($socket);
-
-                warn("get ack response timeout, tag: {$tag}, key: {$key}, retryNum: {$retryNum}");
-
-                return false;
-            }
-            else
-            {
-                return 0;
-            }
-        }
-        catch (Exception $e)
-        {
-            warn($e->getMessage());
-
-            return 0;
-        }
-    }
-
-    /**
-     * 将数据发送到Fluent上
-     *
-     * [!!] 此处返回 true 只是表示成功投递, 并不表示服务器返回了ACK确认, 系统会每隔几秒去读取一次ACK确认
-     *
-     * @param string $tag
-     * @param string $key
-     * @param array $data
-     * @param int $retryNum
-     * @return bool
-     */
-    protected static function sendToFluent($tag, $key, $data, $retryNum = 0)
-    {
-        $link   = EtServer::$config['output']['link'];
-        $socket = @stream_socket_client($link, $errno, $errstr, 1, STREAM_CLIENT_CONNECT);
-        stream_set_timeout($socket, 0, 3000);
-
-        if (!$socket)
-        {
-            warn($errstr);
-            return false;
-        }
-
-        $len  = 0;
-        $str  = '';
-        $acks = [];
-
-        if ($retryNum > 2)
-        {
-            # 大于2次错误后, 将数据分割小块投递
-            $limitLen = 300000;
-        }
-        else
-        {
-            $limitLen = 3000000;
-        }
-
-        foreach ($data as $item)
-        {
-            if ($retryNum > 2)
-            {
-                # 检查下数据是否有问题, 有问题的直接跳过
-                $test = @json_decode($item, false);
-                if (!$test)
-                {
-                    warn("ignore error fluent data: $item");
-                    continue;
-                }
-            }
-
-            $len += strlen($item);
-            $str .= $item .',';
-
-            if ($len > $limitLen)
-            {
-                # 每 3M 分开一次推送, 避免一次发送的数据包太大
-                $ack    = uniqid('f');
-                $buffer =  '["'. $tag .'",['. substr($str, 0, -1) .'], {"chunk":"'. $ack .'"}]';
-
-                if (@fwrite($socket, $buffer, strlen($buffer)))
-                {
-                    # 重置后继续
-                    $len = 0;
-                    $str = '';
-                    $acks[$ack] = 1;
-                }
-                else
-                {
-                    # 如果推送失败
-                    @fclose($socket);
-                    return false;
-                }
-            }
-        }
-
-        if ($len > 0)
-        {
-            $ack    = uniqid('f');
-            $buffer = '["'. $tag .'",['. substr($str, 0, -1) .'], {"chunk":"'. $ack .'"}]';
-
-            if (@fwrite($socket, $buffer))
-            {
-                # 全部推送完毕
-                $acks[$ack] = 1;
-            }
-            else
-            {
-                @fclose($socket);
-                return false;
-            }
-        }
-
-        $event = [$key, $data, $tag, $retryNum, microtime(1), $socket, $acks];
-
-        # 尝试去读取ACK
-        $rs = self::checkAckByEvent($event);
-        if (!$rs)
-        {
-            # 没有成功返回则放到队列里
-            self::$sendEvents[] = $event;
-        }
-
-        return true;
+        # 设定下一个任务时间
+        # 按1分钟分组, 并且向后延 60 或 600 秒, 这样可以把跨度较长的任务时间分割开
+        self::$jobTime[$uniqueId] = intval(time() / 60) * 60 + $timeLimit;
     }
 
     /**
@@ -877,77 +880,5 @@ class TaskWorker
         {
             return [false, false];
         }
-    }
-
-    function getNextTimestampByTimeKey($timeKey, $limit, $type)
-    {
-        static $cache = [];
-        $key = "$timeKey$limit$type";
-
-        if (isset($cache[$key]))return $cache[$key];
-        $year     = intval(substr($timeKey, 0, 4));
-        $nextYear = strtotime(($year + 1) .'-01-01 00:00:00');
-        switch ($type)
-        {
-            case 'm':
-                # 月
-                preg_match('#(\d{4})(\d{2})#', $timeKey, $m);
-                $month = $limit + $m[2];
-                if ($month > 12)
-                {
-                    $m[1] += 1;
-                    $month = 1;
-                }
-
-                $time = strtotime("{$year}-{$month}-01 00:00:00");
-                $time = min($nextYear, $time);
-                break;
-
-            case 'w':
-                # 周
-                preg_match('#(\d{4})(\d{2})#', $timeKey, $m);
-                $time = strtotime("{$year}-01-01 00:00:00") + ($m[2] + $limit) * (86400 * 7);
-                $time = min($nextYear, $time);
-                break;
-
-            case 'd':
-                preg_match('#(\d{4})(\d{3})#', $timeKey, $m);
-                var_dump($limit);
-                $time = strtotime("{$year}-01-01 00:00:00") + ($m[2] - 1 + $limit) * 86400;
-                $time = min($nextYear, $time);
-                break;
-
-            case 'M':
-            case 'i':
-                # 分钟 201604100900
-                preg_match('#(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})#', $timeKey, $m);
-                $time  = strtotime("{$year}-{$m[2]}-{$m[3]} {$m[4]}:00:00");
-                $time += min(3600, 60 * ($m[5] + $limit));
-                break;
-
-            case 's':
-                # 秒 20160410090000
-                preg_match('#(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})#', $timeKey, $m);
-                $time  = strtotime("{$year}-{$m[2]}-{$m[3]} {$m[4]}:{$m[5]}:00");
-                $time += min(60, ($m[6] + $limit));
-                break;
-
-            case 'h':
-            default:
-                # 小时 2016041000
-                preg_match('#(\d{4})(\d{2})(\d{2})(\d{2})#', $timeKey, $m);
-                $time  = strtotime("{$year}-{$m[2]}-{$m[3]} 00:00:00");
-                $time += min(86400, 3600 * ($m[4] + $limit));
-
-                break;
-        }
-
-        if (count($cache) > 100)
-        {
-            $cache = array_slice($cache, -10, null, true);
-        }
-
-        $cache[$key] = $time;
-        return $time;
     }
 }

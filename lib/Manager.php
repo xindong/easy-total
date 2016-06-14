@@ -221,7 +221,7 @@ class Manager
                         $option['end'] = $old['end'];
                     }
 
-                    $seriesOption = self::createSeriesByQueryOption($option);
+                    $seriesOption = self::createSeriesByQueryOption($option, $this->worker->queries);
                     if (false !== $this->worker->redis->hSet('series', $seriesOption['key'], serialize($seriesOption)) && false !== $this->worker->redis->hSet('queries', $key, serialize($option)))
                     {
                         # 处理旧的序列设置
@@ -298,7 +298,7 @@ class Manager
 
                     $sql = $option['sql'];
                     $key = null;
-                    foreach (FlushData::$queries as $k => $query)
+                    foreach ($this->worker->queries as $k => $query)
                     {
                         if ($sql === $query['sql'])
                         {
@@ -625,10 +625,11 @@ class Manager
     /**
      * 创建一个序列设置, 如果存在则合并
      *
-     * @param $option
+     * @param array $option
+     * @param array $queries
      * @return array
      */
-    public static function createSeriesByQueryOption($option)
+    public static function createSeriesByQueryOption($option, $queries)
     {
         $seriesKey = $option['seriesKey'];
 
@@ -649,7 +650,7 @@ class Manager
 
         # 设置查询的映射
         $seriesOption['queries'] = [];
-        foreach(FlushData::$queries as $k => $v)
+        foreach($queries as $k => $v)
         {
             if ($v['seriesKey'] == $seriesKey)
             {
