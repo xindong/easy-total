@@ -360,7 +360,7 @@ class TaskWorker
             $this->taskProcess->close();
 
             # 有跑着的任务
-            while (trim(`ps -eopid | grep {$this->taskProcess->pid}`))
+            while (trim(`ps -eopid | grep {$this->taskProcess->pid}`) == $this->taskProcess->pid)
             {
                 warn("task $this->taskId process is running, have been waiting for ". (time() - $time) ."s.");
 

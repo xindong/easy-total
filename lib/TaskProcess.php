@@ -1011,13 +1011,6 @@ class TaskProcess
      */
     public static function mergeTotal(& $total, $newTotal)
     {
-        if (!$newTotal->sum)
-        {
-            var_dump($newTotal->sum);
-            $e = new Exception('------------------------');
-            echo $e->getTraceAsString();
-        }
-
         /**
          * @var DataTotalItem $total
          * @var DataTotalItem $newTotal
