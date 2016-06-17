@@ -70,7 +70,7 @@ class DataDriver
                 $data = new DataTotalItem();
             }
 
-            $data->lastLoadTime = time();
+            $data->updateTime = time();
 
             return $data;
         }
@@ -102,26 +102,6 @@ class DataDriver
 
         try
         {
-            if (!$total->lastLoadTime)
-            {
-                $data = $this->getTotal($uniqueId);
-
-                # 设置数据
-                $total->lastLoadTime = $data->lastLoadTime;
-                $total->count        = $data->count;
-                $total->sum          = $data->sum;
-                $total->min          = $data->min;
-                $total->max          = $data->max;
-                $total->first        = $data->first;
-                $total->last         = $data->last;
-
-                # 唯一数值
-                foreach ($data->dist as $field => $v)
-                {
-                    $total->dist->$field = max($total->dist->$field, $v);
-                }
-            }
-
             switch ($this->config['type'])
             {
                 case 'mysql':
@@ -133,7 +113,6 @@ class DataDriver
                     $rs = $this->connection->set("total,$uniqueId", serialize($total));
                     if (false !== $rs)
                     {
-                        $total->lastLoadTime = microtime(1);
                         return true;
                     }
                     else

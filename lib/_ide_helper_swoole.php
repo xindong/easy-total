@@ -1605,6 +1605,8 @@ class swoole_process
     /**
      * 退出子进程
      *
+     * 在子进程中执行, 不可在主进程里执行, 主进程请用 kill 方法
+     *
      * @param int $status
      */
     public function exit($status = 0)
@@ -1617,6 +1619,7 @@ class swoole_process
      *
      * @param     $pid
      * @param int $sig
+     * @return bool
      */
     static function kill($pid, $sig = SIGTERM)
     {

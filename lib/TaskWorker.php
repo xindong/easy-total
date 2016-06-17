@@ -14,19 +14,12 @@ class TaskWorker
      *
      * @var
      */
-    protected $id;
+    protected $workerId;
 
     /**
      * @var swoole_server
      */
     protected $server;
-
-    /**
-     * 当程序需要终止时如果无法把数据推送出去时临时导出的文件路径（确保数据安全）
-     *
-     * @var string
-     */
-    protected $dumpFile;
 
     /**
      * 当前进程启动时间
@@ -43,62 +36,70 @@ class TaskWorker
     protected $doTime = [];
 
     /**
-     * @var array
+     * @var TaskProcess
      */
-    protected $taskThreaded = [];
+    protected $taskProcess;
 
     protected $autoPause = false;
 
     /**
      * @var array
      */
-    public static $dist = [];
-    /**
-     * @var array
-     */
-    public static $total = [];
-    /**
-     * @var array
-     */
     public static $jobs = [];
-
-    /**
-     * 分配任务执行时间
-     *
-     * @var array
-     */
-    public static $jobTime = [];
 
     public static $serverName;
 
     /**
-     * 单个任务最多积压的任务数
+     * 数据块大小, 默认 1024
      *
      * @var int
      */
-    public static $maxJobs = 10000;
+    protected static $dataBlockSize;
 
-    public function __construct(swoole_server $server, $id, $workerId)
+    /**
+     * 数据块数量, 默认 2 << 16 即 131072
+     *
+     * @var int
+     */
+    protected static $dataBlockCount;
+
+    /**
+     * 当程序需要终止时如果无法把数据推送出去时临时导出的文件路径（确保数据安全）
+     *
+     * @var string
+     */
+    public static $dumpFile;
+
+    public function __construct(swoole_server $server, $taskId, $workerId)
     {
-        require_once __DIR__ .'/TaskData.php';
-        include_once __DIR__ .'/DataDriver.php';
+        require_once __DIR__ .'/DataDriver.php';
+        require_once __DIR__ .'/TaskProcess.php';
 
         $this->server    = $server;
-        $this->taskId    = $id;
-        $this->id        = $workerId;
-        $this->dumpFile  = EtServer::$config['server']['dump_path'] . 'total-task-dump-'. substr(md5(EtServer::$configFile), 16, 8) . '-'. $id .'.txt';
+        $this->taskId    = $taskId;
+        $this->workerId  = $workerId;
         $this->startTime = time();
 
-        # 更新状态
-        $this->updateStatus(1);
-
+        $hash = substr(md5(EtServer::$configFile), 16, 8);
         # 设置配置
-        self::$serverName           = EtServer::$config['server']['host'] .':'. EtServer::$config['server']['port'];
-        self::$maxJobs              = EtServer::$config['server']['max_jobs'] ?: 10000;
-        TaskThreaded::$distConfig   = EtServer::$config['dist'];
-        TaskThreaded::$redisConfig  = EtServer::$config['redis'];
-        TaskThreaded::$outputConfig = EtServer::$config['output'];
-        TaskThreaded::$dumpPath     = EtServer::$config['server']['dump_path'];
+        self::$serverName          = EtServer::$config['server']['host'] .':'. EtServer::$config['server']['port'];
+        self::$dumpFile            = EtServer::$config['server']['dump_path'] .'total-task-dump-'. $hash . '-'. $taskId .'.txt';
+        self::$dataBlockCount      = EtServer::$config['server']['data_block_count'];
+        self::$dataBlockSize       = EtServer::$config['server']['data_block_size'];
+
+        TaskProcess::$dumpFile     = EtServer::$config['server']['dump_path'] .'total-task-process-dump-'. $hash. '-'. $taskId .'.txt';
+        TaskProcess::$dataConfig   = EtServer::$config['data'];
+        TaskProcess::$redisConfig  = EtServer::$config['redis'];
+        TaskProcess::$outputConfig = EtServer::$config['output'];
+
+        if ($taskId > 0)
+        {
+            # 创建子进程
+            # $taskId = 0 的进程用于清理数据, 不分配任务
+            $task = new TaskProcess($this->taskId);
+            $task->start();
+            $this->taskProcess = $task;
+        }
     }
 
     public function init()
@@ -115,8 +116,6 @@ class TaskWorker
      */
     public function onTask(swoole_server $server, $taskId, $fromId, $data)
     {
-        usleep(10000 * $this->taskId);
-
         try
         {
             if (is_object($data))
@@ -126,7 +125,9 @@ class TaskWorker
             }
             elseif (is_array($data))
             {
-                $type = 'list';
+                usleep(mt_rand(1, 99999));
+                print_r($data);
+                echo serialize($data);
             }
             else
             {
@@ -136,105 +137,28 @@ class TaskWorker
 
             switch ($type)
             {
-                case 'DataDist':
-                    # 唯一数
-                    foreach ($data as $uniqueId => $value)
-                    {
-                        if (isset(self::$dist[$uniqueId]))
-                        {
-                            foreach ($value as $field => $items)
-                            {
-                                if (isset(self::$dist[$uniqueId][$field]))
-                                {
-                                    self::$dist[$uniqueId][$field] = array_merge(self::$dist[$uniqueId][$field], $items);
-                                }
-                                else
-                                {
-                                    self::$dist[$uniqueId][$field] = $items;
-                                }
-                            }
-                        }
-                        else
-                        {
-                            self::$dist[$uniqueId] = $value;
-                        }
-
-                        if (!isset(self::$jobTime[$uniqueId]))
-                        {
-                            self::setJobTime($uniqueId);
-                        }
-                    }
-
-                    break;
-
-                case 'DataTotal':
-                    # 合并统计数
-                    foreach ($data as $uniqueId => $value)
-                    {
-                        if (!isset(self::$total[$uniqueId]) || !self::$total[$uniqueId]->lastLoadTime)
-                        {
-                            if (!isset($driver))
-                            {
-                                $driver = new DataDriver(TaskThreaded::$distConfig);
-                            }
-
-                            # 在以前记录的数据里获取历史统计数据
-                            $rs = $driver->getTotal($uniqueId);
-
-                            if ($rs)
-                            {
-                                if (!isset(self::$total[$uniqueId]))
-                                {
-                                    self::$total[$uniqueId] = $rs;
-                                }
-                                else
-                                {
-                                    # 数据合并
-                                    TaskThreaded::totalDataMerge(self::$total[$uniqueId], $rs);
-                                }
-
-                                # 更新加载时间
-                                self::$total[$uniqueId]->lastLoadTime = time();
-                            }
-                        }
-
-                        # 合并已存在的统计数据
-                        TaskThreaded::totalDataMerge(self::$total[$uniqueId], $value);
-
-                        if (!isset(self::$jobTime[$uniqueId]))
-                        {
-                            self::setJobTime($uniqueId);
-                        }
-                    }
-                    break;
-
-                case 'DataJobs':
+                case 'DataJob':
                     # 任务数据
-                    foreach ($data as $uniqueId => $value)
+                    /**
+                     * @var DataJob $data;
+                     */
+                    $uniqueId = $data->uniqueId;
+                    if (isset(self::$jobs[$uniqueId]))
                     {
-                        if (isset(self::$jobs[$uniqueId]))
-                        {
-                            foreach ($value as $k => $v)
-                            {
-                                self::$jobs[$uniqueId][$k] = $v;
-                            }
-                        }
-                        else
-                        {
-                            self::$jobs[$uniqueId] = $value;
-                        }
-
-                        if (!isset(self::$jobTime[$uniqueId]))
-                        {
-                            self::setJobTime($uniqueId);
-                        }
+                        # 合并任务
+                        self::$jobs[$uniqueId]->merge($data);
+                    }
+                    else
+                    {
+                        # 设置一个任务投递时间
+                        $data->taskTime        = self::getJobTime($data);
+                        self::$jobs[$uniqueId] = $data;
                     }
 
                     # 当前任务数
-                    if (!$this->autoPause && ($count = count(self::$jobs)) > self::$maxJobs)
+                    if (!$this->autoPause && false === $this->checkTaskProcessStatus())
                     {
                         # 积压的任务数非常多
-                        debug("task $this->id jobs num: $count");
                         info("the jobs is too much, now notify server pause accept new data.");
                         $this->notifyWorkerPause();
                     }
@@ -242,7 +166,7 @@ class TaskWorker
 
                 case 'job':
                     # 每3秒会被调用1次
-                    $this->saveData();
+                    $this->taskJob();
                     break;
 
                 case 'clean':
@@ -257,7 +181,7 @@ class TaskWorker
         }
 
         # 更新内存占用
-        if (!isset($doTime['updateMemory']) || time() - $doTime['updateMemory'] >= 60)
+        if (!isset($this->doTime['updateMemory']) || time() - $this->doTime['updateMemory'] >= 60)
         {
             list($redis) = self::getRedis();
             if ($redis)
@@ -265,59 +189,36 @@ class TaskWorker
                 /**
                  * @var Redis $redis
                  */
-                $redis->hSet('server.memory', self::$serverName .'_'. $this->id, serialize([memory_get_usage(true), time(), self::$serverName, $this->id]));
+                $redis->hSet('server.memory', self::$serverName .'_'. $this->workerId, serialize([memory_get_usage(true), time(), self::$serverName, $this->workerId]));
             }
-            $doTime['updateMemory'] = time();
+            $this->doTime['updateMemory'] = time();
         }
 
         # 标记状态为成功
-        $this->updateStatus(1);
+        $this->updateStatus(true);
 
         # 任务数小余一定程度后继续执行
         if ($this->autoPause)
         {
-            if (count(self::$jobs) < self::$maxJobs / 10)
+            if ($this->taskProcess->jobsTable->count() < self::$dataBlockCount * 0.3)
             {
                 info("now notify server continue accept new data.");
                 $this->notifyWorkerContinue();
             }
         }
-
-        # 如果启动超过1小时
-        if (time() - $this->startTime > 3600)
-        {
-            if (mt_rand(1, 200) === 1)
-            {
-                # 重启进程避免数据溢出、未清理数据占用超大内存
-                $this->shutdown();
-
-                info('now restart task worker: '. $this->taskId);
-
-                exit(0);
-            }
-        }
-
-//        usleep($this->taskId * 100);
-//        echo "================={$this->taskId}\n";
-//        if (self::$dist)
+//
+//        # 如果启动超过1小时
+//        if (time() - $this->startTime > 3600)
 //        {
-//            echo 'self::$dist=';
-//            print_r(self::$dist);
-//        }
-//        if (self::$total)
-//        {
-//            echo 'self::$total=';
-//            print_r(self::$total);
-//        }
-//        if (self::$jobs)
-//        {
-//            echo 'self::$jobs=';
-//            print_r(self::$jobs);
-//        }
-//        if (self::$jobs)
-//        {
-//            echo 'self::$jobTime=';
-//            print_r(self::$jobTime);
+//            if (mt_rand(1, 200) === 1)
+//            {
+//                # 重启进程避免数据溢出、未清理数据占用超大内存
+//                $this->shutdown();
+//
+//                info('now restart task worker: '. $this->taskId);
+//
+//                exit(0);
+//            }
 //        }
     }
 
@@ -348,103 +249,100 @@ class TaskWorker
     }
 
     /**
-     * 保存数据
+     * 处理数据任务
      */
-    public function saveData()
+    protected function taskJob()
     {
-        if ($this->taskThreaded)
+        if (false === $this->checkTaskProcessStatus(true))
         {
-            $this->checkTaskThreaded();
-
-            # 最对3个线程（进程）同时处理
-            if (count($this->taskThreaded) >= 3)
-            {
-                return;
-            }
+            # 列队繁忙, 等待处理
+            return;
         }
 
         $now  = time();
-        # 构造一个新的任务对象（支持多线程或多进程）
-        $task = new TaskThreaded();
-        # 设置当前任务的id
-        $task->taskId = $this->taskId;
-
-        # 获取需要处理的任务
-        foreach (self::$jobTime as $uniqueId => $time)
+        foreach (self::$jobs as $uniqueId => $job)
         {
-            echo ($now - $time);
-            if ($now >= $time)
+            /**
+             * @var DataJob $job
+             */
+            if ($now >= $job->taskTime)
             {
                 # 到达执行任务的时间了
-                if (isset(self::$dist[$uniqueId]))
-                {
-                    $task->dist[$uniqueId] = self::$dist[$uniqueId];
-                    unset(self::$dist[$uniqueId]);
-                }
-
-                if (isset(self::$jobs[$uniqueId]))
-                {
-                    $task->jobs[$uniqueId] = self::$jobs[$uniqueId];
-                    unset(self::$jobs[$uniqueId]);
-                }
-
-                if (!isset(self::$total[$uniqueId]))
-                {
-                    self::$total[$uniqueId] = new DataTotalItem();
-                }
-
-                # 任务统计数值
-                $task->total[$uniqueId] = self::$total[$uniqueId];
+                $this->taskData($job);
 
                 # 移除任务时间
-                unset(self::$jobTime[$uniqueId]);
+                unset(self::$jobs[$uniqueId]);
             }
-        }
-
-        if (count($task->jobs) || count($task->dist))
-        {
-            # 有任务数据
-            $this->taskThreaded[] = $task;
-
-            # 执行
-            $task->start();
         }
     }
 
-
-    protected function checkTaskThreaded()
+    protected function taskData(DataJob $job)
     {
-        $c = false;
-        foreach ($this->taskThreaded as $key => $item)
-        {
-            /**
-             * @var DataThreaded $item
-             */
-            if ($item->isRunning())
-            {
-                if (time() - $item->getLastRunTime() > 300)
-                {
-                    # 一直更新的执行时间超过 5 分钟, 可能是进程死掉了
-                    warn("task process has been dead more than 10 minutes, now kill it.");
-                    $item->kill();
+        $key            = $job->uniqueId;
+        $data           = [];
+        $data['value']  = serialize($job);
+        $data['index']  = 0;
+        $data['length'] = 1 + intval(strlen($data['value']) / self::$dataBlockSize);
+        $jobTable       = $this->taskProcess->jobsTable;
 
-                    unset($this->taskThreaded[$key]);
-                    $c = true;
-                }
-            }
-            else
+        if (strlen($data['value']) > self::$dataBlockSize)
+        {
+            # 超过1000字符则分段截取
+            for($i = 0; $i < $data['length']; $i += self::$dataBlockSize)
             {
-                $item->close();
-                unset($this->taskThreaded[$key]);
-                $c = true;
+                $tmp = [
+                    'index'  => $i,
+                    'length' => $data['length'],
+                    'value'  => substr($data['value'], $i, self::$dataBlockSize),
+                ];
+                $jobTable->set($i > 0 ? "$key,$i" : $key, $tmp);
             }
+            unset($tmp);
+        }
+        else
+        {
+            $jobTable->set($key, $data);
+        }
+    }
+
+    /**
+     * 检查进程状态
+     *
+     * true 表示可以, false 表示繁忙
+     *
+     * @param bool $checkProcess
+     * @return bool
+     */
+    protected function checkTaskProcessStatus($checkProcess = false)
+    {
+        static $max = 0;
+        $dataCount  = $this->taskProcess->jobsTable->count();
+        $max        = max($dataCount, $max);
+
+        if ($dataCount)
+        {
+            debug("task $this->taskId queue data count is $dataCount, max: {$max}");
         }
 
-        if ($c)
+        if ($dataCount > self::$dataBlockCount * 0.667)
         {
-            # 整理数组
-            $this->taskThreaded = array_values($this->taskThreaded);
+            # 积累的任务数已经很多了
+            warn("task queue data is to much. now count: {$dataCount}, max: {$max}");
+            return false;
         }
+
+        if ($checkProcess && time() - $this->taskProcess->getActiveTime() > 300)
+        {
+            # 一直更新的执行时间超过 5 分钟, 可能是进程死掉了
+            warn("task process has been dead more than 10 minutes, now kill it.");
+            $this->taskProcess->kill();
+
+            # 创建新的子进程
+            $this->taskProcess = new TaskProcess($this->taskId);
+            $this->taskProcess->start();
+        }
+
+        return true;
     }
 
 
@@ -454,31 +352,22 @@ class TaskWorker
         $this->dumpData();
 
         # 清空数据
-        self::$jobTime = [];
-        self::$dist    = [];
-        self::$jobs    = [];
+        self::$jobs = [];
 
-        if ($this->taskThreaded)
+        if ($this->taskProcess)
         {
             $time = time();
-            # 有跑着的任务
-            while ($this->taskThreaded)
-            {
-                warn("task $this->taskId have ". count($this->taskThreaded) ." process is running, have been waiting for ". (time() - $time) ."s.");
+            $this->taskProcess->close();
 
-                # 检查任务状态
-                $this->checkTaskThreaded();
+            # 有跑着的任务
+            while (trim(`ps -eopid | grep {$this->taskProcess->pid}`))
+            {
+                warn("task $this->taskId process is running, have been waiting for ". (time() - $time) ."s.");
 
                 if (time() - $time > 300)
                 {
                     # 超过5分钟还没有处理完毕, 通知进程 dump 数据
-                    foreach ($this->taskThreaded as $item)
-                    {
-                        /**
-                         * @var TaskThreaded $item
-                         */
-                        $item->dump();
-                    }
+                    $this->taskProcess->kill();
                     break;
                 }
 
@@ -493,54 +382,36 @@ class TaskWorker
      */
     public function dumpData()
     {
-        if (self::$jobTime || self::$dist || self::$jobs)
+        if (self::$jobs)
         {
-            $dump = [
-                'jobTime' => self::$jobTime,
-                'dist'    => self::$dist,
-                'jobs'    => self::$jobs,
-            ];
-
             # 写入到临时数据里, 下次启动时载入
-            file_put_contents($this->dumpFile, serialize($dump));
+            foreach (self::$jobs as $job)
+            {
+                file_put_contents(self::$dumpFile, serialize($job) ."\r\n", FILE_APPEND);
+            }
         }
     }
 
+    /**
+     * 加载dump出去的数据
+     */
     protected function loadDumpData()
     {
-        if (is_file($this->dumpFile))
+        if (is_file(self::$dumpFile))
         {
-            $tmp = @unserialize(file_get_contents($this->dumpFile));
-            if ($tmp && is_array($tmp))
-            {
-                self::$jobTime = $tmp['jobTime'];
-                self::$dist    = $tmp['dist'];
-                self::$jobs    = $tmp['jobs'];
-            }
-
-            unlink($this->dumpFile);
-        }
-
-        # 读取子进（线）程dump出的数据
-        $dumpFile = EtServer::$config['server']['dump_path'] . 'total-task-process-dump-' . $this->taskId . '.txt';
-        if (is_file($dumpFile))
-        {
-            foreach (explode("\r\n", rtrim(file_get_contents($dumpFile))) as $item)
+            foreach (explode("\r\n", file_get_contents(self::$dumpFile)) as $item)
             {
                 $tmp = @unserialize($item);
-                if ($tmp && is_array($tmp))
+                if ($tmp)
                 {
-                    $task = new TaskThreaded();
-                    $task->taskId = $this->taskId;
-                    $task->restore($tmp);
-
-                    $this->taskThreaded[] = $task;
+                    /**
+                     * @var DataJob $tmp
+                     */
+                    self::$jobs[$tmp->uniqueId] = $tmp;
                 }
-
-                ////////////debug
-                break;
             }
-            unlink($dumpFile);
+
+            unlink(self::$dumpFile);
         }
     }
 
@@ -647,8 +518,6 @@ class TaskWorker
      */
     protected function cleanOldData($redis, $ssdb)
     {
-        $this->updateStatus();
-
         /**
          * @var Redis $redis
          * @var SimpleSSDB $ssdb
@@ -728,7 +597,7 @@ class TaskWorker
                     }
 
                     # 更新状态
-                    $this->updateStatus();
+                    $this->updateStatus(false);
                 }
             }
         }
@@ -798,27 +667,28 @@ class TaskWorker
 
     /**
      * 更新状态
-     *
-     * @param int $status 1 - 成功, 2 - 运行中
      */
-    public function updateStatus($status = 2)
+    public function updateStatus($done = false)
     {
-        EtServer::$taskWorkerStatus->set("task{$this->taskId}", ['status' => $status, 'time' => time()]);
+        $rs = EtServer::$taskWorkerStatus->set("task{$this->taskId}", ['time' => time(), 'status' => $done ? 0 : 1, 'pid' => $this->server->worker_pid]);
     }
 
-    protected static function setJobTime($uniqueId)
+    /**
+     * 获取一个任务投递时间
+     *
+     * @param string $type
+     * @return int
+     */
+    protected static function getJobTime($type)
     {
-        # $key = abcde123af32,1d,hsqj,2016001,123_abc
-        list($seriesKey, $timeOptKey) = explode(',', $uniqueId, 3);
-
         # 保存策略（兼顾数据堆积的内存开销和插入频率对性能的影响）:
         # 时间序列为分钟,秒以及无时间分组的, 每分钟保存一次; 其它时间序列每10分钟保存1次
-        switch (substr($timeOptKey, -1))
+        switch ($type)
         {
-            case 'M':   // 分钟
-            case 'i':   // 分钟
-            case 's':   // 秒
-            case 'e':   // none
+            case 'M':      // 分钟
+            case 'i':      // 分钟
+            case 's':      // 秒
+            case 'none':   // none
                 # 保存间隔1分钟
                 $timeLimit = 60;
                 break;
@@ -830,8 +700,8 @@ class TaskWorker
         }
 
         # 设定下一个任务时间
-        # 按1分钟分组, 并且向后延 60 或 600 秒, 这样可以把跨度较长的任务时间分割开
-        self::$jobTime[$uniqueId] = intval(time() / 60) * 60 + $timeLimit;
+        # 分组并且向后延 60 或 600 秒, 这样可以把跨度较长的任务时间分割开
+        return (1 + intval(time() / 20)) * 20 + $timeLimit;
     }
 
     /**

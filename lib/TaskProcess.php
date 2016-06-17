@@ -1,312 +1,78 @@
 <?php
-
-if (false && class_exists('Thread', false))
-{
-    # todo 多线程模式待测试
-
-    /**
-     * 使用多线程模式的对象
-     *
-     * @see http://cn.php.net/manual/zh/class.threaded.php
-     * Class DataThreaded
-     */
-    abstract class TaskDataThreaded extends Threaded
-    {
-        public $runTime = 0;
-
-        /**
-         * 任务进程ID
-         *
-         * @var int
-         */
-        public $taskId;
-
-        /**
-         * 是否完成
-         *
-         * @var bool
-         */
-        protected $done = false;
-
-        const THREAD_MODE = true;
-
-        /**
-         * 更新状态
-         *
-         * @param int $status 1 - 成功, 2 - 运行中
-         */
-        public function updateStatus($status = 2)
-        {
-            $this->runTime = time();
-            $this->done = $status == 2 ? false : true;
-        }
-
-        /**
-         * 获取最后执行时间
-         *
-         * @return int
-         */
-        public function getLastRunTime()
-        {
-            return $this->runTime;
-        }
-
-        /**
-         * 主进程在退出时通知子进程存档数据
-         */
-        public function dump()
-        {
-            # 导出数据
-            $this->dumpData();
-
-            # 杀掉线程
-            $this->kill();
-        }
-
-        abstract protected function dumpData();
-    }
-}
-else
-{
-
-    /**
-     * 使用多进程模式的对象
-     *
-     * Class DataThreaded
-     */
-    abstract class TaskDataThreaded
-    {
-        public $runTime = 0;
-
-        /**
-         * 启动时间
-         *
-         * @var float
-         */
-        protected $startTime;
-
-        /**
-         * 是否完成
-         *
-         * @var bool
-         */
-        protected $done = false;
-
-        /**
-         * 任务进程ID
-         *
-         * @var int
-         */
-        public $taskId = 0;
-
-        /**
-         * @var swoole_process
-         */
-        protected $process;
-
-        /**
-         * 子进程ID
-         *
-         * @var int
-         */
-        protected $processPid;
-
-        /**
-         * 当前进程是否子进程
-         *
-         * @var bool
-         */
-        protected $isSubProcess = false;
-
-        const THREAD_MODE = false;
-
-        /**
-         * 启动执行
-         *
-         * @return bool
-         */
-        public function start()
-        {
-            # 开启一个子进程
-            $this->process = new swoole_process(function(swoole_process $process)
-            {
-                declare(ticks = 1);
-
-                $sigHandler = function($signo)
-                {
-                    $this->dumpData();
-                    exit;
-                };
-
-                pcntl_signal(SIGTERM, $sigHandler);
-                pcntl_signal(SIGHUP,  $sigHandler);
-                pcntl_signal(SIGINT,  $sigHandler);
-
-                $this->startTime    = microtime(1);
-                $this->isSubProcess = true;
-                $this->processPid   = $process->pid;
-
-                # 子进程里清理下无用的数据释放内存
-                TaskWorker::$dist    = [];
-                TaskWorker::$jobTime = [];
-                TaskWorker::$jobs    = [];
-                TaskWorker::$total   = [];
-
-                # 执行直到完成
-                $this->run();
-
-                # 蜕变成守护进程
-                swoole_process::daemon();
-
-                # 销毁内容
-                $this->clean();
-
-                usleep(10000);
-                # 退出, 不用执行 shutdown_function
-                exit(1);
-            });
-
-            $this->processPid = $this->process->start();
-
-            if ($this->processPid)
-            {
-                debug("fork a new sub process pid is {$this->processPid}");
-
-                # 此时数据已经复制到了子进程里, 可以在主进程里执行清理数据释放内存
-                $this->clean();
-
-                return true;
-            }
-            else
-            {
-                return false;
-            }
-        }
-
-        abstract function clean();
-
-        abstract function run();
-
-        abstract protected function dumpData();
-
-        /**
-         * 是否在运行中（在主进程中调用）
-         *
-         * @return bool
-         */
-        public function isRunning()
-        {
-            $rs = EtServer::$taskWorkerStatus->get("sub{$this->taskId}_{$this->processPid}");
-
-            return $rs['status'] == 1 ? false : true;
-        }
-
-        /**
-         * 设置状态（在子进程里设置）
-         *
-         * @param int $status 1 - 成功, 2 - 运行中
-         */
-        public function updateStatus($status = 2)
-        {
-            # 更新子进程状态
-            EtServer::$taskWorkerStatus->set("sub{$this->taskId}_{$this->processPid}", ['time' => time(), 'status' => $status]);
-
-            $this->done = $status == 2 ? false : true;
-
-            if (IS_DEBUG && $this->done)
-            {
-                debug("sub process (pid: {$this->processPid}) has done, use time: ". (microtime(1) - $this->startTime) .'s');
-            }
-        }
-
-        /**
-         * 获取最后执行时间（在主进程里调用）
-         *
-         * @return int
-         */
-        public function getLastRunTime()
-        {
-            $rs = EtServer::$taskWorkerStatus->get("sub{$this->taskId}_{$this->processPid}");
-
-            return $rs['time'] ?: time();
-        }
-
-        /**
-         * 杀死进程
-         *
-         * 在子进程里不能调用
-         *
-         * @return bool
-         */
-        public function kill()
-        {
-            if ($this->isSubProcess)
-            {
-                # 子进程里不允许调用
-                return false;
-            }
-
-            # 强制杀掉进程
-            swoole_process::kill($this->processPid, 9);
-
-            # 回收资源
-            swoole_process::wait(true);
-
-            return true;
-        }
-
-        /**
-         * 关闭任务, 清理数据
-         */
-        public function close()
-        {
-            EtServer::$taskWorkerStatus->del("sub{$this->taskId}_{$this->processPid}");
-            swoole_process::wait(true);
-            $this->clean();
-        }
-
-        /**
-         * 主进程在退出时通知子进程存档数据
-         */
-        public function dump()
-        {
-            # 发送一个结束程序的信号
-            swoole_process::kill($this->processPid, SIGINT);
-
-            # 回收资源
-            swoole_process::wait(true);
-        }
-    }
-}
-
 /**
- * task worker 中用到的处理数据对象
- *
- * 兼容多线程 Thread 的处理方式, 需要安装 pthreads 扩展 see http://php.net/manual/zh/book.pthreads.php
- *
- * 这个对象在 worker 进程中无用
+ * 任务进程对象
  */
-class TaskThreaded extends TaskDataThreaded
+class TaskProcess
 {
     /**
-     * @var DataObject
+     * 任务进程ID
+     *
+     * @var int
      */
-    public $dist;
+    public $taskId;
 
     /**
-     * @var DataObject
+     * 进程ID
+     *
+     * @var int
      */
-    public $list;
+    public $workerId;
 
     /**
-     * @var DataObject
+     * 子进程ID
+     *
+     * @var int
      */
-    public $jobs;
+    public $pid;
 
     /**
-     * @var DataObject
+     * 任务数据
+     *
+     * @var array
      */
-    public $total;
+    public $jobs = [];
+
+    /**
+     * 任务的缓存数据
+     *
+     * @var array
+     */
+    protected $jobsCache = [];
+
+    /**
+     * 导出的列表数据
+     *
+     * @var array
+     */
+    protected $list = [];
+
+    public $runTime = 0;
+
+    /**
+     * 任务数据对象
+     *
+     * @var swoole_table
+     */
+    public $jobsTable;
+
+    /**
+     * 启动时间
+     *
+     * @var float
+     */
+    protected $startTime;
+
+    /**
+     * @var swoole_process
+     */
+    protected $process;
+
+    /**
+     * 当前进程是否子进程
+     *
+     * @var bool
+     */
+    protected $isSub = false;
 
     /**
      * @var DataDriver
@@ -331,54 +97,402 @@ class TaskThreaded extends TaskDataThreaded
 
     public static $outputConfig = [];
 
-    public static $distConfig = [];
+    public static $dataConfig = [];
 
-    public static $dataLink = [];
+    public static $dumpFile;
 
-    public static $dumpPath = '/tmp/';
-
-    public function __construct()
+    public function __construct($taskId)
     {
-        $this->dist  = new DataObject();
-        $this->list  = new DataObject();
-        $this->jobs  = new DataObject();
-        $this->total = new DataObject();
+        $this->taskId    = $taskId;
+        $this->workerId  = EtServer::$config['conf']['worker_num'];
+        $this->jobsTable = EtServer::$jobsTable[$taskId];
+        $this->driver    = new DataDriver(self::$dataConfig);
+
+        # 读取子进程dump出的数据
+        if (is_file(self::$dumpFile))
+        {
+            $this->loadDumpData();
+        }
     }
 
     public function __destruct()
     {
         $this->clean();
+
+        EtServer::$taskWorkerStatus->del("sub{$this->taskId}_{$this->pid}");
     }
 
-    function clean()
+    /**
+     * 启动执行
+     *
+     * @return bool
+     */
+    public function start()
     {
-        $this->dist  = null;
-        $this->list  = null;
-        $this->jobs  = null;
-        $this->total = null;
+        # 开启一个子进程
+        $this->process = new swoole_process(function(swoole_process $process)
+        {
+            declare(ticks = 1);
+
+            $sigHandler = function($signo)
+            {
+                $this->dumpData();
+                exit;
+            };
+
+            pcntl_signal(SIGTERM, $sigHandler);
+            pcntl_signal(SIGHUP,  $sigHandler);
+            pcntl_signal(SIGINT,  $sigHandler);
+
+            $this->isSub = true;
+            $this->pid   = $process->pid;
+
+            global $argv;
+            EtServer::setProcessName("php ". implode(' ', $argv) ." [task sub process]");
+
+            # 子进程里清理下无用的数据释放内存
+            TaskWorker::$jobs = [];
+
+            # 执行直到完成
+            $this->run();
+
+            # 蜕变成守护进程
+            swoole_process::daemon();
+
+            # 销毁内容
+            $this->clean();
+
+            usleep(10000);
+            # 退出, 不用执行 shutdown_function
+            exit(1);
+        });
+
+        $this->startTime = microtime(1);
+        $this->pid       = $this->process->start();
+
+        if ($this->pid)
+        {
+            debug("fork a new sub process pid is {$this->pid}");
+
+            # 此时数据已经复制到了子进程里, 可以在主进程里执行清理数据释放内存
+            $this->clean();
+
+            return true;
+        }
+        else
+        {
+            return false;
+        }
     }
 
     /**
      * 执行推送数据操作
      */
-    public function run()
+    protected function run()
     {
         # 线程中处理数据
+        $lastCleanTime = time();
         while (true)
         {
             # 更新状态
             $this->updateStatus();
 
-            $this->doSave();
+            # 导入数据
+            $this->importData();
 
-            # 处理完毕
-            if (!$this->done)
+            # 导出数据
+            $this->exportData();
+
+            # 导出数据
+            $this->output();
+
+            if (time() - $lastCleanTime > 60)
             {
-                sleep(1);
+                # 清理下数据
+                $this->cleanData();
+
+                # 更新最后清理的时间
+                $lastCleanTime = time();
+            }
+
+            sleep(1);
+        }
+    }
+
+
+    /**
+     * 设置状态（在子进程里设置）
+     */
+    public function updateStatus()
+    {
+        # 更新子进程状态
+        EtServer::$taskWorkerStatus->set("sub{$this->taskId}_{$this->pid}", ['time' => time()]);
+    }
+
+    /**
+     * 获取最后执行时间（在主进程里调用）
+     *
+     * @return int
+     */
+    public function getActiveTime()
+    {
+        $rs = EtServer::$taskWorkerStatus->get("sub{$this->taskId}_{$this->pid}");
+
+        return $rs['time'] ?: time();
+    }
+
+    /**
+     * 杀死进程
+     *
+     * 在子进程里不能调用
+     *
+     * @return bool
+     */
+    public function kill()
+    {
+        if ($this->isSub)
+        {
+            # 子进程里不允许调用
+            return false;
+        }
+        EtServer::$taskWorkerStatus->del("sub{$this->taskId}_{$this->pid}");
+
+        # 强制杀掉进程
+        swoole_process::kill($this->pid, 9);
+
+        # 关闭管道
+        $this->process->close();
+
+        # 回收资源
+        swoole_process::wait(false);
+
+        return true;
+    }
+
+    /**
+     * 主进程退出时通知子进程存档数据(在主进程中执行)
+     */
+    public function close()
+    {
+        # 退出子进程
+        swoole_process::kill($this->pid, SIGINT);
+
+        # 关闭管道
+        $this->process->close();
+
+        EtServer::$taskWorkerStatus->del("sub{$this->taskId}_{$this->pid}");
+
+        # 回收资源
+        swoole_process::wait(true);
+    }
+
+    /**
+     * 存档数据（在子进程中执行）
+     */
+    protected function dumpData()
+    {
+        # 写入文件
+        foreach ($this->jobs as $job)
+        {
+            file_put_contents(self::$dumpFile, 'jobs,'. serialize($job) ."\r\n", FILE_APPEND);
+        }
+
+        if ($this->list)
+        {
+            file_put_contents(self::$dumpFile, 'list,'. serialize($this->list) ."\r\n", FILE_APPEND);
+        }
+    }
+
+    /**
+     * 加载数据(主进程中执行)
+     */
+    protected function loadDumpData()
+    {
+        if (!is_file(self::$dumpFile))return;
+
+        foreach (explode("\r\n", file_get_contents(self::$dumpFile)) as $item)
+        {
+            if (!$item)continue;
+
+            $type = substr($item, 0, 4);
+            $tmp  = @unserialize(substr($item, 5));
+
+            if ($tmp)
+            {
+                if ($type === 'jobs')
+                {
+                    $this->jobs[$tmp->uniqueId] = $tmp;
+                }
+                elseif ($type === 'list')
+                {
+                    $this->list = $tmp;
+                }
+            }
+        }
+
+        unlink(self::$dumpFile);
+    }
+
+    /**
+     * 清理数据
+     */
+    function clean()
+    {
+        $this->list  = null;
+        $this->jobs  = null;
+    }
+
+    /**
+     * 从共享内存块内导入数据
+     */
+    protected function importData()
+    {
+        $begin = microtime(1);
+        foreach ($this->jobsTable as $key => $item)
+        {
+            if ($item['index'] > 0)
+            {
+                # 分块的片段数据
+                continue;
+            }
+
+            $string  = $item['value'];
+            $tmpKeys = [];
+            if ($item['length'] > 1)
+            {
+                for ($i = 1; $i <= $item['length']; $i++)
+                {
+                    $tmpKey  = "$key,$i";
+                    $tmp     = $this->jobsTable->get($tmpKey);
+
+                    if ($tmp)
+                    {
+                        $string .= $tmp['value'];
+                    }
+                    else
+                    {
+                        usleep(3000);
+                        $tmp = $this->jobsTable->get($tmpKey);
+                        if ($tmp)
+                        {
+                            $string .= $tmp['value'];
+                        }
+                        else
+                        {
+                            warn("get swoole_table error, key: $tmpKey");
+                        }
+                    }
+                }
+            }
+
+            /**
+             * @var DataJob $job
+             */
+            $job = @unserialize($string);
+            if (false === $job)
+            {
+                warn("unserialize data error, key: $key, see file /tmp/easy_total_error_unserialize_data_$key");
+                file_put_contents("/tmp/easy_total_error_unserialize_data_$key", $string);
             }
             else
             {
+                $uniqueId = $job->uniqueId;
+
+                if (isset($this->jobs[$uniqueId]))
+                {
+                    # 在待处理的列队里存在, 直接合并数据
+                    $this->jobs[$uniqueId]->merge($job);
+                }
+                elseif (isset($this->jobsCache[$uniqueId]))
+                {
+                    # 在缓存里有数据
+                    $this->jobsCache[$uniqueId]->merge($job);
+
+                    # 赋值到 jobs 列表里
+                    $this->jobs[$uniqueId] = $this->jobsCache[$uniqueId];
+                }
+                else
+                {
+                    # 加载老的数据
+                    $totalItem = $this->driver->getTotal($uniqueId);
+
+                    # 读取失败则可能是存储数据的地方有问题, 不再继续读取
+                    if (false === $totalItem)return;
+
+                    # 合并统计
+                    self::mergeTotal($job->total, $totalItem);
+
+                    # 放到对象列表里进行处理
+                    $this->jobs[$uniqueId] = $job;
+                }
+
+                # 设置活跃时间
+                $this->jobs[$uniqueId]->achiveTime = time();
+
+                # 标记成未导出
+                $this->jobs[$uniqueId]->saved = false;
+            }
+
+            # 移除内存中数据
+            $this->jobsTable->del($key);
+            if ($tmpKeys)foreach($tmpKeys as $tmpKey)
+            {
+                $this->jobsTable->del($tmpKey);
+            }
+
+            if (count($this->jobs) > 10000 || microtime(1) - $begin > 0.5)
+            {
+                # 读取一定量数据
                 break;
+            }
+        }
+
+        return;
+    }
+
+    /**
+     * 导出数据
+     *
+     * 如果使用了多线程模式, 这个方法是在新建立的线程里运行的了
+     *
+     * @param int $taskWorkerId
+     */
+    public function exportData()
+    {
+        if ($this->jobs)
+        {
+            if (count($this->jobsCache) > 50000)
+            {
+                # 如果数据太多则清理下
+                $this->jobsCache = array_slice($this->jobsCache, -5000, null, true);
+            }
+
+            foreach ($this->jobs as $uniqueId => $job)
+            {
+                /**
+                 * @var DataJob $job
+                 */
+                if ($job->dist)
+                {
+                    if (!$this->save($job))
+                    {
+                        # 保存失败, 处理下一个
+                        continue;
+                    }
+                }
+
+                # 导出到列表
+                if ($this->exportToListByJob($job))
+                {
+                    # 移到任务缓存数组里
+                    $this->jobsCache[$uniqueId] = $job;
+
+                    # 从当前任务中移除
+                    unset($this->jobs[$uniqueId]);
+                }
+
+                # 更新状态
+                $this->updateStatus();
             }
         }
     }
@@ -386,104 +500,36 @@ class TaskThreaded extends TaskDataThreaded
     /**
      * 保存数据
      *
-     * 如果使用了多线程模式, 这个方法是在新建立的线程里运行的了
-     *
-     * @param int $taskWorkerId
-     */
-    public function doSave()
-    {
-        if (!$this->driver)
-        {
-            $this->driver = new DataDriver(self::$distConfig);
-        }
-
-        # 保存唯一数
-        if (count($this->dist))
-        {
-            foreach ($this->dist as $uniqueId => $value)
-            {
-                if ($this->saveDist($uniqueId))
-                {
-                    # 保存唯一值
-                    $this->driver->saveTotal($uniqueId, $this->total[$uniqueId]);
-                }
-            }
-
-            # 更新状态
-            $this->updateStatus();
-        }
-
-        if (count($this->jobs))
-        {
-            foreach ($this->jobs as $uniqueId => $value)
-            {
-                # 更新下唯一序列统计值
-                if ($this->dist[$uniqueId])
-                {
-                    if (false === $this->saveDist($uniqueId))
-                    {
-                        continue;
-                    }
-
-                    # 保存统计值
-                    $this->driver->saveTotal($uniqueId, $this->total[$uniqueId]);
-                }
-
-                # 导出到列表
-                if ($this->exportList($uniqueId, $value))
-                {
-                    # 移除任务列表, 释放内存
-                    unset($this->jobs[$uniqueId]);
-                }
-            }
-
-            # 更新状态
-            $this->updateStatus();
-        }
-
-        # 导出数据
-        $this->output();
-
-        # 是否完成
-        $done = $this->dist->count() || $this->jobs->count() || $this->list->count() || self::$sendEvents ? false : true;
-
-        # 更新状态
-        $this->updateStatus($done ? 1 : 2);
-    }
-
-    /**
-     * 保存唯一数据
-     *
      * @param $uniqueId
      * @return bool
      */
-    protected function saveDist($uniqueId)
+    protected function save(DataJob $job)
     {
-        foreach ($this->dist[$uniqueId] as $field => $v)
+        foreach ($job->dist as $field => $v)
         {
-            if ($count = $this->driver->saveDist($uniqueId, $field, $v))
+            if ($count = $this->driver->saveDist($job->uniqueId, $field, $v))
             {
-                # 更新统计数
-                if (!isset($this->total[$uniqueId]))
-                {
-                    $this->total[$uniqueId] = new DataTotalItem();
-                }
-                $this->total[$uniqueId]->dist[$field] = $count;
+                $job->total->dist[$field] = $count;
 
-                # 清理数据
-                unset($this->dist[$uniqueId][$field]);
-                if (!count($this->dist[$uniqueId]))
-                {
-                    unset($this->dist[$uniqueId]);
-                }
+                # 保存成功后, 移除列表内容释放内存
+                unset($job->dist[$field]);
             }
             else
             {
                 return false;
             }
         }
+        unset($field, $v);
 
-        return true;
+        # 保存统计数据
+        $rs = $this->driver->saveTotal($job->uniqueId, $job->total);
+
+        if ($rs)
+        {
+            $job->saved = true;
+        }
+
+        return $rs;
     }
 
     /**
@@ -493,66 +539,47 @@ class TaskThreaded extends TaskDataThreaded
      * @param $listData
      * @return bool
      */
-    public function exportList($uniqueId, $listData)
+    public function exportToListByJob(DataJob $job)
     {
-        list($id, $timeOptKey, $timeKey, $time, $app, $seriesKey, $item) = $listData;
+        $seriesKey = $job->seriesKey;
 
-        if (!isset(TaskThreaded::$series[$seriesKey]))
+        if (!isset(TaskProcess::$series[$seriesKey]))
         {
             # 没有对应的序列
             $redis = self::getRedis();
             if ($redis)
             {
-                TaskThreaded::$series = array_map('unserialize', $redis->hGetAll('series'));
+                TaskProcess::$series = array_map('unserialize', $redis->hGetAll('series'));
             }
             else
             {
                 return false;
             }
 
-            if (!TaskThreaded::$series[$seriesKey])
+            if (!TaskProcess::$series[$seriesKey])
             {
                 # 重新获取后序列还不存在
                 return true;
             }
         }
 
-        $seriesOption = TaskThreaded::$series[$seriesKey];
+        $seriesOption = TaskProcess::$series[$seriesKey];
         $queries      = $seriesOption['queries'] ?: [];
 
-        /**
-         * @var DataTotalItem $total
-         */
-        $total = $this->total[$uniqueId];
-
-        # 如果有函数统计并且当前的统计数据是没有更新过的, 先更新下统计数据
-        if ($seriesOption['function'] && !$this->total[$uniqueId]->lastLoadTime)
+        if ($job->timeOpType === 'none')
         {
-            try
-            {
-                $oldTotal = $this->driver->getTotal($uniqueId);
-                if ($oldTotal)
-                {
-                    self::totalDataMerge($total, $oldTotal);
-                    $total->lastLoadTime = time();
-                }
-                else
-                {
-                    return false;
-                }
-            }
-            catch (Exception $e)
-            {
-                warn($e->getMessage());
-                return false;
-            }
+            $timeOptKey = 'none';
+        }
+        else
+        {
+            $timeOptKey = $job->timeOpLimit . $job->timeOpType;
         }
 
         if (isset($queries[$timeOptKey]))
         {
             foreach ($queries[$timeOptKey] as $queryKey)
             {
-                if (!isset(TaskThreaded::$queries[$queryKey]))
+                if (!isset(TaskProcess::$queries[$queryKey]))
                 {
                     if (!isset($redis))
                     {
@@ -560,10 +587,10 @@ class TaskThreaded extends TaskDataThreaded
                         if (false === $redis)return false;
                     }
 
-                    TaskThreaded::$queries = array_map('unserialize', $redis->hGetAll('queries'));
+                    TaskProcess::$queries = array_map('unserialize', $redis->hGetAll('queries'));
                 }
 
-                $queryOption = TaskThreaded::$queries[$queryKey];
+                $queryOption = TaskProcess::$queries[$queryKey];
                 if (!$queryOption)
                 {
                     # 没有对应的查询
@@ -575,13 +602,13 @@ class TaskThreaded extends TaskDataThreaded
 
                 # 生成数据
                 $data = [
-                    '_id'    => $id,
-                    '_group' => $timeKey,
+                    '_id'    => $job->dataId,
+                    '_group' => $job->timeKey,
                 ];
 
                 if ($queryOption['allField'])
                 {
-                    $data += $item;
+                    $data += $job->data;
                 }
 
                 # 排除字段
@@ -607,18 +634,18 @@ class TaskThreaded extends TaskDataThreaded
                             case 'min':
                             case 'max':
                             case 'dist':
-                                $data[$as] = $total->$type[$field];
+                                $data[$as] = $job->total->$type[$field];
                                 break;
 
                             case 'first':
                             case 'last':
-                                $data[$as] = $total->$type[$field][0];
+                                $data[$as] = $job->total->$type[$field][0];
                                 break;
 
                             case 'avg':
                                 # 平均数
-                                $sum   = $total->sum[$field];
-                                $count = $total->count['*'];
+                                $sum   = $job->total->sum[$field];
+                                $count = $job->total->count['*'];
                                 if ($count > 0)
                                 {
                                     $data[$as] = $sum / $count;
@@ -653,7 +680,7 @@ class TaskThreaded extends TaskDataThreaded
                     {
                         case 'date':
                             # 处理时间变量替换
-                            $saveAs = str_replace($tmp[2], explode(',', date($tmp[3], $time)), $tmp[0]);
+                            $saveAs = str_replace($tmp[2], explode(',', date($tmp[3], $job->time)), $tmp[0]);
                             break;
 
                         default:
@@ -668,7 +695,7 @@ class TaskThreaded extends TaskDataThreaded
                 }
 
                 # 拼接 tag
-                $tag = self::$outputConfig['prefix'] ."$app.$saveAs";
+                $tag = self::$outputConfig['prefix'] ."$job->app.$saveAs";
 
                 # 记录到导出列表数据列
                 if (!isset($this->list[$tag]))
@@ -677,7 +704,7 @@ class TaskThreaded extends TaskDataThreaded
                 }
 
                 # 加入列表
-                $this->list[$tag][] = json_encode([$time, $data], JSON_UNESCAPED_UNICODE);
+                $this->list[$tag][] = json_encode([$job->time, $data], JSON_UNESCAPED_UNICODE);
             }
         }
 
@@ -709,6 +736,8 @@ class TaskThreaded extends TaskDataThreaded
                 {
                     warn("push data {$tag} fail. fluent server: " . self::$outputConfig['type'] . ': ' . self::$outputConfig['link']);
                 }
+
+                $this->updateStatus();
             }
 
             return true;
@@ -727,36 +756,37 @@ class TaskThreaded extends TaskDataThreaded
     }
 
     /**
-     * 恢复数据重启
-     *
-     * @use $this->start()
-     * @param $data
+     * 清理过期的任务数据
      */
-    public function restore($data)
+    protected function cleanData()
     {
-        $this->jobs   = $data['jobs'];
-        $this->dist   = $data['dist'];
-        $this->list   = $data['list'];
-        $this->total  = $data['total'];
+        $now = time();
+        foreach ($this->jobsCache as $key => $job)
+        {
+            /**
+             * @var DataJob $job
+             */
+            if ($now - $job->activeTime > 300)
+            {
+                # 移除对象
+                unset($this->jobs[$key]);
+            }
+        }
 
-        $this->start();
+        $memory = memory_get_usage(true);
+        debug("task process use memory: " . number_format($memory / 1024 / 1024, 3) .'MB');
+
+        if ($memory > 1024 * 1024 * 1024 * 2)
+        {
+            # 占用大量内存, 释放内存缓存中的对象
+            $this->jobsCache = [];
+        }
+
+        # 更新内存使用统计
+        $redis = self::getRedis();
+        $redis->hSet('server.memory', TaskWorker::$serverName .'_'. $this->workerId .'_0', serialize([memory_get_usage(true), time(), TaskWorker::$serverName, $this->workerId]));
+        $redis->close();
     }
-
-    protected function dumpData()
-    {
-        $dumpFile = self::$dumpPath . 'total-task-process-dump-' . $this->taskId . '.txt';
-
-        $data = [
-            'dist'  => $this->dist,
-            'jobs'  => $this->jobs,
-            'list'  => $this->list,
-            'total' => $this->total,
-        ];
-
-        # 写入文件
-        file_put_contents($dumpFile, serialize($data) ."\r\n", FILE_APPEND);
-    }
-
 
     /**
      * 检查ACK返回
@@ -979,8 +1009,15 @@ class TaskThreaded extends TaskDataThreaded
      * @param $newTotal
      * @return DataTotalItem
      */
-    public static function totalDataMerge(& $total, $newTotal)
+    public static function mergeTotal(& $total, $newTotal)
     {
+        if (!$newTotal->sum)
+        {
+            var_dump($newTotal->sum);
+            $e = new Exception('------------------------');
+            echo $e->getTraceAsString();
+        }
+
         /**
          * @var DataTotalItem $total
          * @var DataTotalItem $newTotal

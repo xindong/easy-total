@@ -6,7 +6,7 @@ class MainWorker
      *
      * @var int
      */
-    public $id = 0;
+    public $workerId = 0;
 
     /**
      * @var swoole_server
@@ -99,13 +99,6 @@ class MainWorker
     protected $dumpFile = '';
 
     /**
-     * 导出的数据内容
-     *
-     * @var array
-     */
-    protected $dumpFileData = [];
-
-    /**
      * 记录数据的数组
      *
      * @var array
@@ -151,7 +144,7 @@ class MainWorker
         require_once __DIR__ .'/FlushData.php';
 
         $this->server    = $server;
-        $this->id        = $id;
+        $this->workerId  = $id;
         $this->dumpFile  = EtServer::$config['server']['dump_path'] .'total-dump-'. substr(md5(EtServer::$configFile), 16, 8) . '-'. $id .'.txt';
         $this->flushData = new FlushData();
 
@@ -212,24 +205,7 @@ class MainWorker
         });
 
         # 读取未处理完的数据
-        if (is_file($this->dumpFile))
-        {
-            foreach (explode("\n", trim(file_get_contents($this->dumpFile))) as $item)
-            {
-                $tmp = @unserialize($item);
-                if ($tmp)
-                {
-                    $this->dumpFileData[] = $tmp;
-                }
-            }
-
-            if ($this->dumpFileData)
-            {
-                $this->flushData = array_shift($this->dumpFileData);
-            }
-
-            unlink($this->dumpFile);
-        }
+        $this->loadDumpData();
 
         if ($this->redis)
         {
@@ -259,7 +235,7 @@ class MainWorker
 
         # 按进程数为每个 worker 设定一个时间平均分散的定时器
         $limit  = intval(EtServer::$config['server']['merge_time_ms'] ?: 5000);
-        $aTime  = intval($limit * $this->id / $this->server->setting['worker_num']);
+        $aTime  = intval($limit * $this->workerId / $this->server->setting['worker_num']);
         $mTime  = intval(microtime(1) * 1000);
         $aTime += $limit * ceil($mTime / $limit) - $mTime;
 
@@ -307,7 +283,7 @@ class MainWorker
                 if ($this->redis)
                 {
                     # 更新监控内存
-                    $this->redis->hSet('server.memory', self::$serverName .'_'. $this->id, serialize([memory_get_usage(true), self::$timed, self::$serverName, $this->id]));
+                    $this->redis->hSet('server.memory', self::$serverName .'_'. $this->workerId, serialize([memory_get_usage(true), self::$timed, self::$serverName, $this->workerId]));
                 }
             });
 
@@ -339,14 +315,14 @@ class MainWorker
 
 
         # 进程定时重启, 避免数据没清理占用较大内存的情况
-        swoole_timer_tick(mt_rand(1000 * 3600, 1000 * 3600 * 3), function()
-        {
-            info('now restart worker: '. $this->id);
-            $this->server->stop();
-        });
+//        swoole_timer_tick(mt_rand(1000 * 3600, 1000 * 3600 * 3), function()
+//        {
+//            info('now restart worker: '. $this->id);
+//            $this->server->stop();
+//        });
 
         # 只有需要第一个进程处理
-        if ($this->id == 0)
+        if ($this->workerId == 0)
         {
             # 每3秒通知处理一次
             swoole_timer_tick(3000, function()
@@ -356,21 +332,33 @@ class MainWorker
                 # 通知 taskWorker 处理, 不占用当前 worker 资源
                 for($i = 1; $i < $this->server->setting['task_worker_num']; $i++)
                 {
-                    $status = EtServer::$taskWorkerStatus->get("task{$i}");
-                    # 1表示成功, 2表示运行中
-                    if (!$status || $status['status'] == 1)
+                    $rs = EtServer::$taskWorkerStatus->get("task{$i}");
+                    # $rs['status'] 1表示忙碌, 0表示空闲
+                    if (!$rs || !$rs['status'])
                     {
                         # 更新状态
-                        EtServer::$taskWorkerStatus->set("task{$i}", ['status' => 0, 'time' => self::$timed]);
+                        EtServer::$taskWorkerStatus->set("task{$i}", ['status' => 1, 'time' => self::$timed]);
 
                         # 调用任务
                         $this->server->task('job', $i);
                     }
-                    elseif (self::$timed - $status['time'] > 300)
+                    elseif ($rs['pid'] && self::$timed - $rs['time'] > 300)
                     {
-                        # 5分钟还没反应, 也许是卡死了, 发送一个重启信号, 这种情况下可能会丢失部分数据
+                        # 5分钟还没反应, 避免极端情况下卡死, 发送一个重启信号, 这种情况下可能会丢失部分数据
                         warn("task worker {$i} is dead, now restart it.");
-                        swoole_process::kill($i + $this->server->setting['worker_num'], 9);
+                        swoole_process::kill($rs['pid']);
+                        EtServer::$taskWorkerStatus->del("task{$i}");
+
+                        # 过5秒后处理
+                        $pid = $rs['pid'];
+                        swoole_timer_after(5000, function() use ($pid)
+                        {
+                            if (trim(`ps -eopid | grep $pid`))
+                            {
+                                # 如果还存在进程, 强制关闭
+                                swoole_process::kill($pid, 9);
+                            }
+                        });
                     }
                 }
             });
@@ -409,7 +397,7 @@ class MainWorker
      */
     public function onReceive(swoole_server $server, $fd, $fromId, $data)
     {
-        if (!$this->redis || $this->pause || $this->dumpFileData)
+        if (!$this->redis || $this->pause)
         {
             # 没有连接上redis, 或者是还存在没处理完的数据
             # 关闭连接, 不接受任何数据
@@ -554,7 +542,7 @@ class MainWorker
 
         if (IS_DEBUG)
         {
-            debug("worker: $this->id, tag: $tag, data length: " . strlen($data));
+            debug("worker: $this->workerId, tag: $tag, data length: " . strlen($data));
         }
 
         # example: xd.game.hsqj.consume : $app = hsqj, $table = consume
@@ -642,7 +630,7 @@ class MainWorker
 
                     if (IS_DEBUG)
                     {
-                        debug("worker: $this->id, tag: $tag, records count: " . $count);
+                        debug("worker: $this->workerId, tag: $tag, records count: " . $count);
                     }
 
                     # 统计用的当前时间的key
@@ -651,7 +639,6 @@ class MainWorker
                     # 记录APP统计的起始时间
                     $appBeginTime = microtime(1);
 
-                    $this->flushData->beginJob();
                     foreach ($jobs as $key => $job)
                     {
                         if (!isset($this->jobAppList[$key][$app]))
@@ -678,9 +665,6 @@ class MainWorker
                     # APP的统计数据
                     $this->flushData->counterApp[$app][$dayKey]['total'] += $count;
                     $this->flushData->counterApp[$app][$dayKey]['time']  += 1000000 * (microtime(1) - $appBeginTime);
-
-                    # 标记为更新, 当此值为 true 时系统才会触发推送数据功能
-                    $this->flushData->setUpdated(true);
                 }
                 catch (Exception $e)
                 {
@@ -730,7 +714,7 @@ class MainWorker
                 # 发送成功
 
                 # 标记为任务完成
-                $this->flushData->endJob();
+                $this->flushData->commit();
 
                 # 计数器增加
                 $count = count($records);
@@ -741,7 +725,6 @@ class MainWorker
             }
             else
             {
-                debug("ddddddd");
                 # 发送失败, 恢复数据
                 $this->flushData->restore();
             }
@@ -851,7 +834,7 @@ class MainWorker
         {
             if (EtServer::$config['redis']['hosts'] && count(EtServer::$config['redis']['hosts']) > 1)
             {
-                if (IS_DEBUG && $this->id == 0)
+                if (IS_DEBUG && $this->workerId == 0)
                 {
                     debug('redis hosts: '. implode(', ', EtServer::$config['redis']['hosts']));
                 }
@@ -886,7 +869,7 @@ class MainWorker
         }
         catch (Exception $e)
         {
-            if ($this->id == 0 && time() % 10 == 0)
+            if ($this->workerId == 0 && time() % 10 == 0)
             {
                 debug($e->getMessage());
                 info('redis server is not start, wait start redis://' . (EtServer::$config['redis']['hosts'] ? implode(', ', EtServer::$config['redis']['hosts']) : $host .':'. $port));
@@ -955,6 +938,7 @@ class MainWorker
                 # 不分组
                 $timeKey = 0;
                 $id      = $groupValue ?: (isset($item['_id']) && $item['_id'] ? $item['_id'] : md5(json_decode($item, JSON_UNESCAPED_UNICODE)));
+                # $timeOpt = [0, 'none'];
             }
             else
             {
@@ -966,64 +950,24 @@ class MainWorker
 
             # 任务分片的key
             $taskKey  = md5("$key,$timeOptKey,$app");
-            # 数据的键, Exp: abcde123af32,1d,hsqj,2016001,123_abc
+
+            # 数据的唯一key, Exp: abcde123af32,1d,hsqj,2016001,123_abc
             $uniqueId = "$key,$timeOptKey,$app,$timeKey,$groupValue";
 
-            # 记录唯一值
-            if (isset($fun['dist']))
-            {
-                foreach ($fun['dist'] as $field => $t)
-                {
-                    if (true === $t)
-                    {
-                        # 单字段
-                        $k = $item[$field];
-                    }
-                    else
-                    {
-                        # 多字段
-                        $k = [];
-                        foreach ($t as $f)
-                        {
-                            $k[] = $item[$f];
-                        }
-                        $k = implode('_', $k);
-                    }
+            # 设置到备份里
+            $this->flushData->setBackup($taskKey, $uniqueId);
 
-                    $this->flushData->setDist($taskKey, $uniqueId, $field, $k);
-                }
-            }
+            # 获取任务对象
+            $dataJob              = $this->flushData->getJob($taskKey, $uniqueId);
+            $dataJob->dataId      = $id;
+            $dataJob->timeOpLimit = $timeOpt[0];
+            $dataJob->timeOpType  = $timeOpt[1];
+            $dataJob->timeKey     = $timeKey;
+            $dataJob->time        = $time;
+            $dataJob->app         = $app;
+            $dataJob->seriesKey   = $key;
 
-            # 更新统计数据
-            $total = FlushData::totalData($this->flushData->total[$taskKey][$uniqueId], $item, $fun, isset($item['microtime']) && $item['microtime'] > $item['time'] && $item['microtime'] - $time < 1 ? $item['microtime'] : $time);
-            if ($total)
-            {
-                $this->flushData->setTotal($taskKey, $uniqueId, $total);
-            }
-
-            if ($option['allField'])
-            {
-                # 需要所有字段数据
-                $data = $item;
-            }
-            else
-            {
-                $data = [];
-                if (isset($option['function']['value']))
-                {
-                    # 所有需要赋值的字段, 不需要的字段全部丢弃
-                    foreach ($option['function']['value'] as $field => $tmp)
-                    {
-                        if (isset($item[$field]))
-                        {
-                            $data[$field] = $item[$field];
-                        }
-                    }
-                }
-            }
-
-            # 标记任务
-            $this->flushData->setJobs($taskKey, $uniqueId, [$id, $timeOptKey, $timeKey, $time, $app, $key, $data]);
+            $dataJob->setData($item, $fun, $option['allField']);
         }
 
         return;
@@ -1043,19 +987,42 @@ class MainWorker
     }
 
     /**
+     * 启动时加载临时数据
+     */
+    protected function loadDumpData()
+    {
+        if (is_file($this->dumpFile))
+        {
+            foreach (explode("\r\n", trim(file_get_contents($this->dumpFile))) as $item)
+            {
+                /**
+                 * @var DataJob $job
+                 */
+                $job = @unserialize($item);
+                if ($job && is_object($job))
+                {
+                    $this->flushData->jobs[$job->uniqueId] = $job;
+                }
+            }
+
+            unlink($this->dumpFile);
+
+            info("worker($this->workerId) load ". count($this->flushData->jobs) ." job(s) from file {$this->dumpFile}.");
+        }
+    }
+
+    /**
      * 在程序退出时保存数据
      */
     public function dumpData()
     {
-        if ($this->dumpFileData)foreach ($this->dumpFileData as $item)
-        {
-            file_put_contents($this->dumpFile, serialize($item)."\n", FILE_APPEND);
-        }
-
-        if ($this->flushData->updated)
+        if ($this->flushData->jobs)
         {
             # 有数据
-            file_put_contents($this->dumpFile, serialize($this->flushData)."\n", FILE_APPEND);
+            foreach ($this->flushData->jobs as $item)
+            {
+                file_put_contents($this->dumpFile, serialize($item) . "\r\n", FILE_APPEND);
+            }
         }
     }
 
@@ -1126,7 +1093,7 @@ class MainWorker
         {
             if (!$opt['use'])
             {
-                if ($this->id == 0)
+                if ($this->workerId == 0)
                 {
                     debug("query not use, key: {$opt['key']}, table: {$opt['table']}");
                 }
@@ -1214,7 +1181,7 @@ class MainWorker
     {
         if (!$this->redis)return;
 
-        if ($this->flushData->updated)
+        if ($this->flushData->jobs)
         {
             try
             {
@@ -1222,7 +1189,7 @@ class MainWorker
 
                 $this->flushData->flush($this->redis);
 
-                debug('do flush use time: '. (microtime(1) - $time) .'s');
+                debug('worker '. $this->workerId .' do flush use time: '. (microtime(1) - $time) .'s');
             }
             catch (Exception $e)
             {
@@ -1231,11 +1198,6 @@ class MainWorker
                 # 如果有错误则检查下
                 $this->checkRedis();
             }
-        }
-        elseif ($this->dumpFileData)
-        {
-            # 如果还有 dumpFileData 数据
-            $this->flushData = array_shift($this->dumpFileData);
         }
     }
 

@@ -46,7 +46,7 @@ else
 }
 
 $allMemory     = [
-    MainWorker::$serverName => memory_get_usage(true)
+    MainWorker::$serverName => EtServer::$startUseMemory
 ];
 $allMemoryTotal = $allMemory[MainWorker::$serverName];
 
@@ -56,7 +56,7 @@ if ($allMemoryData)foreach ($allMemoryData as $key => $item)
   list($mem, $time, $serv, $wid) = unserialize($item);
   if (MainWorker::$timed - $time < 80)
   {
-    if ($serv != MainWorker::$serverName || $wid != $this->worker->id)
+    if ($serv == MainWorker::$serverName)
     {
       $allMemory[$serv] += $mem;
       $allMemoryTotal   += $mem;
@@ -333,7 +333,7 @@ unset($item);
     $('#container-server').highcharts(Highcharts.merge(gaugeOptions, {
       yAxis: {
         min: 0,
-        max: 200,
+        max: 16,
         title: {
           text: null
         }
@@ -345,14 +345,14 @@ unset($item);
 
       series: [{
         name: '内存占用',
-        data: [<?php echo number_format($allMemoryTotal / 1024 / 1024, 2, '.', '');?>],
+        data: [<?php echo number_format($allMemoryTotal / 1024 / 1024 / 1024, 2, '.', '');?>],
         dataLabels: {
           format: '<div style="text-align:center"><span style="font-size:25px;color:' +
           ((Highcharts.theme && Highcharts.theme.contrastTextColor) || 'black') + '">{y}</span><br/>' +
-          '<span style="font-size:12px;color:silver">MB</span></div>'
+          '<span style="font-size:12px;color:silver">GB</span></div>'
         },
         tooltip: {
-          valueSuffix: ' MB'
+          valueSuffix: ' GB'
         }
       }]
     }));
