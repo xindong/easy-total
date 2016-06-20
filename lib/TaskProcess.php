@@ -198,18 +198,31 @@ class TaskProcess
             $this->updateStatus();
 
             # 导入数据
+            $time = microtime(1);
             $this->importData();
+
+            debug("importData use time: ". (microtime(1) - $time));
+            $time = microtime(1);
 
             # 导出数据
             $this->exportData();
 
+            debug("exportData use time: ". (microtime(1) - $time));
+            $time = microtime(1);
+
             # 导出数据
             $this->output();
 
+            debug("output use time: ". (microtime(1) - $time));
+
             if (time() - $lastCleanTime > 60)
             {
+                $time = microtime(1);
+
                 # 清理下数据
                 $this->cleanData();
+
+                debug("cleanData use time: ". (microtime(1) - $time));
 
                 # 更新最后清理的时间
                 $lastCleanTime = time();
@@ -728,7 +741,7 @@ class TaskProcess
         {
             if (self::$sendEvents)
             {
-                self::checkAck();
+                $this->checkAck();
             }
 
             foreach ($this->list as $tag => $item)
@@ -797,10 +810,13 @@ class TaskProcess
     /**
      * 检查ACK返回
      */
-    protected static function checkAck()
+    protected function checkAck()
     {
         foreach (self::$sendEvents as $k => & $event)
         {
+            # 更新状态
+            $this->updateStatus();
+
             $rs = self::checkAckByEvent($event);
             if ($rs)
             {
