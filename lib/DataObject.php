@@ -112,7 +112,7 @@ class DataJob
      *
      * @var string
      */
-    protected $_serialized;
+    public $_serialized;
 
     public function __construct($uniqueId)
     {
