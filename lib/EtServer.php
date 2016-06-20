@@ -357,6 +357,7 @@ class EtServer
 
         self::$startUseMemory = ($memory2 - $memory1) * 1024;
 
+        sleep(3);
         info("memory block data use memory: " . number_format(($memory2 - $memory1) / 1024, 3) . 'MB');
     }
 

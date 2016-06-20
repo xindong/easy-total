@@ -405,8 +405,7 @@ class TaskProcess
             $job = @unserialize($string);
             if (false === $job)
             {
-                warn("unserialize data error, key: $key, see file /tmp/easy_total_error_unserialize_data_$key");
-                file_put_contents("/tmp/easy_total_error_unserialize_data_$key", $string);
+                warn("unserialize data error, key: $key");
             }
             else
             {
