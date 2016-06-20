@@ -442,6 +442,7 @@ class TaskProcess
             if (count($this->jobs) > 10000 || microtime(1) - $begin > 0.5)
             {
                 # 读取一定量数据
+                debug('task process jobs is: '. count($this->jobs). ', now break read new jobs');
                 break;
             }
         }
