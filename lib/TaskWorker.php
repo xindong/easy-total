@@ -123,12 +123,6 @@ class TaskWorker
                 # 获取数据类型
                 $type = get_class($data);
             }
-            elseif (is_array($data))
-            {
-                usleep(mt_rand(1, 99999));
-                print_r($data);
-                echo serialize($data);
-            }
             else
             {
                 $data = explode('|', $data);
@@ -288,14 +282,16 @@ class TaskWorker
         if (strlen($data['value']) > self::$dataBlockSize)
         {
             # 超过1000字符则分段截取
+            $index = 0;
             for($i = 0; $i < $data['length']; $i += self::$dataBlockSize)
             {
                 $tmp = [
-                    'index'  => $i,
+                    'index'  => $index,
                     'length' => $data['length'],
                     'value'  => substr($data['value'], $i, self::$dataBlockSize),
                 ];
-                $jobTable->set($i > 0 ? "$key,$i" : $key, $tmp);
+                $jobTable->set($i > 0 ? "$key,$index" : $key, $tmp);
+                $index++;
             }
             unset($tmp);
         }
