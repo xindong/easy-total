@@ -147,7 +147,7 @@ class DataJob
     {
         if ($this->_serialized)
         {
-            $data = @json_decode($this->_serialized);
+            $data = @json_decode($this->_serialized, true);
             if ($data)
             {
                 foreach ($data as $key => $value)
