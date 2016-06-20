@@ -944,7 +944,7 @@ class TaskProcess
             warn($errstr);
             return false;
         }
-        stream_set_timeout($socket, 0, 3000);
+        stream_set_timeout($socket, 0, 100);
 
         $len  = 0;
         $str  = '';
