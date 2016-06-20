@@ -365,7 +365,7 @@ class TaskProcess
                     $tmpKey  = "$key,$i";
                     $tmp     = $this->jobsTable->get($tmpKey);
 
-                    if ($tmp)
+                    if (false === $tmp)
                     {
                         $string .= $tmp['value'];
                     }

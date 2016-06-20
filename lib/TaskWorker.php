@@ -272,17 +272,18 @@ class TaskWorker
 
     protected function taskData(DataJob $job)
     {
-        $key            = $job->uniqueId;
         $data           = [];
         $data['value']  = serialize($job);
         $data['index']  = 0;
         $data['length'] = ceil(strlen($data['value']) / self::$dataBlockSize);
         $jobTable       = $this->taskProcess->jobsTable;
+        $key            = $job->uniqueId;
 
-        if (strlen($data['value']) > self::$dataBlockSize)
+        if ($data['length'] > 1)
         {
             # 超过1000字符则分段截取
-            for($i = 0; $i < $data['length']; $i++)
+            # 从后面设置是避免设置的第一个数据后还没有设置完成就被子进程读取
+            for($i = $data['length'] - 1; $i >= 0; $i--)
             {
                 $tmp = [
                     'index'  => $i,
@@ -659,7 +660,7 @@ class TaskWorker
      */
     public function updateStatus($done = false)
     {
-        $rs = EtServer::$taskWorkerStatus->set("task{$this->taskId}", ['time' => time(), 'status' => $done ? 0 : 1, 'pid' => $this->server->worker_pid]);
+        EtServer::$taskWorkerStatus->set("task{$this->taskId}", ['time' => time(), 'status' => $done ? 0 : 1, 'pid' => $this->server->worker_pid]);
     }
 
     /**
