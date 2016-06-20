@@ -335,7 +335,7 @@ class EtServer
         list($memory1) = explode(' ', trim(`ps -eorss,pid | grep $pid`));
 
         # 任务进程状态, 必须是2的指数, 由于每个task进程会启动一个子进程, 所以数目应该是 task_worker_num 的2倍
-        self::$taskWorkerStatus = new swoole_table((($config['conf']['task_worker_num'] % 2) + $config['conf']['task_worker_num'] + 1) * 2);
+        self::$taskWorkerStatus = new swoole_table((($config['conf']['task_worker_num'] % 2) + $config['conf']['task_worker_num'] + 4) * 2);
         self::$taskWorkerStatus->column('status', swoole_table::TYPE_INT, 1);
         self::$taskWorkerStatus->column('time', swoole_table::TYPE_INT, 10);
         self::$taskWorkerStatus->column('pid', swoole_table::TYPE_INT, 10);
