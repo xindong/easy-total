@@ -131,8 +131,14 @@ class DataJob
             'time'        => $this->time,
             'app'         => $this->app,
             'seriesKey'   => $this->seriesKey,
-            'dist'        => array_keys($this->dist),
+            'dist'        => [],
         ];
+        # 导出唯一列表
+        foreach ($this->dist as $field => $v)
+        {
+            $array['dist'][$field] = array_keys($v);
+        }
+
         $this->_serialized = json_encode($array, JSON_UNESCAPED_UNICODE);
         return ['total', 'data', '_serialized'];
     }
@@ -146,16 +152,18 @@ class DataJob
             {
                 foreach ($data as $key => $value)
                 {
-                    if ($key === 'dist')
-                    {
-                        foreach ($value as $item)
-                        {
-                            $this->dist[$item] = 1;
-                        }
-                    }
-                    else
+                    if ($key !== 'dist')
                     {
                         $this->$key = $value;
+                    }
+                }
+
+                # 恢复唯一列表
+                foreach ($data['dist'] as $field => $value)
+                {
+                    foreach ($value as $item)
+                    {
+                        $this->dist[$field][$item] = 1;
                     }
                 }
             }
