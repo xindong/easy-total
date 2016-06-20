@@ -774,10 +774,10 @@ class TaskProcess
         }
 
         $memory = memory_get_usage(true);
-        debug("task process use memory: " . number_format($memory / 1024 / 1024, 3) .'MB');
 
         if ($memory > 1024 * 1024 * 1024 * 2)
         {
+            debug("task process use memory: " . number_format($memory / 1024 / 1024, 3) .'MB');
             # 占用大量内存, 释放内存缓存中的对象
             $this->jobsCache = [];
         }
