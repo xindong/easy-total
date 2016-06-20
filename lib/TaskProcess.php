@@ -944,7 +944,7 @@ class TaskProcess
             warn($errstr);
             return false;
         }
-        stream_set_timeout($socket, 0, 100);
+        stream_set_timeout($socket, 0, 10);
 
         $len  = 0;
         $str  = '';
@@ -1015,15 +1015,7 @@ class TaskProcess
             }
         }
 
-        $event = [$data, $tag, $retryNum, microtime(1), $socket, $acks];
-
-        # 尝试去读取ACK
-        $rs = self::checkAckByEvent($event);
-        if (!$rs)
-        {
-            # 没有成功返回则放到队列里
-            self::$sendEvents[] = $event;
-        }
+        self::$sendEvents[] = [$data, $tag, $retryNum, microtime(1), $socket, $acks];
 
         return true;
     }
