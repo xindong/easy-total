@@ -201,19 +201,22 @@ class TaskProcess
             $time = microtime(1);
             $this->importData();
 
-            debug("importData use time: ". (microtime(1) - $time));
+            $t = microtime(1) - $time;
+            if ($t > 1)debug("importData use time: $t");
             $time = microtime(1);
 
             # 导出数据
             $this->exportData();
 
-            debug("exportData use time: ". (microtime(1) - $time));
+            $t = microtime(1) - $time;
+            if ($t > 1)debug("exportData use time: $t");
             $time = microtime(1);
 
             # 导出数据
             $this->output();
 
-            debug("output use time: ". (microtime(1) - $time));
+            $t = microtime(1) - $time;
+            if ($t > 1)debug("output use time: $t");
 
             if (time() - $lastCleanTime > 60)
             {
@@ -222,7 +225,8 @@ class TaskProcess
                 # 清理下数据
                 $this->cleanData();
 
-                debug("cleanData use time: ". (microtime(1) - $time));
+                $t = microtime(1) - $time;
+                if ($t > 1)debug("cleanData use time: $t");
 
                 # 更新最后清理的时间
                 $lastCleanTime = time();
