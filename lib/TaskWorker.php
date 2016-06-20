@@ -194,7 +194,7 @@ class TaskWorker
         # 任务数小余一定程度后继续执行
         if ($this->autoPause)
         {
-            if ($this->taskProcess->jobsTable->count() < self::$dataBlockCount * 0.3)
+            if ($this->taskProcess->jobsTable->count() < self::$dataBlockCount * 0.5)
             {
                 info("now notify server continue accept new data.");
                 $this->notifyWorkerContinue();
@@ -275,6 +275,7 @@ class TaskWorker
         $data           = [];
         $data['value']  = serialize($job);
         $data['index']  = 0;
+        $data['time']   = time();
         $data['length'] = ceil(strlen($data['value']) / self::$dataBlockSize);
         $jobTable       = $this->taskProcess->jobsTable;
         $key            = $job->uniqueId;
@@ -288,6 +289,7 @@ class TaskWorker
                 $tmp = [
                     'index'  => $i,
                     'length' => $data['length'],
+                    'time'   => $data['time'],
                     'value'  => substr($data['value'], $i * self::$dataBlockSize, self::$dataBlockSize),
                 ];
                 $jobTable->set($i > 0 ? "$key,$i" : $key, $tmp);
@@ -322,7 +324,7 @@ class TaskWorker
         }
 
         $dataCount = $this->taskProcess->jobsTable->count();
-        if ($dataCount > self::$dataBlockCount * 0.9)
+        if ($dataCount > self::$dataBlockCount * 0.8)
         {
             # 积累的任务数已经很多了
             warn("task queue data is to much. now count: {$dataCount}, max: " . self::$dataBlockCount);

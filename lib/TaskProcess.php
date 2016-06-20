@@ -353,6 +353,14 @@ class TaskProcess
             if ($item['index'] > 0)
             {
                 # 分块的片段数据
+                if (IS_DEBUG && $begin - $item['time'] > 30)
+                {
+                    $kPos = strrpos($key, ',');
+                    $k    = substr($key, 0, $kPos);
+                    $e    = $this->jobsTable->exist($k);
+                    debug("memory key($key) is long time: ". ($begin - $item['time'])."s. key $k ". ($e ? 'exist':'not exist'));
+                }
+
                 continue;
             }
 
