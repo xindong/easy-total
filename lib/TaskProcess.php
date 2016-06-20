@@ -369,7 +369,7 @@ class TaskProcess
         foreach ($this->jobsTable as $key => $item)
         {
             $i++;
-            if ($i % 1000)
+            if ($i % 1000 === 0)
             {
                 $this->updateStatus();
             }
@@ -511,7 +511,7 @@ class TaskProcess
                     unset($this->jobs[$uniqueId]);
                 }
 
-                if ($i % 1000)
+                if ($i % 1000 === 0)
                 {
                     # 更新状态
                     $this->updateStatus();
@@ -816,18 +816,29 @@ class TaskProcess
      */
     protected function checkAck()
     {
+        $i       = 0;
+        $time    = microtime(1);
+        $success = 0;
+        $fail    = 0;
         foreach (self::$sendEvents as $k => & $event)
         {
-            # 更新状态
-            $this->updateStatus();
+            $i++;
+
+            if ($i % 100 === 0)
+            {
+                # 更新状态
+                $this->updateStatus();
+            }
 
             $rs = self::checkAckByEvent($event);
             if ($rs)
             {
                 unset(self::$sendEvents[$k]);
+                $success++;
             }
             elseif (false === $rs)
             {
+                $success++;
                 list ($data, $tag, $retryNum) = $event;
 
                 # 移除当前的对象
@@ -848,6 +859,11 @@ class TaskProcess
                     }
                 }
             }
+        }
+
+        if (IS_DEBUG)
+        {
+            debug("get ack response success $success, fail: $fail, use time: " . (microtime(1) - $time) . "s");
         }
 
         self::$sendEvents = array_values(self::$sendEvents);
@@ -890,11 +906,6 @@ class TaskProcess
                 {
                     # 成功
                     @fclose($socket);
-
-                    if (IS_DEBUG)
-                    {
-                        debug("get ack response : $rs, use time " . (microtime(1) - $time) . 's.');
-                    }
 
                     return true;
                 }
@@ -944,7 +955,7 @@ class TaskProcess
             warn($errstr);
             return false;
         }
-        stream_set_timeout($socket, 0, 10);
+        stream_set_timeout($socket, 0, 5);
 
         $len  = 0;
         $str  = '';
