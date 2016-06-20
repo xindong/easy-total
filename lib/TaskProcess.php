@@ -348,8 +348,15 @@ class TaskProcess
     protected function importData()
     {
         $begin = microtime(1);
+        $i     = 0;
         foreach ($this->jobsTable as $key => $item)
         {
+            $i++;
+            if ($i % 1000)
+            {
+                $this->updateStatus();
+            }
+
             if ($item['index'] > 0)
             {
                 # 分块的片段数据
@@ -439,7 +446,6 @@ class TaskProcess
                 $this->jobsTable->del($tmpKey);
             }
         }
-        $this->updateStatus();
 
         return;
     }
@@ -461,8 +467,11 @@ class TaskProcess
                 $this->jobsCache = array_slice($this->jobsCache, -5000, null, true);
             }
 
+            $i = 0;
             foreach ($this->jobs as $uniqueId => $job)
             {
+                $i++;
+
                 /**
                  * @var DataJob $job
                  */
@@ -485,8 +494,11 @@ class TaskProcess
                     unset($this->jobs[$uniqueId]);
                 }
 
-                # 更新状态
-                $this->updateStatus();
+                if ($i % 1000)
+                {
+                    # 更新状态
+                    $this->updateStatus();
+                }
             }
         }
     }

@@ -312,10 +312,10 @@ class TaskWorker
      */
     protected function checkTaskProcessStatus($checkProcess = false)
     {
-        if ($checkProcess && time() - $this->taskProcess->getActiveTime() > 300)
+        if ($checkProcess && time() - $this->taskProcess->getActiveTime() > 600)
         {
-            # 一直更新的执行时间超过 5 分钟, 可能是进程死掉了
-            warn("task sub process has been dead more than 5 minutes, now kill it, task id: {$this->taskId}.");
+            # 一直更新的执行时间超过 10 分钟, 可能是进程死掉了
+            warn("task sub process has been dead more than 10 minutes, now kill it, task id: {$this->taskId}.");
             $this->taskProcess->kill();
 
             # 创建新的子进程
