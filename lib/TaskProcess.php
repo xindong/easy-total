@@ -371,16 +371,7 @@ class TaskProcess
                     }
                     else
                     {
-                        usleep(3000);
-                        $tmp = $this->jobsTable->get($tmpKey);
-                        if ($tmp)
-                        {
-                            $string .= $tmp['value'];
-                        }
-                        else
-                        {
-                            warn("get swoole_table error, key: $tmpKey");
-                        }
+                        warn("get swoole_table error, key: $tmpKey");
                     }
                 }
             }

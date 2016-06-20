@@ -276,22 +276,20 @@ class TaskWorker
         $data           = [];
         $data['value']  = serialize($job);
         $data['index']  = 0;
-        $data['length'] = 1 + intval(strlen($data['value']) / self::$dataBlockSize);
+        $data['length'] = ceil(strlen($data['value']) / self::$dataBlockSize);
         $jobTable       = $this->taskProcess->jobsTable;
 
         if (strlen($data['value']) > self::$dataBlockSize)
         {
             # 超过1000字符则分段截取
-            $index = 0;
-            for($i = 0; $i < $data['length']; $i += self::$dataBlockSize)
+            for($i = 0; $i < $data['length']; $i++)
             {
                 $tmp = [
-                    'index'  => $index,
+                    'index'  => $i,
                     'length' => $data['length'],
-                    'value'  => substr($data['value'], $i, self::$dataBlockSize),
+                    'value'  => substr($data['value'], $i * self::$dataBlockSize, self::$dataBlockSize),
                 ];
-                $jobTable->set($i > 0 ? "$key,$index" : $key, $tmp);
-                $index++;
+                $jobTable->set($i > 0 ? "$key,$i" : $key, $tmp);
             }
             unset($tmp);
         }
