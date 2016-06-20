@@ -468,9 +468,11 @@ class MainWorker
             debug("accept data length ". strlen($data));
         }
 
-        if ($this->flushData->jobs > 200)
+        if ($count = count($this->flushData->jobs) > 20000)
         {
             # 积累的任务太多, 不再接受处理新数据
+
+            debug("worker($this->workerId) have too many jobs ". $count);
             return false;
         }
 
