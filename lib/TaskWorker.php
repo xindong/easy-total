@@ -310,17 +310,6 @@ class TaskWorker
      */
     protected function checkTaskProcessStatus($checkProcess = false)
     {
-        static $max = 0;
-        $dataCount  = $this->taskProcess->jobsTable->count();
-        $max        = max($dataCount, $max);
-
-        if ($dataCount > self::$dataBlockCount * 0.667)
-        {
-            # 积累的任务数已经很多了
-            warn("task queue data is to much. now count: {$dataCount}, max: {$max}, max setting: " . self::$dataBlockCount);
-            return false;
-        }
-
         if ($checkProcess && time() - $this->taskProcess->getActiveTime() > 300)
         {
             # 一直更新的执行时间超过 5 分钟, 可能是进程死掉了
@@ -330,6 +319,14 @@ class TaskWorker
             # 创建新的子进程
             $this->taskProcess = new TaskProcess($this->taskId);
             $this->taskProcess->start();
+        }
+
+        $dataCount = $this->taskProcess->jobsTable->count();
+        if ($dataCount > self::$dataBlockCount * 0.9)
+        {
+            # 积累的任务数已经很多了
+            warn("task queue data is to much. now count: {$dataCount}, max: " . self::$dataBlockCount);
+            return false;
         }
 
         return true;
