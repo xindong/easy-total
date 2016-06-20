@@ -260,7 +260,7 @@ class DataJob
             {
                 if (isset($total->min[$field]))
                 {
-                    $total->min[$field] = min($total['min'][$field], $item[$field]);
+                    $total->min[$field] = min($total->min[$field], $item[$field]);
                 }
                 else
                 {
@@ -275,7 +275,7 @@ class DataJob
             {
                 if (isset($total->max[$field]))
                 {
-                    $total->max[$field] = max($total['max'][$field], $item[$field]);
+                    $total->max[$field] = max($total->max[$field], $item[$field]);
                 }
                 else
                 {
