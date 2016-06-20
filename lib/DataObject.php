@@ -107,10 +107,61 @@ class DataJob
      */
     public $saved = false;
 
+    /**
+     * 序列化后的字符
+     *
+     * @var string
+     */
+    protected $_serialized;
+
     public function __construct($uniqueId)
     {
         $this->uniqueId = $uniqueId;
         $this->total    = new DataTotalItem();
+    }
+
+    public function __sleep()
+    {
+        $array = [
+            'uniqueId'    => $this->uniqueId,
+            'dataId'      => $this->dataId,
+            'timeOpLimit' => $this->timeOpLimit,
+            'timeOpType'  => $this->timeOpType,
+            'timeKey'     => $this->timeKey,
+            'time'        => $this->time,
+            'app'         => $this->app,
+            'seriesKey'   => $this->seriesKey,
+            'dist'        => array_keys($this->dist),
+        ];
+        $this->_serialized = json_encode($array, JSON_UNESCAPED_UNICODE);
+        return ['total', 'data', '_serialized'];
+    }
+
+    public function __wakeup()
+    {
+        if ($this->_serialized)
+        {
+            $data = @json_decode($this->_serialized);
+            if ($data)
+            {
+                foreach ($data as $key => $value)
+                {
+                    if ($key === 'dist')
+                    {
+                        foreach ($value as $item)
+                        {
+                            $this->dist[$item] = 1;
+                        }
+                    }
+                    else
+                    {
+                        $this->$key = $value;
+                    }
+                }
+            }
+
+            $this->_serialized = null;
+        }
     }
 
     public function setData($item, $fun, $allField)
