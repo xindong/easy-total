@@ -313,15 +313,10 @@ class TaskWorker
         $dataCount  = $this->taskProcess->jobsTable->count();
         $max        = max($dataCount, $max);
 
-        if ($dataCount)
-        {
-            debug("task $this->taskId queue data count is $dataCount, max: {$max}");
-        }
-
         if ($dataCount > self::$dataBlockCount * 0.667)
         {
             # 积累的任务数已经很多了
-            warn("task queue data is to much. now count: {$dataCount}, max: {$max}");
+            warn("task queue data is to much. now count: {$dataCount}, max: {$max}, max setting: " . self::$dataBlockCount);
             return false;
         }
 
