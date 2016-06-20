@@ -232,7 +232,7 @@ class TaskProcess
                 $lastCleanTime = time();
             }
 
-            sleep(1);
+            usleep(100000);
         }
     }
 
