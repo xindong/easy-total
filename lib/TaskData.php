@@ -421,19 +421,25 @@ class TaskData
             swoole_process::kill($process->pid);
         }
 
-        $time = time() + 1;
+        $time     = time();
+        $warnTime = 0;
         while($pids)
         {
-            sleep(1);
+            usleep(10000);
             while(swoole_process::wait(false));
 
             foreach ($pids as $k => $pid)
             {
                 if (in_array($pid, $rs = explode("\n", str_replace(' ', '', trim(`ps -eopid | grep {$pid}`)))))
                 {
-                    warn("task $this->taskId process is running, have been waiting for " . (time() - $time) . "s.");
+                    $useTime = intval(time() - $time);
+                    if ($useTime > $warnTime)
+                    {
+                        $warnTime = $useTime;
+                        warn("task $this->taskId process is running, have been waiting for {$useTime}s.");
+                    }
 
-                    if (time() - $time > 60)
+                    if ($useTime > 60)
                     {
                         # 超过1分钟还没有结束, 强制关闭
                         swoole_process::kill($pid, -9);
