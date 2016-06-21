@@ -250,13 +250,88 @@ class DataJob
         }
 
         # 合并统计数据
-        TaskProcess::mergeTotal($this->total, $job->total);
+        $this->mergeTotal($job->total);
 
         $this->dataId = $job->dataId;
         $this->time   = $job->time;
         $this->data   = $job->data;
 
         return true;
+    }
+
+
+    /**
+     * 合并统计数值
+     *
+     * @param DataTotalItem $newTotal
+     */
+    public function mergeTotal(DataTotalItem $newTotal)
+    {
+        # 相加的数值
+        foreach ($newTotal->sum as $field => $v)
+        {
+            $this->total->sum[$field] += $v;
+        }
+
+        foreach ($newTotal->count as $field => $v)
+        {
+            $this->total->count[$field] += $v;
+        }
+
+        foreach ($newTotal->last as $field => $v)
+        {
+            $tmp = $this->total->last[$field];
+
+            if (!$tmp || $tmp[1] < $v[1])
+            {
+                $this->total->last[$field] = $v;
+            }
+        }
+
+        foreach ($newTotal->first as $field => $v)
+        {
+            $tmp = $this->total->first[$field];
+
+            if (!$tmp || $tmp[1] > $v[1])
+            {
+                $this->total->first[$field] = $v;
+            }
+        }
+
+        foreach ($newTotal->min as $field => $v)
+        {
+            if (isset($this->total->min[$field]))
+            {
+                $this->total->min[$field] = min($v, $this->total->min[$field]);
+            }
+            else
+            {
+                $this->total->min[$field] = $v;
+            }
+        }
+
+        foreach ($newTotal->max as $field => $v)
+        {
+            if (isset($this->total->max[$field]))
+            {
+                $this->total->max[$field] = max($v, $this->total->max[$field]);
+            }
+            else
+            {
+                $this->total->max[$field] = $v;
+            }
+        }
+
+        foreach ($newTotal->dist as $field => $v)
+        {
+            $this->total->dist[$field] = max($this->total->dist[$field], $v);
+        }
+
+        # 更新时间
+        if ($newTotal->loadFromDB)
+        {
+            $this->total->loadFromDB = true;
+        }
     }
 
     /**
@@ -388,6 +463,13 @@ class DataTotalItem
      * @var array
      */
     public $last = [];
+
+    /**
+     * 是否从db处加载的
+     *
+     * @var bool
+     */
+    public $loadFromDB = false;
 
     public function __sleep()
     {

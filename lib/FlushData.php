@@ -271,6 +271,7 @@ class FlushData
     {
         $taskNum = EtServer::$server->setting['task_worker_num'] - 1;
 
+        if ($taskNum === 1)return 1;
         return (crc32($taskKey) % ($taskNum - 1)) + 1;
     }
 }

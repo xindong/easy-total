@@ -270,7 +270,7 @@ class EtServer
             exit;
         }
 
-        if (version_compare(SWOOLE_VERSION, '1.8', '<'))
+        if (version_compare(SWOOLE_VERSION, '1.8.6', '<'))
         {
             warn("swoole插件必须>=1.8版本");
             exit;
@@ -308,6 +308,12 @@ class EtServer
             date_default_timezone_set($config['php']['timezone']);
         }
 
+        if (isset($config['server']['unixsock_buffer_size']) && $config['server']['unixsock_buffer_size'] > 1000)
+        {
+            # 修改进程间通信的UnixSocket缓存区尺寸
+            ini_set('swoole.unixsock_buffer_size', $config['server']['unixsock_buffer_size']);
+        }
+
         if ($daemonize)
         {
             $config['conf']['daemonize'] = true;
@@ -331,33 +337,23 @@ class EtServer
         self::$counter  = new swoole_atomic();
         self::$counterX = new swoole_atomic();
 
+        # 当前进程的pid
         $pid           = getmypid();
         list($memory1) = explode(' ', trim(`ps -eorss,pid | grep $pid`));
 
-        # 任务进程状态, 必须是2的指数, 由于每个task进程会启动一个子进程, 所以数目应该是 task_worker_num 的2倍
-        self::$taskWorkerStatus = new swoole_table((($config['conf']['task_worker_num'] % 2) + $config['conf']['task_worker_num'] + 4) * 2);
+        # 任务进程状态, 必须是2的指数
+        self::$taskWorkerStatus = new swoole_table(bindec(str_pad(1, strlen(decbin($config['conf']['task_worker_num'])), 0)) * 16);
         self::$taskWorkerStatus->column('status', swoole_table::TYPE_INT, 1);
         self::$taskWorkerStatus->column('time', swoole_table::TYPE_INT, 10);
         self::$taskWorkerStatus->column('pid', swoole_table::TYPE_INT, 10);
         self::$taskWorkerStatus->create();
 
-        # 创建数据统计共享对象
-        for($i = 1; $i < $config['conf']['task_worker_num']; $i++)
-        {
-            $table = new swoole_table($config['server']['data_block_count']);
-            $table->column('length', swoole_table::TYPE_INT, 4);
-            $table->column('index',  swoole_table::TYPE_INT, 4);
-            $table->column('time',   swoole_table::TYPE_INT, 10);
-            $table->column('value',  swoole_table::TYPE_STRING, $config['server']['data_block_size']);
-            $table->create();
-            self::$jobsTable[$i] = $table;
-        }
-
+        # 列出当前任务的内存
         list($memory2) =  explode(' ', trim(`ps -eorss,pid | grep $pid`));
 
         self::$startUseMemory = ($memory2 - $memory1) * 1024;
 
-        sleep(3);
+        debug("pid is: $pid");
         info("memory block data use memory: " . number_format(($memory2 - $memory1) / 1024, 3) . 'MB');
     }
 
@@ -518,28 +514,38 @@ class EtServer
     {
         global $argv;
 
-        # 内存限制
-        ini_set('memory_limit', self::$config['server']['memory_limit'] ?: '4G');
-        if ($workerId == 0)
-        {
-            info("current server memory limit is: ". ini_get('memory_limit'));
-        }
-
         # 实例化资源对象
         if ($server->taskworker)
         {
+            # 任务序号
+            $taskId = $workerId - $server->setting['worker_num'];
+
+            # 内存限制
+            ini_set('memory_limit', self::$config['server']['task_worker_memory_limit'] ?: '6G');
+            if ($taskId == 0)
+            {
+                info("current server task worker memory limit is: ". ini_get('memory_limit'));
+            }
+
             self::setProcessName("php ". implode(' ', $argv) ." [task]");
 
             require (__DIR__ .'/TaskWorker.php');
 
             # 构造新对象
-            $this->taskWorker = new TaskWorker($server, $workerId - $server->setting['worker_num'], $workerId);
+            $this->taskWorker = new TaskWorker($server, $taskId, $workerId);
             $this->taskWorker->init();
 
             info("Tasker Start, \$id = {$workerId}, \$pid = {$server->worker_pid}");
         }
         else
         {
+            # 内存限制
+            ini_set('memory_limit', self::$config['server']['worker_memory_limit'] ?: '2G');
+            if ($workerId == 0)
+            {
+                info("current server worker memory limit is: ". ini_get('memory_limit'));
+            }
+
             self::setProcessName("php ". implode(' ', $argv) ." [worker]");
 
             require (__DIR__ .'/Manager.php');
@@ -753,16 +759,6 @@ class EtServer
                 debug("change task_tmpdir from {$config['conf']['task_tmpdir']} to /tmp/");
                 $config['conf']['task_tmpdir'] = '/tmp/';
             }
-        }
-
-        if (!$config['server']['data_block_count'])
-        {
-            $config['server']['data_block_count'] = 2 << 16;
-        }
-
-        if (!$config['server']['data_block_size'])
-        {
-            $config['server']['data_block_size'] = 1024;
         }
     }
 }

@@ -353,7 +353,7 @@ class MainWorker
                         $pid = $rs['pid'];
                         swoole_timer_after(5000, function() use ($pid)
                         {
-                            if (trim(`ps -eopid | grep $pid`) == $pid)
+                            if (in_array($pid, explode("\n", str_replace(' ', '', trim(`ps -eopid | grep {$pid}`)))))
                             {
                                 # 如果还存在进程, 强制关闭
                                 swoole_process::kill($pid, 9);

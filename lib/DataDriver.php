@@ -70,7 +70,7 @@ class DataDriver
                 $data = new DataTotalItem();
             }
 
-            $data->updateTime = time();
+            $data->loadFromDB = true;
 
             return $data;
         }
