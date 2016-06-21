@@ -652,8 +652,6 @@ class TaskWorker
      */
     protected static function getJobTime($type)
     {
-        return time();
-
         # 保存策略（兼顾数据堆积的内存开销和插入频率对性能的影响）:
         # 时间序列为分钟,秒以及无时间分组的, 每分钟保存一次; 其它时间序列每10分钟保存1次
         switch ($type)
