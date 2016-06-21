@@ -1588,6 +1588,7 @@ class swoole_process
     /**
      * 向消息队列推送数据
      * @param $data
+     * @return bool
      */
     function push($data) {
 
@@ -1646,6 +1647,33 @@ class swoole_process
      * @param $process_name
      */
     function name($process_name) {
+
+    }
+
+    /**
+     * 查看消息队列状态
+     *
+     * 返回一个数组，包括2项信息, 1.8.6 后提供
+     *
+     *  * queue_num 队列中的任务数量
+     *  * queue_bytes 队列数据的总字节数
+     *
+     * @since 1.8.6
+     * @return array
+     */
+    function statQueue()
+    {
+
+    }
+
+    /**
+     * 删除队列
+     *
+     * 此方法与useQueue成对使用，useQueue创建队列，使用freeQueue销毁队列。销毁队列后队列中的数据会被清空
+     * @since 1.8.6
+     */
+    function freeQueue()
+    {
 
     }
 }
