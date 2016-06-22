@@ -328,9 +328,9 @@ class DataJob
         }
 
         # 更新时间
-        if ($newTotal->loadFromDB)
+        if ($newTotal->all)
         {
-            $this->total->loadFromDB = true;
+            $this->total->all = true;
         }
     }
 
@@ -469,7 +469,7 @@ class DataTotalItem
      *
      * @var bool
      */
-    public $loadFromDB = false;
+    public $all = false;
 
     public function __sleep()
     {
@@ -481,6 +481,7 @@ class DataTotalItem
                 $rs[] = $item;
             }
         }
+        $rs[] = 'all';
 
         return $rs;
     }

@@ -70,7 +70,8 @@ class DataDriver
                 $data = new DataTotalItem();
             }
 
-            $data->loadFromDB = true;
+            # 标记为完整数据
+            $data->all = true;
 
             return $data;
         }

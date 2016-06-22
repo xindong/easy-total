@@ -155,6 +155,7 @@ class TaskProcess
             $sigHandler = function($signo)
             {
                 $this->dumpData();
+                $this->process->freeQueue();
                 swoole_process::daemon();
 
                 exit;
@@ -163,7 +164,7 @@ class TaskProcess
             pcntl_signal(SIGHUP,  $sigHandler);
             pcntl_signal(SIGINT,  $sigHandler);
 
-
+            $this->process   = $process;
             $this->isSub     = true;
             $this->pid       = $process->pid;
             $this->jobsTable = EtServer::$jobsTable[$this->taskId];
@@ -171,7 +172,6 @@ class TaskProcess
             global $argv;
             EtServer::setProcessName("php ". implode(' ', $argv) ." [task sub process]");
 
-            # 执行直到完成
             $this->run();
 
             # 蜕变成守护进程
@@ -183,6 +183,9 @@ class TaskProcess
             # 退出, 不用执行 shutdown_function
             exit(1);
         });
+
+        # 启用队列模式
+        $this->process->useQueue($this->taskId);
 
         $this->startTime = microtime(1);
         $this->pid       = $this->process->start();
@@ -211,6 +214,18 @@ class TaskProcess
     }
 
     /**
+     * 返回列队数
+     *
+     * @return int
+     */
+    public function queueCount()
+    {
+        $stat = $this->process->statQueue();
+
+        return $stat['queue_num'];
+    }
+
+    /**
      * 执行推送数据操作
      */
     protected function run()
@@ -223,7 +238,7 @@ class TaskProcess
             $this->import();
 
             # 任务数据处理
-            $this->exportList();
+            $this->export();
 
             # 导出数据
             $this->output();
@@ -258,7 +273,7 @@ class TaskProcess
      */
     protected function import()
     {
-        if (count($this->jobsTable))
+        if ($queueCount = $this->queueCount())
         {
             $max = 10000 - count($this->jobs);
             if ($max < 0)
@@ -275,7 +290,52 @@ class TaskProcess
                 return;
             }
 
-            $count = 0;
+            # 最多读取当前列队中的数量
+            if ($max > $queueCount)$max = $queueCount;
+
+            $count      = 0;
+            $buffer     = '';
+            $openBuffer = false;
+            while ($count < $max)
+            {
+                $str = $this->process->pop(65536);
+
+                if ($str === 'end')
+                {
+                    $openBuffer = false;
+                    $str        = $buffer;
+                    $buffer     = '';
+                }
+                elseif ($str === 'begin')
+                {
+                    $buffer     = '';
+                    $openBuffer = true;
+                    continue;
+                }
+                elseif (substr($str, 0, 2) === '><')
+                {
+                    $str = substr($str, 2);
+                }
+                elseif ($openBuffer)
+                {
+                    $buffer .= $str;
+                    continue;
+                }
+
+                $job = @unserialize($str);
+
+                if ($job)
+                {
+                    $count++;
+                    $this->pushJob($job);
+                }
+                else
+                {
+                    warn("Task#$this->taskId process unserialize data fail");
+                }
+            }
+
+            /*
             foreach ($this->jobsTable as $key => $item)
             {
                 if ($item['index'] > 0)
@@ -334,9 +394,6 @@ class TaskProcess
 
                 $count++;
 
-                /**
-                 * @var DataJob $job
-                 */
                 $job = @unserialize($str);
                 if ($job)
                 {
@@ -360,12 +417,14 @@ class TaskProcess
 
                 $this->jobsTable->del($key);
             }
+            */
 
             if ($count)
             {
-                debug("Task#$this->taskId process import $count jobs, now memory table jobs count is : ". count($this->jobsTable) .".");
+                debug("Task#$this->taskId process import $count jobs, now jobs queue count is : ". $this->queueCount() .".");
             }
         }
+
 
         $this->updateStatus();
     }
@@ -375,7 +434,6 @@ class TaskProcess
      * 添加一个新的任务数据
      *
      * @param DataJob $job
-     * @return bool
      */
     protected function pushJob(DataJob $job)
     {
@@ -390,7 +448,7 @@ class TaskProcess
             $this->jobs[$job->uniqueId] = $this->jobsCache[$job->uniqueId];
             $this->jobs[$job->uniqueId]->merge($job);
         }
-        elseif ($job->total->loadFromDB)
+        elseif ($job->total->all)
         {
             # 充数据中加载的
             $this->jobs[$job->uniqueId] = $job;
@@ -399,16 +457,15 @@ class TaskProcess
         {
             # 加载旧数据
             $oldJob = $this->driver->getTotal($job->uniqueId);
-            if (false)return false;
-
-            # 合并统计
-            $job->mergeTotal($oldJob);
+            if ($oldJob)
+            {
+                # 合并统计
+                $job->mergeTotal($oldJob);
+            }
 
             # 设置对象
             $this->jobs[$job->uniqueId] = $job;
         }
-
-        return true;
     }
 
     /**
@@ -416,7 +473,7 @@ class TaskProcess
      *
      * @param int $taskWorkerId
      */
-    protected function exportList()
+    protected function export()
     {
         if ($this->jobs)
         {
@@ -435,6 +492,20 @@ class TaskProcess
                 /**
                  * @var DataJob $job
                  */
+                if (!$job->total->all)
+                {
+                    # 需要加载数据
+                    $oldJob = $this->driver->getTotal($job->uniqueId);
+                    if (!$oldJob)
+                    {
+                        # 加载旧数据失败, 处理下一个
+                        continue;
+                    }
+
+                    # 合并统计
+                    $job->mergeTotal($oldJob);
+                }
+
                 if ($job->dist)
                 {
                     # 有唯一序列数据, 保存唯一数据
@@ -757,15 +828,55 @@ class TaskProcess
         # 写入文件
         if ($this->list)foreach ($this->list as $tag => $value)
         {
-            file_put_contents(self::$dumpFile, $tag.','.serialize($value) ."\r\n", FILE_APPEND);
+            file_put_contents(self::$dumpFile, $tag .','. serialize($value) ."\r\n", FILE_APPEND);
         }
 
         if ($this->jobs)foreach ($this->jobs as $job)
         {
-            file_put_contents(self::$dumpFile, 'job,'.serialize($job) ."\r\n", FILE_APPEND);
+            /**
+             * @var DataJob $job
+             */
+            file_put_contents(self::$dumpFile, 'job,'. serialize($job) ."\r\n", FILE_APPEND);
         }
 
         # 将任务中的数据导出
+        $count      = $this->queueCount();
+        $buffer     = '';
+        $openBuffer = false;
+        if ($count)for($i = 1; $i <= $count; $i++)
+        {
+            $str = $this->process->pop(65536);
+
+            if ($str === 'end')
+            {
+                $openBuffer = false;
+                $str        = $buffer;
+                $buffer     = '';
+            }
+            elseif ($str === 'begin')
+            {
+                $buffer     = '';
+                $openBuffer = true;
+                continue;
+            }
+            elseif (substr($str, 0, 2) === '><')
+            {
+                $str = substr($str, 2);
+            }
+            elseif ($openBuffer)
+            {
+                $buffer .= $str;
+                continue;
+            }
+
+            $job = @unserialize($str);
+            if ($job)
+            {
+                file_put_contents(self::$dumpFile, 'job,'.serialize($job) ."\r\n", FILE_APPEND);
+            }
+        }
+
+        /*
         foreach ($this->jobsTable as $key => $item)
         {
             if ($item['index'] > 0)continue;
@@ -803,6 +914,7 @@ class TaskProcess
                 file_put_contents(self::$dumpFile, 'job,'.serialize($job) ."\r\n", FILE_APPEND);
             }
         }
+        */
     }
 
     /**

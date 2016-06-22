@@ -80,14 +80,14 @@ class TaskWorker
      *
      * @var int
      */
-    protected static $dataBlockSize;
+    protected static $queueBlockSize;
 
     /**
      * 数据块数量, 默认 2 << 16 即 131072
      *
      * @var int
      */
-    protected static $dataBlockCount;
+    protected static $queueMaxCount;
 
     public function __construct(swoole_server $server, $taskId, $workerId)
     {
@@ -98,8 +98,8 @@ class TaskWorker
 
         $hash = substr(md5(EtServer::$configFile), 16, 8);
         # 设置配置
-        self::$dataBlockCount      = EtServer::$config['server']['data_block_count'];
-        self::$dataBlockSize       = EtServer::$config['server']['data_block_size'];
+        self::$queueMaxCount       = EtServer::$config['server']['queue_max_count'];
+        self::$queueBlockSize      = EtServer::$config['server']['queue_size'];
         self::$serverName          = EtServer::$config['server']['host'] .':'. EtServer::$config['server']['port'];
         self::$dumpFile            = EtServer::$config['server']['dump_path'] .'easy-total-task-dump-'. $hash . '-'. $taskId .'.txt';
         TaskProcess::$dumpFile     = EtServer::$config['server']['dump_path'] .'easy-total-task-process-dump-'. $hash. '-'. $taskId .'.txt';
@@ -210,7 +210,7 @@ class TaskWorker
         # 任务数小余一定程度后继续执行
         if ($this->autoPause)
         {
-            if (count($this->jobsTable) < 1000)
+            if ($this->taskProcess->queueCount() < 1000)
             {
                 info("Task#$this->taskId now notify server continue accept new data.");
                 $this->notifyWorkerContinue();
@@ -265,7 +265,7 @@ class TaskWorker
     {
         $now = time();
         $num = 0;
-        $max = max(0, intval(self::$dataBlockCount * 0.8) - count($this->jobsTable));
+        $max = max(0, intval(self::$queueMaxCount * 0.8) - $this->taskProcess->queueCount());
 
         # 更新延期任务计数
         $this->delayJobCount = 0;
@@ -294,7 +294,7 @@ class TaskWorker
             }
         }
 
-        debug("Task#$this->taskId job list count: ". count(self::$jobs) .".job memory table count: ". count($this->jobsTable) . ", delay job count: $this->delayJobCount");
+        debug("Task#$this->taskId job list count: ". count(self::$jobs) .".job memory table count: ". $this->taskProcess->queueCount() . ", delay job count: $this->delayJobCount");
 
         $this->updateStatus();
     }
@@ -307,6 +307,29 @@ class TaskWorker
      */
     protected function pushJob(DataJob $job)
     {
+        $string = serialize($job);
+        $length = ceil(strlen($string) / self::$queueBlockSize);
+        if ($length > 1)
+        {
+            $this->taskProcess->push('begin');
+            for ($i = 0; $i < $length; $i++)
+            {
+                $str = substr($string, $i * self::$queueBlockSize, self::$queueBlockSize);
+                if (!$this->taskProcess->push($str))
+                {
+                    # 推送失败
+                    return false;
+                }
+            }
+
+            return $this->taskProcess->push('end');
+        }
+        else
+        {
+            return $this->taskProcess->push("><". $string);
+        }
+
+        /*
         $data           = [];
         $data['value']  = serialize($job);
         $data['index']  = 0;
@@ -346,6 +369,7 @@ class TaskWorker
         {
             return $jobTable->set($key, $data);
         }
+        */
     }
 
     /**
@@ -358,11 +382,11 @@ class TaskWorker
      */
     protected function checkStatus()
     {
-        $dataCount = count($this->jobsTable);
-        if ($dataCount + $this->delayJobCount > self::$dataBlockCount * 0.8)
+        $dataCount = $this->taskProcess->queueCount();
+        if ($dataCount + $this->delayJobCount > self::$queueMaxCount * 0.8)
         {
             # 积累的任务数已经很多了
-            warn("Task#$this->taskId queue data is to much. now count: {$dataCount}, delay job count: {$this->delayJobCount}, max queue is ". self::$dataBlockCount);
+            warn("Task#$this->taskId queue data is to much. now count: {$dataCount}, delay job count: {$this->delayJobCount}, max queue is ". self::$queueMaxCount);
 
             return false;
         }
