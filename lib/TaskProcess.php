@@ -287,6 +287,13 @@ class TaskProcess
                     continue;
                 }
 
+                if (strpos($key, '_') !== false)
+                {
+                    usleep(10000);
+                    echo $key .' = ';
+                    var_dump($item);
+                }
+
                 if ($count > $max)
                 {
                     # 只读取一段数据
