@@ -334,12 +334,16 @@ class TaskProcess
 
                 $count++;
 
+                /**
+                 * @var DataJob $job
+                 */
                 $job = @unserialize($str);
                 if ($job)
                 {
                     if (!$this->pushJob($job))
                     {
                         # 数据没添加成功
+                        warn("Task#$this->taskId set job $job->uniqueId fail.");
                         continue;
                     }
                 }
