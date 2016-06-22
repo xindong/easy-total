@@ -62,12 +62,12 @@ cp ./server.ini /etc/easy-total.conf
 
 #### EasyTotal Admin
 
-页面管理工具端口同API端口，默认 9200，例如 [http://127.0.0.1:9200/admin/](http://127.0.0.1:9200/admin/)
+页面管理工具端口同API端口，默认 8000，例如 [http://127.0.0.1:8000/admin/](http://127.0.0.1:8000/admin/)
 
 
 #### API列表
 
-API为HTTP协议，端口默认 9200，可在配置[manager]部分修改，例如 http://127.0.0.1:9200/api/task/list
+API为HTTP协议，端口默认 8000，可在配置[manager]部分修改，例如 http://127.0.0.1:8000/api/task/list
 
 * `api/task/add`          添加一个SQL任务
 * `api/taak/remove`       移除一个SQL任务
@@ -80,7 +80,7 @@ API为HTTP协议，端口默认 9200，可在配置[manager]部分修改，例�
 #### 监听一个SQL处理语句
 
 ```
-curl -d 'sql=select *,count(id) as count,dist(id) from test group by type' 127.0.0.1:9200/api/task/add
+curl -d 'sql=select *,count(id) as count,dist(id) from test group by type' 127.0.0.1:8000/api/task/add
 ```
 将会返回类似json，其中 queryKey 表示当前注册的新的sql的key
 
@@ -99,14 +99,14 @@ curl -d 'sql=select *,count(id) as count,dist(id) from test group by type' 127.0
 #### 移除一个SQL处理语句
 
 ```
-curl -d 'sql=select *,count(id) as count,dist(id) from test group by type' 127.0.0.1:9200/api/task/remove
+curl -d 'sql=select *,count(id) as count,dist(id) from test group by type' 127.0.0.1:8000/api/task/remove
 ```
 
 
 #### 查看监听的SQL列表
 
 ```
-curl 127.0.0.1:9200/api/task/list
+curl 127.0.0.1:8000/api/task/list
 ```
 
 
