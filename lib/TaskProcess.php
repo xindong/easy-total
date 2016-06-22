@@ -125,6 +125,7 @@ class TaskProcess
     public function __construct($taskId)
     {
         $this->taskId = $taskId;
+        $this->driver = new DataDriver(self::$dataConfig);
 
         # 读取子进程dump出的数据
         $this->loadDumpData();
