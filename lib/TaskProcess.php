@@ -260,8 +260,7 @@ class TaskProcess
     {
         if (count($this->jobsTable))
         {
-            $count = 0;
-            $max   = 10000 - count($this->jobs);
+            $max = 10000 - count($this->jobs);
             if ($max < 0)
             {
                 if (IS_DEBUG)
@@ -276,6 +275,7 @@ class TaskProcess
                 return;
             }
 
+            $count = 0;
             foreach ($this->jobsTable as $key => $item)
             {
                 if ($item['index'] > 0)
@@ -348,6 +348,11 @@ class TaskProcess
                 }
 
                 $this->jobsTable->del($key);
+            }
+
+            if ($count)
+            {
+                debug("Task#$this->taskId process import $count jobs, now memory table jobs count is : ". count($this->jobsTable) .".");
             }
         }
 
@@ -760,15 +765,23 @@ class TaskProcess
                 # 多个分组数据
                 for($i = 1; $i < $item['length']; $i++)
                 {
-                    $rs = $this->jobsTable->get("{$key}_{$i}");
-                    if ($rs)
+                    if (isset($this->jobsTableBlockData[$key][$i]))
                     {
-                        $str .= $rs['value'];
+                        $str      .= $this->jobsTableBlockData[$key][$i];
+                        $memKeys[] = $key;
                     }
                     else
                     {
-                        #读取失败
-                        warn("get swoole_table fail, key: {$key}_{$i}");
+                        $rs = $this->jobsTable->get("{$key}_{$i}");
+                        if ($rs)
+                        {
+                            $str .= $rs['value'];
+                        }
+                        else
+                        {
+                            #读取失败
+                            warn("get swoole_table fail, key: {$key}_{$i}");
+                        }
                     }
                 }
             }
