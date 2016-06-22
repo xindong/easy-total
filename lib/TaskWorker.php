@@ -294,6 +294,8 @@ class TaskWorker
             }
         }
 
+        debug("Task#$this->taskId job list count: ". count(self::$jobs) .".job memory table count: ". count($this->jobsTable) . ", delay job count: $this->delayJobCount");
+
         $this->updateStatus();
     }
 

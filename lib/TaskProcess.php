@@ -406,7 +406,7 @@ class TaskProcess
 
             if ($success || $fail)
             {
-                debug("Task#$this->taskId process do job $success success, $fail fail.");
+                debug("Task#$this->taskId process jobs count: $this->jobs, success: $success, fail: $fail.");
             }
         }
     }
