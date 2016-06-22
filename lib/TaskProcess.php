@@ -33,6 +33,13 @@ class TaskProcess
     protected $jobsTable;
 
     /**
+     * 分块数据
+     *
+     * @var array
+     */
+    protected $jobsTableBlockData = [];
+
+    /**
      * 任务数据
      *
      * @var array
@@ -209,6 +216,7 @@ class TaskProcess
     protected function run()
     {
         # 线程中处理数据
+        $cleanTime = time();
         while (true)
         {
             # 加载数据
@@ -224,6 +232,23 @@ class TaskProcess
             if (!self::$sendEvents && !$this->list && !$this->jobs)
             {
                 sleep(1);
+            }
+
+            if ($this->jobsTableBlockData && time() - $cleanTime > 10)
+            {
+                foreach ($this->jobsTableBlockData as $key => $item)
+                {
+                    if (!$this->jobsTable->exist($key))
+                    {
+                        # 清理数据
+                        unset($this->jobsTable[$key]);
+
+                        warn("Task#$this->taskId process memory table key#$key not found.");
+                    }
+                }
+
+                # 清理数据
+                $cleanTime = time();
             }
         }
     }
@@ -253,7 +278,14 @@ class TaskProcess
 
             foreach ($this->jobsTable as $key => $item)
             {
-                if ($item['index'] > 0)continue;
+                if ($item['index'] > 0)
+                {
+                    # 分块数据先读取过来
+                    list($k1, $k2) = explode('_', $key);
+                    $this->jobsTableBlockData[$k1][$k2] = $item['value'];
+                    $this->jobsTable->del($key);
+                    continue;
+                }
 
                 if ($count > $max)
                 {
@@ -261,21 +293,34 @@ class TaskProcess
                     break;
                 }
 
-                $str = $item['value'];
+                $str     = $item['value'];
+                $delKeys = [];
+                $memKeys = [];
+
                 if ($item['length'] > 1)
                 {
                     # 多个分组数据
                     for($i = 1; $i < $item['length']; $i++)
                     {
-                        $rs = $this->jobsTable->get("{$key}_{$i}");
-                        if ($rs)
+                        if (isset($this->jobsTableBlockData[$key][$i]))
                         {
-                            $str .= $rs['value'];
+                            $str      .= $this->jobsTableBlockData[$key][$i];
+                            $memKeys[] = $key;
                         }
                         else
                         {
-                            #读取失败
-                            warn("Task#$this->taskId process get swoole_table fail, key: {$key}_{$i}");
+                            $rs = $this->jobsTable->get("{$key}_{$i}");
+                            $delKeys[] = "{$key}_{$i}";
+
+                            if ($rs)
+                            {
+                                $str .= $rs['value'];
+                            }
+                            else
+                            {
+                                #读取失败
+                                warn("Task#$this->taskId process get swoole_table fail, key: {$key}_{$i}");
+                            }
                         }
                     }
                 }
@@ -292,14 +337,16 @@ class TaskProcess
                     }
                 }
 
-                # 移除共享数据
-                if ($item['length'] > 1)
+                # 移除数据
+                if ($delKeys)foreach ($delKeys as $key)
                 {
-                    for($i = 1; $i <= $item['length']; $i++)
-                    {
-                        $this->jobsTable->del("$key,$i");
-                    }
+                    $this->jobsTable->del($key);
                 }
+                if ($memKeys)foreach ($memKeys as $key)
+                {
+                    unset($this->jobsTableBlockData[$key]);
+                }
+
                 $this->jobsTable->del($key);
             }
         }
