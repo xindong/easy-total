@@ -343,7 +343,7 @@ class EtServer
 
         foreach (explode("\n", trim(`ps -eorss,pid | grep $pid`)) as $item)
         {
-            if (preg_match('#(\d+)[ ]+(\d+)', trim($item), $m))
+            if (preg_match('#(\d+)[ ]+(\d+)#', trim($item), $m))
             {
                 if ($m[2] == $pid)
                 {
@@ -374,7 +374,7 @@ class EtServer
         $memory2 = $memory1;
         foreach (explode("\n", trim(`ps -eorss,pid | grep $pid`)) as $item)
         {
-            if (preg_match('#(\d+)[ ]+(\d+)', trim($item), $m))
+            if (preg_match('#(\d+)[ ]+(\d+)#', trim($item), $m))
             {
                 if ($m[2] == $pid)
                 {

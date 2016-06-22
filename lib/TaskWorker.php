@@ -374,7 +374,10 @@ class TaskWorker
         # 清空数据
         self::$jobs = [];
 
-        $this->taskProcess->close();
+        if ($this->taskProcess)
+        {
+            $this->taskProcess->close();
+        }
     }
 
 
