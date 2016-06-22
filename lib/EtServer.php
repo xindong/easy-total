@@ -363,6 +363,7 @@ class EtServer
         for($i = 1; $i < $config['conf']['task_worker_num']; $i++)
         {
             $table = new swoole_table($config['server']['data_block_count']);
+            $table->column('key',    swoole_table::TYPE_STRING, 40);
             $table->column('length', swoole_table::TYPE_INT, 4);
             $table->column('index',  swoole_table::TYPE_INT, 4);
             $table->column('value',  swoole_table::TYPE_STRING, $config['server']['data_block_size']);

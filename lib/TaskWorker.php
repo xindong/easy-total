@@ -314,6 +314,7 @@ class TaskWorker
         $data['length'] = ceil(strlen($data['value']) / self::$dataBlockSize);
         $jobTable       = $this->jobsTable;
         $key            = md5($job->uniqueId . microtime(1));
+        $data['key']    = $key;
 
         if ($data['length'] > 1)
         {
@@ -321,14 +322,16 @@ class TaskWorker
             # 从后面设置是避免设置的第一个数据后还没有设置完成就被子进程读取
             for($i = $data['length'] - 1; $i >= 0; $i--)
             {
+                $tmpKey = $i > 0 ? "{$key}_{$i}" : $key;
+
                 $tmp = [
+                    'key'    => $tmpKey,
                     'index'  => $i,
                     'length' => $data['length'],
                     'time'   => $data['time'],
                     'value'  => substr($data['value'], $i * self::$dataBlockSize, self::$dataBlockSize),
                 ];
 
-                $tmpKey = $i > 0 ? "{$key}_{$i}" : $key;
                 if (!$jobTable->set($tmpKey, $tmp))
                 {
                     # 插入失败
