@@ -338,8 +338,19 @@ class EtServer
         self::$counterX = new swoole_atomic();
 
         # 当前进程的pid
-        $pid           = getmypid();
-        list($memory1) = explode(' ', trim(`ps -eorss,pid | grep $pid`));
+        $pid     = getmypid();
+        $memory1 = 0;
+
+        foreach (explode("\n", trim(`ps -eorss,pid | grep $pid`)) as $item)
+        {
+            if (preg_match('#(\d+)[ ]+(\d+)', trim($item), $m))
+            {
+                if ($m[2] == $pid)
+                {
+                    $memory1 = $m[1];
+                }
+            }
+        }
 
         # 任务进程状态, 必须是2的指数
         self::$taskWorkerStatus = new swoole_table(bindec(str_pad(1, strlen(decbin($config['conf']['task_worker_num'])), 0)) * 16);
@@ -348,9 +359,30 @@ class EtServer
         self::$taskWorkerStatus->column('pid', swoole_table::TYPE_INT, 10);
         self::$taskWorkerStatus->create();
 
-        # 列出当前任务的内存
-        list($memory2) =  explode(' ', trim(`ps -eorss,pid | grep $pid`));
+        # 创建数据统计共享对象
+        for($i = 1; $i < $config['conf']['task_worker_num']; $i++)
+        {
+            $table = new swoole_table($config['server']['data_block_count']);
+            $table->column('length', swoole_table::TYPE_INT, 4);
+            $table->column('index',  swoole_table::TYPE_INT, 4);
+            $table->column('time',   swoole_table::TYPE_INT, 10);
+            $table->column('value',  swoole_table::TYPE_STRING, $config['server']['data_block_size']);
+            $table->create();
+            self::$jobsTable[$i] = $table;
+        }
 
+        # 列出当前任务的内存
+        $memory2 = $memory1;
+        foreach (explode("\n", trim(`ps -eorss,pid | grep $pid`)) as $item)
+        {
+            if (preg_match('#(\d+)[ ]+(\d+)', trim($item), $m))
+            {
+                if ($m[2] == $pid)
+                {
+                    $memory2 = $m[1];
+                }
+            }
+        }
         self::$startUseMemory = ($memory2 - $memory1) * 1024;
 
         debug("pid is: $pid");
@@ -759,6 +791,25 @@ class EtServer
                 debug("change task_tmpdir from {$config['conf']['task_tmpdir']} to /tmp/");
                 $config['conf']['task_tmpdir'] = '/tmp/';
             }
+        }
+
+        if (!$config['server']['data_block_count'])
+        {
+            $config['server']['data_block_count'] = 2 << 16;
+        }
+        else
+        {
+            # 此参数必须是2的指数
+            $count = bindec(str_pad(1, strlen(decbin($config['server']['data_block_count'])), 0));
+            if ($count < $config['server']['data_block_count'])
+            {
+                $config['server']['data_block_count'] = $count * 2;
+            }
+        }
+
+        if (!$config['server']['data_block_size'])
+        {
+            $config['server']['data_block_size'] = 1024;
         }
     }
 }

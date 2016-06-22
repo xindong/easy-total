@@ -1924,6 +1924,7 @@ class swoole_table extends ArrayIterator
      * 设置key
      * @param       $key
      * @param array $array
+     * @return bool
      */
     function set($key, array $array) {}
 
