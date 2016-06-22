@@ -485,8 +485,8 @@ class TaskProcess
                 debug("Task#$this->taskId process clean jobs cache, count: $count");
             }
 
-            $success = 0;
-            $fail    = 0;
+            static $success = 0;
+            static $fail    = 0;
             foreach ($this->jobs as $job)
             {
                 /**
@@ -538,9 +538,21 @@ class TaskProcess
                 }
             }
 
-            if ($success || $fail)
+            if (IS_DEBUG)
             {
-                debug("Task#$this->taskId process jobs count: $this->jobs, success: $success, fail: $fail.");
+                static $outTime = 0;
+
+                if ($success || $fail)
+                {
+                    if (time() - $outTime > 1)
+                    {
+                        $success = 0;
+                        $fail    = 0;
+                        $outTime = time();
+
+                        debug("Task#$this->taskId process jobs count: " . count($this->jobs) . ", success: $success, fail: $fail.");
+                    }
+                }
             }
         }
     }
@@ -1010,8 +1022,9 @@ class TaskProcess
     {
         $i       = 0;
         $time    = microtime(1);
-        $success = 0;
-        $fail    = 0;
+
+        static $success = 0;
+        static $fail    = 0;
         foreach (self::$sendEvents as $k => & $event)
         {
             $i++;
@@ -1055,7 +1068,15 @@ class TaskProcess
 
         if (IS_DEBUG && ($success || $fail))
         {
-            debug("Task#$this->taskId get ack response success $success, fail: $fail, use time: " . (microtime(1) - $time) . "s");
+            static $outTime = 0;
+            if (time() - $outTime > 1)
+            {
+                $success = 0;
+                $fail    = 0;
+                $outTime = time();
+
+                debug("Task#$this->taskId get ack response success $success, fail: $fail, use time: " . (microtime(1) - $time) . "s");
+            }
         }
 
         self::$sendEvents = array_values(self::$sendEvents);
