@@ -795,7 +795,7 @@ class EtServer
 
         if (!$config['server']['queue_max_count'])
         {
-            $config['server']['queue_max_count'] = 20000;
+            $config['server']['queue_max_count'] = 65535;
         }
 
         if (!$config['server']['queue_size'])

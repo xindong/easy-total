@@ -485,8 +485,17 @@ class TaskProcess
                 debug("Task#$this->taskId process clean jobs cache, count: $count");
             }
 
-            static $success = 0;
-            static $fail    = 0;
+            if (IS_DEBUG)
+            {
+                static $success = 0;
+                static $fail    = 0;
+            }
+            else
+            {
+                $success = 0;
+                $fail    = 0;
+            }
+
             foreach ($this->jobs as $job)
             {
                 /**
@@ -544,7 +553,7 @@ class TaskProcess
 
                 if ($success || $fail)
                 {
-                    if (time() - $outTime > 1)
+                    if (time() - $outTime > 2)
                     {
                         $success = 0;
                         $fail    = 0;
@@ -1023,8 +1032,16 @@ class TaskProcess
         $i       = 0;
         $time    = microtime(1);
 
-        static $success = 0;
-        static $fail    = 0;
+        if (IS_DEBUG)
+        {
+            static $success = 0;
+            static $fail    = 0;
+        }
+        else
+        {
+            $success = 0;
+            $fail    = 0;
+        }
         foreach (self::$sendEvents as $k => & $event)
         {
             $i++;
@@ -1069,7 +1086,7 @@ class TaskProcess
         if (IS_DEBUG && ($success || $fail))
         {
             static $outTime = 0;
-            if (time() - $outTime > 1)
+            if (time() - $outTime > 2)
             {
                 $success = 0;
                 $fail    = 0;

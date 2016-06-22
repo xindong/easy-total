@@ -294,7 +294,21 @@ class TaskWorker
             }
         }
 
-        debug("Task#$this->taskId job list count: ". count(self::$jobs) .".job memory table count: ". $this->taskProcess->queueCount() . ", delay job count: $this->delayJobCount");
+        if (IS_DEBUG)
+        {
+            static $outTime = 0;
+            if (time() - $outTime > 2)
+            {
+                $outTime    = time();
+                $jobCount   = count(self::$jobs);
+                $queueCount = $this->taskProcess->queueCount();
+                
+                if ($jobCount && $queueCount && $this->delayJobCount)
+                {
+                    debug("Task#$this->taskId job list count: $jobCount.queue count: $queueCount, delay job count: $this->delayJobCount");
+                }
+            }
+        }
 
         $this->updateStatus();
     }
