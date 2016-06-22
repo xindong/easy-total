@@ -326,10 +326,11 @@ class TaskWorker
                     'value'  => substr($data['value'], $i * self::$dataBlockSize, self::$dataBlockSize),
                 ];
 
-                if (!$jobTable->set("{$key}_{$i}", $tmp))
+                $tmpKey = $i > 0 ? "{$key}_{$i}" : $key;
+                if (!$jobTable->set($tmpKey, $tmp))
                 {
                     # 插入失败
-                    warn("Task#$this->taskId set swoole_table fail, key: {$key}_{$i}");
+                    warn("Task#$this->taskId set swoole_table fail, key: $tmpKey");
                     return false;
                 }
             }
@@ -372,6 +373,8 @@ class TaskWorker
 
         # 清空数据
         self::$jobs = [];
+
+        $this->taskProcess->close();
     }
 
 

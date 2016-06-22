@@ -260,21 +260,21 @@ class TaskProcess
                     break;
                 }
 
-                $str = $item['string'];
+                $str = $item['value'];
                 if ($item['length'] > 1)
                 {
                     # 多个分组数据
-                    for($i = 1; $i <= $item['length']; $i++)
+                    for($i = 1; $i < $item['length']; $i++)
                     {
-                        $rs = $this->jobsTable->get("$key,$i");
+                        $rs = $this->jobsTable->get("{$key}_{$i}");
                         if ($rs)
                         {
-                            $str .= $rs;
+                            $str .= $rs['value'];
                         }
                         else
                         {
                             #读取失败
-                            warn("Task#$this->taskId process get swoole_table fail, key: $key,$i");
+                            warn("Task#$this->taskId process get swoole_table fail, key: {$key}_{$i}");
                         }
                     }
                 }
@@ -706,24 +706,25 @@ class TaskProcess
         {
             if ($item['index'] > 0)continue;
 
-            $str = $item['string'];
+            $str = $item['value'];
             if ($item['length'] > 1)
             {
                 # 多个分组数据
-                for($i = 1; $i <= $item['length']; $i++)
+                for($i = 1; $i < $item['length']; $i++)
                 {
-                    $rs = $this->jobsTable->get("$key,$i");
+                    $rs = $this->jobsTable->get("{$key}_{$i}");
                     if ($rs)
                     {
-                        $str .= $rs;
+                        $str .= $rs['value'];
                     }
                     else
                     {
                         #读取失败
-                        warn("get swoole_table fail, key: $key,$i");
+                        warn("get swoole_table fail, key: {$key}_{$i}");
                     }
                 }
             }
+
             $job = @unserialize($str);
             if ($job)
             {
