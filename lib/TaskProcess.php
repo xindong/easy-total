@@ -1180,7 +1180,7 @@ class TaskProcess
      */
     protected static function sendToFluent($tag, $data, $retryNum = 0)
     {
-        $socket = @stream_socket_client(self::$outputConfig['link'], $errno, $errstr, 1, STREAM_CLIENT_CONNECT);
+        $socket = @stream_socket_client(self::$outputConfig['link'], $errno, $errstr, 3, STREAM_CLIENT_CONNECT);
         if (!$socket)
         {
             warn($errstr);
