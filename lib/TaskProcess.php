@@ -391,9 +391,10 @@ class TaskProcess
                     $count++;
                     $this->pushJob($job);
                 }
-                else
+                elseif (time() - $this->doTime['warn.data'] > 30)
                 {
-                    warn("Task#$this->taskId process unserialize data fail");
+                    warn("Task#$this->taskId process unserialize data fail, str: $str");
+                    $this->doTime['warn.data'] = time();
                 }
             }
         }
