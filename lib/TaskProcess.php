@@ -26,6 +26,13 @@ class TaskProcess
     protected $taskId;
 
     /**
+     * 进程序号
+     *
+     * @var int
+     */
+    protected $workerId;
+
+    /**
      * 任务共享数据对象
      *
      * @var swoole_table
@@ -82,6 +89,8 @@ class TaskProcess
      */
     protected $driver;
 
+    protected $doTime = [];
+
     /**
      * 程序退出时导出数据的文件路径
      *
@@ -131,8 +140,9 @@ class TaskProcess
 
     public function __construct($taskId)
     {
-        $this->taskId = $taskId;
-        $this->driver = new DataDriver(self::$dataConfig);
+        $this->taskId   = $taskId;
+        $this->workerId = $taskId + EtServer::$config['conf']['worker_num'];
+        $this->driver   = new DataDriver(self::$dataConfig);
 
         # 读取子进程dump出的数据
         $this->loadDumpData();
@@ -230,8 +240,8 @@ class TaskProcess
      */
     protected function run()
     {
-        # 线程中处理数据
-        $cleanTime = time();
+        $this->doTime['clean'] = time();
+
         while (true)
         {
             # 加载数据
@@ -249,7 +259,7 @@ class TaskProcess
                 sleep(1);
             }
 
-            if ($this->jobsTableBlockData && time() - $cleanTime > 10)
+            if ($this->jobsTableBlockData && time() - $this->doTime['clean'] > 10)
             {
                 foreach ($this->jobsTableBlockData as $key => $item)
                 {
@@ -263,7 +273,21 @@ class TaskProcess
                 }
 
                 # 清理数据
-                $cleanTime = time();
+                $this->doTime['clean'] = time();
+            }
+
+            # 更新内存占用
+            if (!isset($this->doTime['updateMemory']) || time() - $this->doTime['updateMemory'] >= 60)
+            {
+                $redis = self::getRedis();
+                if ($redis)
+                {
+                    /**
+                     * @var Redis $redis
+                     */
+                    $redis->hSet('server.memory', TaskWorker::$serverName .'_'. $this->workerId .'_'. $this->pid, serialize([memory_get_usage(true), time(), TaskWorker::$serverName, $this->workerId]));
+                }
+                $this->doTime['updateMemory'] = time();
             }
         }
     }
@@ -280,11 +304,10 @@ class TaskProcess
             {
                 if (IS_DEBUG)
                 {
-                    static $lastShow = 0;
-                    if (time() - $lastShow >= 3)
+                    if (time() - $this->doTime['debug.import'] >= 3)
                     {
                         debug("Task#$this->taskId process jobs is too much, count is " . count($this->jobs));
-                        $lastShow = time();
+                        $this->doTime['debug.import'] = time();
                     }
                 }
                 return;
@@ -549,15 +572,13 @@ class TaskProcess
 
             if (IS_DEBUG)
             {
-                static $outTime = 0;
-
                 if ($success || $fail)
                 {
-                    if (time() - $outTime > 2)
+                    if (time() - $this->doTime['debug.export'] > 2)
                     {
                         $success = 0;
                         $fail    = 0;
-                        $outTime = time();
+                        $this->doTime['debug.export'] = time();
 
                         debug("Task#$this->taskId process jobs count: " . count($this->jobs) . ", success: $success, fail: $fail.");
                     }
@@ -1085,12 +1106,11 @@ class TaskProcess
 
         if (IS_DEBUG && ($success || $fail))
         {
-            static $outTime = 0;
-            if (time() - $outTime > 2)
+            if (time() - $this->doTime['debug.ack'] > 2)
             {
                 $success = 0;
                 $fail    = 0;
-                $outTime = time();
+                $this->doTime['debug.ack'] = time();
 
                 debug("Task#$this->taskId get ack response success $success, fail: $fail, use time: " . (microtime(1) - $time) . "s");
             }
