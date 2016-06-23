@@ -350,7 +350,7 @@ class TaskProcess
 
             while (true)
             {
-                if (!$openBuffer && $count < $max)
+                if (!$openBuffer && $count >= $max)
                 {
                     break;
                 }
