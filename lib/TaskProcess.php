@@ -250,7 +250,7 @@ class TaskProcess
             $count += $this->import();
 
             # 没有任何需要处理的信息
-            if (!$count && !self::$sendEvents && !$this->list && !$this->jobs)
+            if (!self::$sendEvents && !$this->list && !$this->jobs)
             {
                 sleep(1);
                 continue;
@@ -260,7 +260,7 @@ class TaskProcess
             if ($count < 2000 && microtime(1) - $this->doTime['import'] < 1)
             {
                 # 继续导入
-                usleep(100);
+                usleep(200);
                 continue;
             }
 
