@@ -100,8 +100,8 @@ class TaskWorker
         # 设置配置
         #self::$queueMaxCount       = EtServer::$config['server']['queue_max_count'];
         #self::$queueBlockSize      = EtServer::$config['server']['queue_size'];
-        self::$dataBlockCount      = EtServer::$config['server']['data_block_count'];
-        self::$dataBlockSize       = EtServer::$config['server']['data_block_size'];
+        self::$dataBlockCount      = intval(EtServer::$config['server']['data_block_count'] * 0.9);
+        self::$dataBlockSize       = EtServer::$config['server']['data_block_size'] - 32;
         self::$serverName          = EtServer::$config['server']['host'] . ':' . EtServer::$config['server']['port'];
         self::$dumpFile            = EtServer::$config['server']['dump_path'] . 'easy-total-task-dump-' . $hash . '-' . $taskId . '.txt';
         TaskProcess::$dumpFile     = EtServer::$config['server']['dump_path'] . 'easy-total-task-process-dump-' . $hash . '-' . $taskId . '.txt';
@@ -354,7 +354,7 @@ class TaskWorker
         }
         */
 
-        $key            = md5($job->uniqueId . microtime(1));
+        $key            = substr(md5($job->uniqueId . microtime(1)), 0, 16);
         $data           = [];
         $data['key']    = $key;
         $data['value']  = serialize($job);
@@ -372,7 +372,7 @@ class TaskWorker
                 $tmpKey = $i > 0 ? "{$key}_{$i}" : $key;
 
                 $tmp = [
-                    #'key'    => $tmpKey,
+                    'key'    => $tmpKey,
                     'index'  => $i,
                     'length' => $data['length'],
                     'time'   => $data['time'],
