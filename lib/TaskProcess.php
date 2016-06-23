@@ -259,6 +259,7 @@ class TaskProcess
             if ($count < 2000 && microtime(1) - $this->doTime['import'] < 1)
             {
                 # 继续导入
+                usleep(100);
                 continue;
             }
 
