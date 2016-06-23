@@ -252,6 +252,7 @@ class TaskProcess
             # 没有任何需要处理的信息
             if (!$count && !self::$sendEvents && !$this->list && !$this->jobs)
             {
+                sleep(1);
                 continue;
             }
 
