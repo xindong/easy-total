@@ -291,7 +291,7 @@ class TaskProcess
                 $this->doTime['updateMemory'] = time();
 
                 # 输出任务信息
-                info("Task#$this->taskId process#$this->pid jobs count: ". count($this->jobs) .", fluent event count: " . count(self::$sendEvents) ." jobs queue count: ". $this->queueCount() ." memory use: {$memoryUse}.");
+                info("Task". str_pad('#'.$this->taskId, 4, '', STR_PAD_LEFT) ." process total. jobs: ". count($this->jobs) .", cache: ". count($this->jobsCache) .", fluent event: ". count(self::$sendEvents) .", queue: ". $this->queueCount() .", memory: ". number_format($memoryUse/1024/1024, 2) ."MB.");
             }
         }
     }
@@ -318,12 +318,10 @@ class TaskProcess
             }
 
             # 导入数
-            $count = 0;
-
+            $count      = 0;
             $buffer     = '';
             $openBuffer = false;
 
-            doImport:
             # 最多读取当前列队中的数量
             if ($max > $queueCount)
             {
@@ -372,21 +370,6 @@ class TaskProcess
                 {
                     warn("Task#$this->taskId process unserialize data fail");
                 }
-            }
-
-            if ($openBuffer)
-            {
-                # 防止导入一半
-                $max = $count + 1;
-                goto doImport;
-            }
-
-            # 更新最大导入量
-            $max = 5000 - count($this->jobs);
-            if ($max > 0 && $queueCount = $this->queueCount())
-            {
-                # 接着继续导入
-                goto doImport;
             }
 
             /*

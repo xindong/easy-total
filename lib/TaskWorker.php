@@ -194,14 +194,17 @@ class TaskWorker
         if (!isset($this->doTime['updateMemory']) || time() - $this->doTime['updateMemory'] >= 60)
         {
             list($redis) = self::getRedis();
+            $memoryUse   = memory_get_usage(true);
             if ($redis)
             {
                 /**
                  * @var Redis $redis
                  */
-                $redis->hSet('server.memory', self::$serverName .'_'. $this->workerId, serialize([memory_get_usage(true), time(), self::$serverName, $this->workerId]));
+                $redis->hSet('server.memory', self::$serverName .'_'. $this->workerId, serialize([$memoryUse, time(), self::$serverName, $this->workerId]));
             }
             $this->doTime['updateMemory'] = time();
+
+            info("Task". str_pad('#'.$this->taskId, 4, '', STR_PAD_LEFT) ." total. jobs: ". count(self::$jobs) .", delay jobs: ". $this->delayJobCount .", memory: ". number_format($memoryUse/1024/1024, 2) ."MB.");
         }
 
         # 标记状态为成功
