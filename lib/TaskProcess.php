@@ -456,11 +456,11 @@ class TaskProcess
                     {
                         $str .= $rs['value'];
                     }
-                    elseif (time() - $this->doTime['warn.get_data_fail'] > 2)
+                    elseif (microtime(1) - $this->doTime['warn.get_data_fail'] > 1)
                     {
                         #读取失败
                         warn("Task#$this->taskId process get swoole_table fail, key: {$key}_{$i}");
-                        $this->doTime['warn.get_data_fail'] = time();
+                        $this->doTime['warn.get_data_fail'] = microtime(1);
                     }
                 }
             }
@@ -471,6 +471,11 @@ class TaskProcess
             if ($job)
             {
                 $this->pushJob($job);
+            }
+            elseif (microtime(1) - $this->doTime['warn.data_fail'] >= 1)
+            {
+                warn("Task#$this->taskId process unserialize data fail, string: $str");
+                $this->doTime['warn.data_fail'] = microtime(1);
             }
 
             # 移除数据
