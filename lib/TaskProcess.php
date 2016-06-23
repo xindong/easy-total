@@ -40,6 +40,13 @@ class TaskProcess
     protected $jobsTable;
 
     /**
+     * 分块数据
+     *
+     * @var array
+     */
+    protected $jobsTableBlockData = [];
+
+    /**
      * 任务数据
      *
      * @var array
@@ -270,6 +277,22 @@ class TaskProcess
                 info("Task$idStr process total jobs: ". count($this->jobs) .", cache: ". count($this->jobsCache) .", fluent event: ". count(self::$sendEvents) .", queue: ". $this->queueCount() .", memory: ". number_format($memoryUse/1024/1024, 2) ."MB.");
             }
 
+            # 清理数据
+            if ($this->jobsTableBlockData && time() - $this->doTime['clean'] > 10)
+            {
+                foreach ($this->jobsTableBlockData as $key => $item)
+                {
+                    if (!$this->jobsTable->exist($key))
+                    {
+                        # 清理数据
+                        unset($this->jobsTable[$key]);
+
+                        warn("Task$idStr process memory table key#$key not found.");
+                    }
+                }
+                $this->doTime['clean'] = time();
+            }
+
             if (!self::$sendEvents && !$this->list && !$this->jobs)
             {
                 sleep(1);
@@ -372,11 +395,20 @@ class TaskProcess
 
         if ($max <= 0)return 0;
 
+        $blockKeys = [];
         foreach ($this->jobsTable as $key => $item)
         {
+            if ($key !== $item['key'])
+            {
+                warn("error data, key is $key, value key is {$item['key']}");
+            }
+
             # 由于在 swoole_table foreach 时进行 del($key) 操作会出现数据错位的bug, 所以先把数据读取后再处理
             if ($item['index'] > 0)
             {
+                list($k) = explode('_', $key);
+                $this->jobsTableBlockData[$k][$item['index']] = $item;
+                $blockKeys[] = $key;
                 continue;
             }
             $count++;
@@ -385,6 +417,12 @@ class TaskProcess
             {
                 break;
             }
+        }
+
+        # 移除分块的数据
+        foreach ($blockKeys as $key)
+        {
+            $this->jobsTable->del($key);
         }
 
         foreach ($data as $key => $item)
@@ -397,8 +435,20 @@ class TaskProcess
                 # 多个分组数据
                 for($i = 1; $i < $item['length']; $i++)
                 {
-                    $rs        = $this->jobsTable->get("{$key}_{$i}");
-                    $delKeys[] = "{$key}_{$i}";
+                    if (isset($this->jobsTableBlockData[$key][$i]))
+                    {
+                        $rs = $this->jobsTableBlockData[$key][$i];
+                    }
+                    else
+                    {
+                        $rs        = $this->jobsTable->get("{$key}_{$i}");
+                        $delKeys[] = "{$key}_{$i}";
+
+                        if ($key !== $item['key'])
+                        {
+                            warn("error sub data, key is {$key}_{$i}, value key is {$rs['key']}");
+                        }
+                    }
 
                     if ($rs)
                     {
@@ -425,6 +475,12 @@ class TaskProcess
             if ($delKeys)foreach ($delKeys as $key)
             {
                 $this->jobsTable->del($key);
+            }
+
+            # 移除已经预加载的数据
+            if (isset($this->jobsTableBlockData[$key]))
+            {
+                unset($this->jobsTableBlockData[$key]);
             }
 
             $this->jobsTable->del($key);

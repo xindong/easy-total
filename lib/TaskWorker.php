@@ -354,13 +354,14 @@ class TaskWorker
         }
         */
 
+        $key            = md5($job->uniqueId . microtime(1));
         $data           = [];
+        $data['key']    = $key;
         $data['value']  = serialize($job);
         $data['index']  = 0;
         $data['time']   = time();
         $data['length'] = ceil(strlen($data['value']) / self::$dataBlockSize);
         $jobTable       = $this->jobsTable;
-        $key            = md5($job->uniqueId . microtime(1));
 
         if ($data['length'] > 1)
         {
@@ -371,6 +372,7 @@ class TaskWorker
                 $tmpKey = $i > 0 ? "{$key}_{$i}" : $key;
 
                 $tmp = [
+                    'key'    => $tmpKey,
                     'index'  => $i,
                     'length' => $data['length'],
                     'time'   => $data['time'],
