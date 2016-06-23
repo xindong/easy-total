@@ -299,7 +299,7 @@ class TaskProcess
     {
         if ($queueCount = $this->queueCount())
         {
-            $max = 10000 - count($this->jobs);
+            $max = 5000 - count($this->jobs);
             if ($max < 0)
             {
                 if (IS_DEBUG)
@@ -313,12 +313,19 @@ class TaskProcess
                 return;
             }
 
-            # 最多读取当前列队中的数量
-            if ($max > $queueCount)$max = $queueCount;
+            # 导入数
+            $count = 0;
 
-            $count      = 0;
             $buffer     = '';
             $openBuffer = false;
+
+            doImport:
+            # 最多读取当前列队中的数量
+            if ($max > $queueCount)
+            {
+                $max = $queueCount;
+            }
+
             while ($count < $max)
             {
                 $str = $this->process->pop(65536);
@@ -338,6 +345,11 @@ class TaskProcess
                 elseif (substr($str, 0, 2) === '><')
                 {
                     $str = substr($str, 2);
+                    if ($openBuffer)
+                    {
+                        $openBuffer = false;
+                        $buffer     = '';
+                    }
                 }
                 elseif ($openBuffer)
                 {
@@ -356,6 +368,21 @@ class TaskProcess
                 {
                     warn("Task#$this->taskId process unserialize data fail");
                 }
+            }
+
+            if ($openBuffer)
+            {
+                # 防止导入一半
+                $max = $count + 1;
+                goto doImport;
+            }
+
+            # 更新最大导入量
+            $max = 5000 - count($this->jobs);
+            if ($max > 0 && $queueCount = $this->queueCount())
+            {
+                # 接着继续导入
+                goto doImport;
             }
 
             /*
@@ -444,7 +471,7 @@ class TaskProcess
 
             if ($count)
             {
-                debug("Task#$this->taskId process import $count jobs, now jobs queue count is : ". $this->queueCount() .".");
+                debug("Task#$this->taskId process import $count job(s), jobs count is: ". count($this->jobs) .", jobs queue count is: $queueCount.");
             }
         }
 
