@@ -241,6 +241,7 @@ class TaskProcess
     protected function run()
     {
         $this->doTime['clean'] = time();
+        $idStr = str_pad('#'.$this->taskId, 4, ' ', STR_PAD_LEFT);
 
         while (true)
         {
@@ -256,7 +257,11 @@ class TaskProcess
                 }
                 usleep(10);
             }
-            debug("Task#$this->taskId process import $count job(s), jobs count is: ". count($this->jobs));
+
+            if ($count > 0 && $jobCount = count($this->jobs))
+            {
+                debug("Task$idStr process import $count job(s), jobs count is: " . $jobCount);
+            }
 
             # 任务数据处理
             $this->export();
@@ -273,7 +278,7 @@ class TaskProcess
                         # 清理数据
                         unset($this->jobsTable[$key]);
 
-                        warn("Task#$this->taskId process memory table key#$key not found.");
+                        warn("Task$idStr process memory table key#$key not found.");
                     }
                 }
 
@@ -296,7 +301,7 @@ class TaskProcess
                 $this->doTime['updateMemory'] = time();
 
                 # 输出任务信息
-                info("Task". str_pad('#'.$this->taskId, 4, ' ', STR_PAD_LEFT) ." process total jobs: ". count($this->jobs) .", cache: ". count($this->jobsCache) .", fluent event: ". count(self::$sendEvents) .", queue: ". $this->queueCount() .", memory: ". number_format($memoryUse/1024/1024, 2) ."MB.");
+                info("Task$idStr process total jobs: ". count($this->jobs) .", cache: ". count($this->jobsCache) .", fluent event: ". count(self::$sendEvents) .", queue: ". $this->queueCount() .", memory: ". number_format($memoryUse/1024/1024, 2) ."MB.");
             }
 
             if (!self::$sendEvents && !$this->list && !$this->jobs)
