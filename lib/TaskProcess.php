@@ -288,7 +288,10 @@ class TaskProcess
                 info("Task". str_pad('#'.$this->taskId, 4, ' ', STR_PAD_LEFT) ." process total jobs: ". count($this->jobs) .", cache: ". count($this->jobsCache) .", fluent event: ". count(self::$sendEvents) .", queue: ". $this->queueCount() .", memory: ". number_format($memoryUse/1024/1024, 2) ."MB.");
             }
 
-            sleep(1);
+            if (!self::$sendEvents && !$this->list && !$this->jobs)
+            {
+                sleep(1);
+            }
         }
     }
 
