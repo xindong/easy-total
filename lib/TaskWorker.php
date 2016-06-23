@@ -272,6 +272,7 @@ class TaskWorker
 
         # 更新延期任务计数
         $this->delayJobCount = 0;
+        $fail                = false;
         foreach (self::$jobs as $uniqueId => $job)
         {
             /**
@@ -279,8 +280,9 @@ class TaskWorker
              */
             if ($now >= $job->taskTime)
             {
-                if ($num >= $max)
+                if ($fail || $num >= $max)
                 {
+                    # 有失败的则不再推送
                     # 超过每次投递的上线额
                     $this->delayJobCount++;
                 }
@@ -293,6 +295,7 @@ class TaskWorker
                 else
                 {
                     $this->delayJobCount++;
+                    $fail = true;
                 }
             }
         }
@@ -328,7 +331,7 @@ class TaskWorker
         $length = ceil(strlen($string) / self::$queueBlockSize);
         if ($length > 1)
         {
-            $this->taskProcess->push('begin');
+            if (!$this->taskProcess->push('begin'))return false;
             for ($i = 0; $i < $length; $i++)
             {
                 $str = substr($string, $i * self::$queueBlockSize, self::$queueBlockSize);
@@ -338,6 +341,7 @@ class TaskWorker
                     return false;
                 }
             }
+            debug("Task#$this->taskId data is too length divided $length parts.");
 
             return $this->taskProcess->push('end');
         }
