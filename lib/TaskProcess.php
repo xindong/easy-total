@@ -410,16 +410,24 @@ class TaskProcess
 
         if ($max <= 0)return 0;
 
+        $keys      = [];
         $blockKeys = [];
         $this->jobsTable->rewind();
         foreach ($this->jobsTable as $key => $item)
         {
-            if ($key !== $item['key'])
+            # 由于 swoole_table foreach 存在一些bug, 所以先把key读取过来
+            $keys[] = $key;
+        }
+
+        foreach ($keys as $key)
+        {
+            $item = $this->jobsTable->get($key);
+            if ($item['key'] != $key)
             {
-                warn("error data, key is $key, value key is {$item['key']}");
+                warn("swoole table bug get $key, rs key {$item['key']}");
+                continue;
             }
 
-            # 由于在 swoole_table foreach 时进行 del($key) 操作会出现数据错位的bug, 所以先把数据读取后再处理
             if ($item['index'] > 0)
             {
                 list($k) = explode('_', $key);
@@ -436,6 +444,7 @@ class TaskProcess
                 break;
             }
         }
+        unset($keys);
 
         # 移除分块的数据
         foreach ($blockKeys as $key)
