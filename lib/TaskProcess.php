@@ -410,29 +410,17 @@ class TaskProcess
 
         if ($max <= 0)return 0;
 
-        $keys      = [];
-        $blockKeys = [];
+        $keys = [];
         $this->jobsTable->rewind();
         foreach ($this->jobsTable as $key => $item)
         {
-            # 由于 swoole_table foreach 存在一些bug, 所以先把key读取过来
+            $key    = $item['key'];
             $keys[] = $key;
-        }
-
-        foreach ($keys as $key)
-        {
-            $item = $this->jobsTable->get($key);
-            if ($item['key'] != $key)
-            {
-                warn("swoole table bug get $key, rs key {$item['key']}");
-                continue;
-            }
 
             if ($item['index'] > 0)
             {
                 list($k) = explode('_', $key);
                 $this->jobsTableBlockData[$k][$item['index']] = $item;
-                $blockKeys[] = $key;
                 continue;
             }
 
@@ -444,18 +432,20 @@ class TaskProcess
                 break;
             }
         }
-        unset($keys);
 
         # 移除分块的数据
-        foreach ($blockKeys as $key)
+        if ($keys)
         {
-            $this->jobsTable->del($key);
+            foreach ($keys as $key)
+            {
+                $this->jobsTable->del($key);
+            }
         }
 
+        $count = 0;
         foreach ($data as $key => $item)
         {
-            $str     = $item['value'];
-            $delKeys = [];
+            $str = $item['value'];
 
             if ($item['length'] > 1)
             {
@@ -464,22 +454,7 @@ class TaskProcess
                 {
                     if (isset($this->jobsTableBlockData[$key][$i]))
                     {
-                        $rs = $this->jobsTableBlockData[$key][$i];
-                    }
-                    else
-                    {
-                        $rs        = $this->jobsTable->get("{$key}_{$i}");
-                        $delKeys[] = "{$key}_{$i}";
-
-                        if ($key !== $item['key'])
-                        {
-                            warn("error sub data, key is {$key}_{$i}, value key is {$rs['key']}");
-                        }
-                    }
-
-                    if ($rs)
-                    {
-                        $str .= $rs['value'];
+                        $str .= $this->jobsTableBlockData[$key][$i];
                     }
                     elseif (microtime(1) - $this->doTime['warn.get_data_fail'] > 1)
                     {
@@ -490,11 +465,11 @@ class TaskProcess
                 }
             }
 
-            $count++;
 
             $job = @unserialize($str);
             if ($job)
             {
+                $count++;
                 $this->pushJob($job);
             }
             elseif (microtime(1) - $this->doTime['warn.data_fail'] >= 1)
@@ -503,19 +478,17 @@ class TaskProcess
                 $this->doTime['warn.data_fail'] = microtime(1);
             }
 
-            # 移除数据
-            if ($delKeys)foreach ($delKeys as $key)
-            {
-                $this->jobsTable->del($key);
-            }
-
             # 移除已经预加载的数据
             if (isset($this->jobsTableBlockData[$key]))
             {
                 unset($this->jobsTableBlockData[$key]);
             }
 
-            $this->jobsTable->del($key);
+            if (!$this->jobsTable->del($key))
+            {
+                usleep(5);
+                $this->jobsTable->del($key);
+            }
         }
 
         $this->updateStatus();
