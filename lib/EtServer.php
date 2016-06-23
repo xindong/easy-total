@@ -360,7 +360,7 @@ class EtServer
         self::$taskWorkerStatus->create();
 
         # 创建数据统计共享对象
-        for($i = 1; $i < $config['conf']['data_block_count']; $i++)
+        for($i = 1; $i < $config['conf']['task_worker_num']; $i++)
         {
             $table = new swoole_table($config['server']['data_block_count']);
             $table->column('length', swoole_table::TYPE_INT, 4);
@@ -820,7 +820,7 @@ class EtServer
 
         if (!$config['server']['data_block_size'])
         {
-            $config['server']['data_block_size'] = 1024;
+            $config['server']['data_block_size'] = 4096;
         }
     }
 }
