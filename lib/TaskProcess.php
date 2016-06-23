@@ -310,6 +310,7 @@ class TaskProcess
     protected function import()
     {
         $count = 0;
+        $max   = 1;
 
         if ($queueCount = $this->queueCount())
         {
@@ -327,15 +328,15 @@ class TaskProcess
                 return 0;
             }
 
-            # 导入数
-            $buffer     = '';
-            $openBuffer = false;
-
             # 最多读取当前列队中的数量
             if ($max > $queueCount)
             {
                 $max = $queueCount;
             }
+
+            doPop:
+            $buffer     = '';
+            $openBuffer = false;
 
             while (true)
             {
@@ -344,7 +345,7 @@ class TaskProcess
                     break;
                 }
 
-                $str = $this->process->pop(65536);
+                $str = $this->process->pop(65535);
 
                 if ($str === 'end')
                 {
@@ -386,6 +387,10 @@ class TaskProcess
                     $this->doTime['warn.data'] = time();
                 }
             }
+        }
+        elseif (!$this->jobs && !self::$sendEvents)
+        {
+            goto doPop;
         }
 
         $this->updateStatus();
