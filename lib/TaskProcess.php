@@ -398,10 +398,10 @@ class TaskProcess
         $blockKeys = [];
         foreach ($this->jobsTable as $key => $item)
         {
-            if ($key !== $item['key'])
-            {
-                warn("error data, key is $key, value key is {$item['key']}");
-            }
+//            if ($key !== $item['key'])
+//            {
+//                warn("error data, key is $key, value key is {$item['key']}");
+//            }
 
             # 由于在 swoole_table foreach 时进行 del($key) 操作会出现数据错位的bug, 所以先把数据读取后再处理
             if ($item['index'] > 0)
@@ -411,8 +411,10 @@ class TaskProcess
                 $blockKeys[] = $key;
                 continue;
             }
+
             $count++;
             $data[$key] = $item;
+
             if ($count >= $max)
             {
                 break;
@@ -444,10 +446,10 @@ class TaskProcess
                         $rs        = $this->jobsTable->get("{$key}_{$i}");
                         $delKeys[] = "{$key}_{$i}";
 
-                        if ($key !== $item['key'])
-                        {
-                            warn("error sub data, key is {$key}_{$i}, value key is {$rs['key']}");
-                        }
+//                        if ($key !== $item['key'])
+//                        {
+//                            warn("error sub data, key is {$key}_{$i}, value key is {$rs['key']}");
+//                        }
                     }
 
                     if ($rs)
@@ -921,6 +923,7 @@ class TaskProcess
         }
 
         # 将任务中的数据导出
+        /*
         $count      = $this->queueCount();
         $buffer     = '';
         $openBuffer = false;
@@ -956,35 +959,40 @@ class TaskProcess
                 file_put_contents(self::$dumpFile, 'job,'.serialize($job) ."\r\n", FILE_APPEND);
             }
         }
+        */
 
-        /*
+        # 先读取到内存中
+        $data = [];
         foreach ($this->jobsTable as $key => $item)
         {
-            if ($item['index'] > 0)continue;
+            if ($item['index'] > 0)
+            {
+                list($k) = explode('_', $key);
+                $this->jobsTableBlockData[$k][$item['index']] = $item;
+            }
+            else
+            {
+                $data[$key] = $item;
+            }
+        }
 
+        # 写入到文件
+        foreach ($data as $key => $item)
+        {
             $str = $item['value'];
+
             if ($item['length'] > 1)
             {
                 # 多个分组数据
-                for($i = 1; $i < $item['length']; $i++)
+                for ($i = 1; $i < $item['length']; $i++)
                 {
                     if (isset($this->jobsTableBlockData[$key][$i]))
                     {
-                        $str      .= $this->jobsTableBlockData[$key][$i];
-                        $memKeys[] = $key;
+                        $str .= $this->jobsTableBlockData[$key][$i];
                     }
                     else
                     {
-                        $rs = $this->jobsTable->get("{$key}_{$i}");
-                        if ($rs)
-                        {
-                            $str .= $rs['value'];
-                        }
-                        else
-                        {
-                            #读取失败
-                            warn("get swoole_table fail, key: {$key}_{$i}");
-                        }
+                        continue;
                     }
                 }
             }
@@ -995,7 +1003,6 @@ class TaskProcess
                 file_put_contents(self::$dumpFile, 'job,'.serialize($job) ."\r\n", FILE_APPEND);
             }
         }
-        */
     }
 
     /**

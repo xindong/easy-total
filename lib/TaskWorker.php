@@ -356,7 +356,7 @@ class TaskWorker
 
         $key            = md5($job->uniqueId . microtime(1));
         $data           = [];
-        $data['key']    = $key;
+        #$data['key']    = $key;
         $data['value']  = serialize($job);
         $data['index']  = 0;
         $data['time']   = time();
@@ -372,7 +372,7 @@ class TaskWorker
                 $tmpKey = $i > 0 ? "{$key}_{$i}" : $key;
 
                 $tmp = [
-                    'key'    => $tmpKey,
+                    #'key'    => $tmpKey,
                     'index'  => $i,
                     'length' => $data['length'],
                     'time'   => $data['time'],
