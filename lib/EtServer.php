@@ -360,16 +360,15 @@ class EtServer
         self::$taskWorkerStatus->create();
 
         # 创建数据统计共享对象
-        # for($i = 1; $i < $config['conf']['task_worker_num']; $i++)
-        # {
-        #     $table = new swoole_table($config['server']['max_queue_length']);
-        #     $table->column('key',    swoole_table::TYPE_STRING, 40);
-        #     $table->column('length', swoole_table::TYPE_INT, 4);
-        #     $table->column('index',  swoole_table::TYPE_INT, 4);
-        #     $table->column('value',  swoole_table::TYPE_STRING, $config['server']['queue_size']);
-        #     $table->create();
-        #     self::$jobsTable[$i] = $table;
-        # }
+        for($i = 1; $i < $config['conf']['data_block_count']; $i++)
+        {
+            $table = new swoole_table($config['server']['data_block_count']);
+            $table->column('length', swoole_table::TYPE_INT, 4);
+            $table->column('index',  swoole_table::TYPE_INT, 4);
+            $table->column('value',  swoole_table::TYPE_STRING, $config['server']['data_block_size']);
+            $table->create();
+            self::$jobsTable[$i] = $table;
+        }
 
         # 列出当前任务的内存
         $memory2 = $memory1;
@@ -802,6 +801,26 @@ class EtServer
         if (!$config['server']['queue_size'])
         {
             $config['server']['queue_size'] = 60000;
+        }
+
+
+        if (!$config['server']['data_block_count'])
+        {
+            $config['server']['data_block_count'] = 2 << 16;
+        }
+        else
+        {
+            # 此参数必须是2的指数
+            $count = bindec(str_pad(1, strlen(decbin($config['server']['data_block_count'])), 0));
+            if ($count < $config['server']['data_block_count'])
+            {
+                $config['server']['data_block_count'] = $count * 2;
+            }
+        }
+
+        if (!$config['server']['data_block_size'])
+        {
+            $config['server']['data_block_size'] = 1024;
         }
     }
 }

@@ -80,14 +80,14 @@ class TaskWorker
      *
      * @var int
      */
-    protected static $queueBlockSize;
+    protected static $dataBlockSize;
 
     /**
      * 数据块数量, 默认 2 << 16 即 131072
      *
      * @var int
      */
-    protected static $queueMaxCount;
+    protected static $dataBlockCount;
 
     public function __construct(swoole_server $server, $taskId, $workerId)
     {
@@ -98,11 +98,13 @@ class TaskWorker
 
         $hash = substr(md5(EtServer::$configFile), 16, 8);
         # 设置配置
-        self::$queueMaxCount       = EtServer::$config['server']['queue_max_count'];
-        self::$queueBlockSize      = EtServer::$config['server']['queue_size'];
-        self::$serverName          = EtServer::$config['server']['host'] .':'. EtServer::$config['server']['port'];
-        self::$dumpFile            = EtServer::$config['server']['dump_path'] .'easy-total-task-dump-'. $hash . '-'. $taskId .'.txt';
-        TaskProcess::$dumpFile     = EtServer::$config['server']['dump_path'] .'easy-total-task-process-dump-'. $hash. '-'. $taskId .'.txt';
+        #self::$queueMaxCount       = EtServer::$config['server']['queue_max_count'];
+        #self::$queueBlockSize      = EtServer::$config['server']['queue_size'];
+        self::$dataBlockCount      = EtServer::$config['server']['data_block_count'];
+        self::$dataBlockSize       = EtServer::$config['server']['data_block_size'];
+        self::$serverName          = EtServer::$config['server']['host'] . ':' . EtServer::$config['server']['port'];
+        self::$dumpFile            = EtServer::$config['server']['dump_path'] . 'easy-total-task-dump-' . $hash . '-' . $taskId . '.txt';
+        TaskProcess::$dumpFile     = EtServer::$config['server']['dump_path'] . 'easy-total-task-process-dump-' . $hash . '-' . $taskId . '.txt';
         TaskProcess::$dataConfig   = EtServer::$config['data'];
         TaskProcess::$redisConfig  = EtServer::$config['redis'];
         TaskProcess::$outputConfig = EtServer::$config['output'];
@@ -268,7 +270,7 @@ class TaskWorker
     {
         $now = time();
         $num = 0;
-        $max = max(0, intval(self::$queueMaxCount * 0.8) - $this->taskProcess->queueCount());
+        $max = max(0, intval(self::$dataBlockCount * 0.8) - $this->taskProcess->queueCount());
 
         # 更新延期任务计数
         $this->delayJobCount = 0;
@@ -327,14 +329,15 @@ class TaskWorker
      */
     protected function pushJob(DataJob $job)
     {
+        /*
         $string = serialize($job);
-        $length = ceil(strlen($string) / self::$queueBlockSize);
+        $length = ceil(strlen($string) / self::$dataBlockSize);
         if ($length > 1)
         {
             if (!$this->taskProcess->push('begin'))return false;
             for ($i = 0; $i < $length; $i++)
             {
-                $str = substr($string, $i * self::$queueBlockSize, self::$queueBlockSize);
+                $str = substr($string, $i * self::$dataBlockSize, self::$dataBlockSize);
                 if (!$this->taskProcess->push($str))
                 {
                     # 推送失败
@@ -349,8 +352,8 @@ class TaskWorker
         {
             return $this->taskProcess->push("><". $string);
         }
+        */
 
-        /*
         $data           = [];
         $data['value']  = serialize($job);
         $data['index']  = 0;
@@ -358,18 +361,16 @@ class TaskWorker
         $data['length'] = ceil(strlen($data['value']) / self::$dataBlockSize);
         $jobTable       = $this->jobsTable;
         $key            = md5($job->uniqueId . microtime(1));
-        $data['key']    = $key;
 
         if ($data['length'] > 1)
         {
-            # 超过1000字符则分段截取
+            # 超过设定的字符长度则分段截取
             # 从后面设置是避免设置的第一个数据后还没有设置完成就被子进程读取
             for($i = $data['length'] - 1; $i >= 0; $i--)
             {
                 $tmpKey = $i > 0 ? "{$key}_{$i}" : $key;
 
                 $tmp = [
-                    'key'    => $tmpKey,
                     'index'  => $i,
                     'length' => $data['length'],
                     'time'   => $data['time'],
@@ -390,7 +391,6 @@ class TaskWorker
         {
             return $jobTable->set($key, $data);
         }
-        */
     }
 
     /**
@@ -404,10 +404,10 @@ class TaskWorker
     protected function checkStatus()
     {
         $dataCount = $this->taskProcess->queueCount();
-        if ($dataCount + $this->delayJobCount > self::$queueMaxCount * 0.8)
+        if ($dataCount + $this->delayJobCount > self::$dataBlockCount * 0.8)
         {
             # 积累的任务数已经很多了
-            warn("Task#$this->taskId queue data is to much. now count: {$dataCount}, delay job count: {$this->delayJobCount}, max queue is ". self::$queueMaxCount);
+            warn("Task#$this->taskId queue data is to much. now count: {$dataCount}, delay job count: {$this->delayJobCount}, max queue is ". self::$dataBlockCount);
 
             return false;
         }

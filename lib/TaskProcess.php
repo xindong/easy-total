@@ -40,13 +40,6 @@ class TaskProcess
     protected $jobsTable;
 
     /**
-     * 分块数据
-     *
-     * @var array
-     */
-    protected $jobsTableBlockData = [];
-
-    /**
      * 任务数据
      *
      * @var array
@@ -140,9 +133,10 @@ class TaskProcess
 
     public function __construct($taskId)
     {
-        $this->taskId   = $taskId;
-        $this->workerId = $taskId + EtServer::$config['conf']['worker_num'];
-        $this->driver   = new DataDriver(self::$dataConfig);
+        $this->taskId    = $taskId;
+        $this->workerId  = $taskId + EtServer::$config['conf']['worker_num'];
+        $this->driver    = new DataDriver(self::$dataConfig);
+        $this->jobsTable = EtServer::$jobsTable[$this->taskId];
 
         # 读取子进程dump出的数据
         $this->loadDumpData();
@@ -177,7 +171,6 @@ class TaskProcess
             $this->process   = $process;
             $this->isSub     = true;
             $this->pid       = $process->pid;
-            $this->jobsTable = EtServer::$jobsTable[$this->taskId];
 
             global $argv;
             EtServer::setProcessName("php ". implode(' ', $argv) ." [task sub process]");
@@ -195,7 +188,7 @@ class TaskProcess
         });
 
         # 启用队列模式
-        $this->process->useQueue($this->taskId);
+        # $this->process->useQueue($this->taskId);
 
         $this->startTime = microtime(1);
         $this->pid       = $this->process->start();
@@ -230,9 +223,9 @@ class TaskProcess
      */
     public function queueCount()
     {
-        $stat = $this->process->statQueue();
-
-        return $stat['queue_num'];
+        return count($this->jobsTable);
+//        $stat = $this->process->statQueue();
+//        return $stat['queue_num'];
     }
 
     /**
@@ -247,6 +240,7 @@ class TaskProcess
         {
             # 加载数据
             $count = $this->import();
+
             if ($count > 0 && $jobCount = count($this->jobs))
             {
                 debug("Task$idStr process import $count job(s), jobs count is: " . $jobCount);
@@ -257,23 +251,6 @@ class TaskProcess
 
             # 导出数据
             $this->output();
-
-            if ($this->jobsTableBlockData && time() - $this->doTime['clean'] > 10)
-            {
-                foreach ($this->jobsTableBlockData as $key => $item)
-                {
-                    if (!$this->jobsTable->exist($key))
-                    {
-                        # 清理数据
-                        unset($this->jobsTable[$key]);
-
-                        warn("Task$idStr process memory table key#$key not found.");
-                    }
-                }
-
-                # 清理数据
-                $this->doTime['clean'] = time();
-            }
 
             # 更新内存占用
             if (!isset($this->doTime['updateMemory']) || time() - $this->doTime['updateMemory'] >= 60)
@@ -309,8 +286,8 @@ class TaskProcess
      */
     protected function import()
     {
+        /*
         $count = 0;
-        $max   = 1;
 
         if ($queueCount = $this->queueCount())
         {
@@ -334,7 +311,6 @@ class TaskProcess
                 $max = $queueCount;
             }
 
-            doPop:
             $buffer     = '';
             $openBuffer = false;
 
@@ -388,9 +364,70 @@ class TaskProcess
                 }
             }
         }
-        elseif (!$this->jobs && !self::$sendEvents)
+        */
+
+        $count = 0;
+        $max   = 10000 - count($this->jobs);
+        $data  = [];
+
+        if ($max <= 0)return 0;
+
+        foreach ($this->jobsTable as $key => $item)
         {
-            goto doPop;
+            # 由于在 swoole_table foreach 时进行 del($key) 操作会出现数据错位的bug, 所以先把数据读取后再处理
+            if ($item['index'] > 0)
+            {
+                continue;
+            }
+            $count++;
+            $data[$key] = $item;
+            if ($count >= $max)
+            {
+                break;
+            }
+        }
+
+        foreach ($data as $key => $item)
+        {
+            $str     = $item['value'];
+            $delKeys = [];
+
+            if ($item['length'] > 1)
+            {
+                # 多个分组数据
+                for($i = 1; $i < $item['length']; $i++)
+                {
+                    $rs        = $this->jobsTable->get("{$key}_{$i}");
+                    $delKeys[] = "{$key}_{$i}";
+
+                    if ($rs)
+                    {
+                        $str .= $rs['value'];
+                    }
+                    elseif (time() - $this->doTime['warn.get_data_fail'] > 2)
+                    {
+                        #读取失败
+                        warn("Task#$this->taskId process get swoole_table fail, key: {$key}_{$i}");
+                        $this->doTime['warn.get_data_fail'] = time();
+                    }
+                }
+            }
+
+            $count++;
+
+            $job = @unserialize($str);
+            if ($job)
+            {
+                $this->pushJob($job);
+            }
+
+            # 移除数据
+            if ($delKeys)foreach ($delKeys as $key)
+            {
+                $this->jobsTable->del($key);
+            }
+
+            $this->jobsTable->del($key);
         }
 
         $this->updateStatus();
