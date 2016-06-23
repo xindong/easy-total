@@ -574,7 +574,7 @@ class TaskProcess
             {
                 if ($success || $fail)
                 {
-                    if (time() - $this->doTime['debug.export'] > 2)
+                    if (time() - $this->doTime['debug.export'] >= 3)
                     {
                         $success = 0;
                         $fail    = 0;
@@ -1106,7 +1106,7 @@ class TaskProcess
 
         if (IS_DEBUG && ($success || $fail))
         {
-            if (time() - $this->doTime['debug.ack'] > 2)
+            if (time() - $this->doTime['debug.ack'] >= 3)
             {
                 $success = 0;
                 $fail    = 0;

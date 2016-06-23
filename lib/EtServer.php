@@ -433,7 +433,8 @@ class EtServer
     {
         $port = self::$config['manager']['port'] ?: 9200;
         $host = self::$config['manager']['host'] ?: '127.0.0.1';
-        self::$server = new swoole_websocket_server($host, $port);
+        #self::$server = new swoole_websocket_server($host, $port);
+        self::$server = new swoole_http_server($host, $port);
         self::$server->set(self::$config['conf']);
     }
 
@@ -464,8 +465,8 @@ class EtServer
         self::$server->on('Task',         [$this, 'onTask']);
         self::$server->on('Start',        [$this, 'onStart']);
         self::$server->on('Request',      [$this, 'onManagerRequest']);
-        self::$server->on('Message',      [$this, 'onManagerMessage']);
-        self::$server->on('Open',         [$this, 'onManagerOpen']);
+        #self::$server->on('Message',      [$this, 'onManagerMessage']);
+        #self::$server->on('Open',         [$this, 'onManagerOpen']);
 
         return $this;
     }
