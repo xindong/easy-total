@@ -246,18 +246,7 @@ class TaskProcess
         while (true)
         {
             # 加载数据
-            $time  = microtime(1);
-            $count = 0;
-            while(true)
-            {
-                $count = $this->import();
-                if (!$count || microtime(1) - $time > 1)
-                {
-                    break;
-                }
-                usleep(10);
-            }
-
+            $count = $this->import();
             if ($count > 0 && $jobCount = count($this->jobs))
             {
                 debug("Task$idStr process import $count job(s), jobs count is: " . $jobCount);
