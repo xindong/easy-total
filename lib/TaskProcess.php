@@ -411,10 +411,10 @@ class TaskProcess
         $blockKeys = [];
         foreach ($this->jobsTable as $key => $item)
         {
-//            if ($key !== $item['key'])
-//            {
-//                warn("error data, key is $key, value key is {$item['key']}");
-//            }
+            if ($key !== $item['key'])
+            {
+                warn("error data, key is $key, value key is {$item['key']}");
+            }
 
             # 由于在 swoole_table foreach 时进行 del($key) 操作会出现数据错位的bug, 所以先把数据读取后再处理
             if ($item['index'] > 0)
@@ -459,10 +459,10 @@ class TaskProcess
                         $rs        = $this->jobsTable->get("{$key}_{$i}");
                         $delKeys[] = "{$key}_{$i}";
 
-//                        if ($key !== $item['key'])
-//                        {
-//                            warn("error sub data, key is {$key}_{$i}, value key is {$rs['key']}");
-//                        }
+                        if ($key !== $item['key'])
+                        {
+                            warn("error sub data, key is {$key}_{$i}, value key is {$rs['key']}");
+                        }
                     }
 
                     if ($rs)

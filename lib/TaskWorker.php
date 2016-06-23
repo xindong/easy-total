@@ -356,7 +356,7 @@ class TaskWorker
 
         $key            = md5($job->uniqueId . microtime(1));
         $data           = [];
-        #$data['key']    = $key;
+        $data['key']    = $key;
         $data['value']  = serialize($job);
         $data['index']  = 0;
         $data['time']   = time();
