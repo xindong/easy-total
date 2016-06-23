@@ -305,7 +305,7 @@ class TaskProcess
                     if (!$this->jobsTable->exist($key))
                     {
                         # 清理数据
-                        unset($this->jobsTable[$key]);
+                        unset($this->jobsTableBlockData[$key]);
 
                         warn("Task$idStr process memory table key#$key not found.");
                     }
