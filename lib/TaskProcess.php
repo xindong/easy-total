@@ -253,12 +253,6 @@ class TaskProcess
             # 导出数据
             $this->output();
 
-            # 没任何需要处理的数据
-            if (!self::$sendEvents && !$this->list && !$this->jobs)
-            {
-                sleep(1);
-            }
-
             if ($this->jobsTableBlockData && time() - $this->doTime['clean'] > 10)
             {
                 foreach ($this->jobsTableBlockData as $key => $item)
@@ -291,8 +285,10 @@ class TaskProcess
                 $this->doTime['updateMemory'] = time();
 
                 # 输出任务信息
-                info("Task". str_pad('#'.$this->taskId, 4, '', STR_PAD_LEFT) ." process total. jobs: ". count($this->jobs) .", cache: ". count($this->jobsCache) .", fluent event: ". count(self::$sendEvents) .", queue: ". $this->queueCount() .", memory: ". number_format($memoryUse/1024/1024, 2) ."MB.");
+                info("Task". str_pad('#'.$this->taskId, 4, ' ', STR_PAD_LEFT) ." process total jobs: ". count($this->jobs) .", cache: ". count($this->jobsCache) .", fluent event: ". count(self::$sendEvents) .", queue: ". $this->queueCount() .", memory: ". number_format($memoryUse/1024/1024, 2) ."MB.");
             }
+
+            sleep(1);
         }
     }
 
@@ -303,7 +299,7 @@ class TaskProcess
     {
         if ($queueCount = $this->queueCount())
         {
-            $max = 5000 - count($this->jobs);
+            $max = 10000 - count($this->jobs);
             if ($max < 0)
             {
                 if (IS_DEBUG)

@@ -204,7 +204,7 @@ class TaskWorker
             }
             $this->doTime['updateMemory'] = time();
 
-            info("Task". str_pad('#'.$this->taskId, 4, '', STR_PAD_LEFT) ." total. jobs: ". count(self::$jobs) .", delay jobs: ". $this->delayJobCount .", memory: ". number_format($memoryUse/1024/1024, 2) ."MB.");
+            info("Task". str_pad('#'.$this->taskId, 4, ' ', STR_PAD_LEFT) ." total jobs: ". count(self::$jobs) .", delay jobs: ". $this->delayJobCount .", memory: ". number_format($memoryUse/1024/1024, 2) ."MB.");
         }
 
         # 标记状态为成功
