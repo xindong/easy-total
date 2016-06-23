@@ -412,15 +412,14 @@ class TaskProcess
 
         $keys = [];
         $this->jobsTable->rewind();
-        foreach ($this->jobsTable as $key => $item)
+        foreach ($this->jobsTable as $item)
         {
             $key    = $item['key'];
             $keys[] = $key;
 
             if ($item['index'] > 0)
             {
-                list($k) = explode('_', $key);
-                $this->jobsTableBlockData[$k][$item['index']] = $item;
+                $this->jobsTableBlockData[$item['key']][$item['index']] = $item['value'];
                 continue;
             }
 
@@ -966,16 +965,15 @@ class TaskProcess
 
         # 先读取到内存中
         $data = [];
-        foreach ($this->jobsTable as $key => $item)
+        foreach ($this->jobsTable as $item)
         {
             if ($item['index'] > 0)
             {
-                list($k) = explode('_', $key);
-                $this->jobsTableBlockData[$k][$item['index']] = $item;
+                $this->jobsTableBlockData[$item['key']][$item['index']] = $item;
             }
             else
             {
-                $data[$key] = $item;
+                $data[$item['key']] = $item;
             }
         }
 

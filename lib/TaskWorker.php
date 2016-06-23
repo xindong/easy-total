@@ -369,10 +369,10 @@ class TaskWorker
             # 从后面设置是避免设置的第一个数据后还没有设置完成就被子进程读取
             for($i = $data['length'] - 1; $i >= 0; $i--)
             {
-                $tmpKey = $i > 0 ? "{$key}_{$i}" : $key;
+                $tmpKey = "{$key}_{$i}";
 
                 $tmp = [
-                    'key'    => $tmpKey,
+                    'key'    => $key,
                     'index'  => $i,
                     'length' => $data['length'],
                     'time'   => $data['time'],
