@@ -245,7 +245,18 @@ class TaskProcess
         while (true)
         {
             # 加载数据
-            $this->import();
+            $time  = microtime(1);
+            $count = 0;
+            while(true)
+            {
+                $count = $this->import();
+                if (!$count || microtime(1) - $time > 1)
+                {
+                    break;
+                }
+                usleep(10);
+            }
+            debug("Task#$this->taskId process import $count job(s), jobs count is: ". count($this->jobs));
 
             # 任务数据处理
             $this->export();
@@ -297,9 +308,15 @@ class TaskProcess
 
     /**
      * 导入数据
+     *
+     * 返回导入数据量
+     *
+     * @return int
      */
     protected function import()
     {
+        $count = 0;
+
         if ($queueCount = $this->queueCount())
         {
             $max = 10000 - count($this->jobs);
@@ -313,11 +330,10 @@ class TaskProcess
                         $this->doTime['debug.import'] = time();
                     }
                 }
-                return;
+                return 0;
             }
 
             # 导入数
-            $count      = 0;
             $buffer     = '';
             $openBuffer = false;
 
@@ -327,8 +343,13 @@ class TaskProcess
                 $max = $queueCount;
             }
 
-            while ($count < $max)
+            while (true)
             {
+                if (!$openBuffer && $count < $max)
+                {
+                    break;
+                }
+
                 $str = $this->process->pop(65536);
 
                 if ($str === 'end')
@@ -370,99 +391,11 @@ class TaskProcess
                     warn("Task#$this->taskId process unserialize data fail");
                 }
             }
-
-            /*
-            foreach ($this->jobsTable as $key => $item)
-            {
-                if ($item['index'] > 0)
-                {
-                    # 分块数据先读取过来
-                    list($k1, $k2) = explode('_', $key);
-                    $this->jobsTableBlockData[$k1][$k2] = $item['value'];
-                    $this->jobsTable->del($key);
-                    continue;
-                }
-
-                if (strpos($key, '_') !== false)
-                {
-                    usleep(10000);
-                    echo $key .' = ';
-                    var_dump($item);
-                }
-
-                if ($count > $max)
-                {
-                    # 只读取一段数据
-                    break;
-                }
-
-                $str     = $item['value'];
-                $delKeys = [];
-                $memKeys = [];
-
-                if ($item['length'] > 1)
-                {
-                    # 多个分组数据
-                    for($i = 1; $i < $item['length']; $i++)
-                    {
-                        if (isset($this->jobsTableBlockData[$key][$i]))
-                        {
-                            $str      .= $this->jobsTableBlockData[$key][$i];
-                            $memKeys[] = $key;
-                        }
-                        else
-                        {
-                            $rs = $this->jobsTable->get("{$key}_{$i}");
-                            $delKeys[] = "{$key}_{$i}";
-
-                            if ($rs)
-                            {
-                                $str .= $rs['value'];
-                            }
-                            else
-                            {
-                                #读取失败
-                                warn("Task#$this->taskId process get swoole_table fail, key: {$key}_{$i}");
-                            }
-                        }
-                    }
-                }
-
-                $count++;
-
-                $job = @unserialize($str);
-                if ($job)
-                {
-                    if (!$this->pushJob($job))
-                    {
-                        # 数据没添加成功
-                        warn("Task#$this->taskId set job $job->uniqueId fail.");
-                        continue;
-                    }
-                }
-
-                # 移除数据
-                if ($delKeys)foreach ($delKeys as $key)
-                {
-                    $this->jobsTable->del($key);
-                }
-                if ($memKeys)foreach ($memKeys as $key)
-                {
-                    unset($this->jobsTableBlockData[$key]);
-                }
-
-                $this->jobsTable->del($key);
-            }
-            */
-
-            if ($count)
-            {
-                debug("Task#$this->taskId process import $count job(s), jobs count is: ". count($this->jobs) .", jobs queue count is: $queueCount.");
-            }
         }
 
-
         $this->updateStatus();
+
+        return $count;
     }
 
 
