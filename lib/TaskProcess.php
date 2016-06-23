@@ -411,6 +411,7 @@ class TaskProcess
         if ($max <= 0)return 0;
 
         $blockKeys = [];
+        $this->jobsTable->rewind();
         foreach ($this->jobsTable as $key => $item)
         {
             if ($key !== $item['key'])
