@@ -266,12 +266,13 @@ class TaskProcess
 
             $this->doTime['import'] = microtime(1);
 
-            if ($count > 0 && $jobCount = count($this->jobs))
+            if ($count > 0 && ($jobCount = count($this->jobs)))
             {
                 debug("Task$idStr process import $count job(s), jobs count is: " . $jobCount);
 
                 $this->doTime['debug.import'] = microtime(1);
             }
+            $count = 0;
 
             # 任务数据处理
             $this->export();
