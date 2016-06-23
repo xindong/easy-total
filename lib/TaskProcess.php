@@ -279,15 +279,19 @@ class TaskProcess
             # 更新内存占用
             if (!isset($this->doTime['updateMemory']) || time() - $this->doTime['updateMemory'] >= 60)
             {
-                $redis = self::getRedis();
+                $redis     = self::getRedis();
+                $memoryUse = memory_get_usage(true);
                 if ($redis)
                 {
                     /**
                      * @var Redis $redis
                      */
-                    $redis->hSet('server.memory', TaskWorker::$serverName .'_'. $this->workerId .'_'. $this->pid, serialize([memory_get_usage(true), time(), TaskWorker::$serverName, $this->workerId]));
+                    $redis->hSet('server.memory', TaskWorker::$serverName .'_'. $this->workerId .'_'. $this->pid, serialize([$memoryUse, time(), TaskWorker::$serverName, $this->workerId]));
                 }
                 $this->doTime['updateMemory'] = time();
+
+                # 输出任务信息
+                info("Task#$this->taskId process#$this->pid jobs count: ". count($this->jobs) .", fluent event count: " . count(self::$sendEvents) ." jobs queue count: ". $this->queueCount() ." memory use: {$memoryUse}.");
             }
         }
     }
