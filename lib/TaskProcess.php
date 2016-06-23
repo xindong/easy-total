@@ -242,15 +242,33 @@ class TaskProcess
     {
         $this->doTime['clean'] = time();
         $idStr = str_pad('#'.$this->taskId, 4, ' ', STR_PAD_LEFT);
+        $count = 0;
 
         while (true)
         {
             # 加载数据
-            $count = $this->import();
+            $count += $this->import();
+
+            # 没有任何需要处理的信息
+            if (!$count && !self::$sendEvents && !$this->list && !$this->jobs)
+            {
+                continue;
+            }
+
+            # 如果导入的数据比较少
+            if ($count < 2000 && microtime(1) - $this->doTime['import'] < 1)
+            {
+                # 继续导入
+                continue;
+            }
+
+            $this->doTime['import'] = microtime(1);
 
             if ($count > 0 && $jobCount = count($this->jobs))
             {
                 debug("Task$idStr process import $count job(s), jobs count is: " . $jobCount);
+
+                $this->doTime['debug.import'] = microtime(1);
             }
 
             # 任务数据处理
@@ -291,11 +309,6 @@ class TaskProcess
                     }
                 }
                 $this->doTime['clean'] = time();
-            }
-
-            if (!self::$sendEvents && !$this->list && !$this->jobs)
-            {
-                sleep(1);
             }
         }
     }
