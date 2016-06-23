@@ -260,7 +260,6 @@ class TaskProcess
             if ($count < 2000 && microtime(1) - $this->doTime['import'] < 1)
             {
                 # 继续导入
-                usleep(200);
                 continue;
             }
 
@@ -404,6 +403,8 @@ class TaskProcess
             }
         }
         */
+
+
 
         $count = 0;
         $max   = 10000 - count($this->jobs);
