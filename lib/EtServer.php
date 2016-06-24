@@ -509,7 +509,7 @@ class EtServer
 
     public function onShutdown($server)
     {
-
+        debug('server stopped');
     }
 
     public function onWorkerStop(swoole_server $server, $workerId)
@@ -531,6 +531,14 @@ class EtServer
             {
                 # 保存数据
                 $this->worker->shutdown();
+
+                if ($workerId === 0)
+                {
+                    for($i = 1; $i < $server->setting['task_worker_num']; $i++)
+                    {
+                        $server->task('exit');
+                    }
+                }
             }
         }
 
@@ -647,12 +655,12 @@ class EtServer
         global $argv;
         self::setProcessName("php ". implode(' ', $argv) ." [manager]");
 
-        debug('onManagerStart');
+        debug('manager start');
     }
 
     public function onManagerStop($server)
     {
-        debug('onManagerStop');
+        debug('manager stopped');
     }
 
     /**

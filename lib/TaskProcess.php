@@ -844,7 +844,7 @@ class TaskProcess
 
             sleep(1);
 
-            info("Task#$this->taskId wait process $this->pid stop ". (microtime(1) - $time) ."...");
+            info("Task#$this->taskId wait process $this->pid stop ". (microtime(1) - $time) . 's');
         }
 
         # 回收资源

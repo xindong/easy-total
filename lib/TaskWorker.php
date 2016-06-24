@@ -183,6 +183,12 @@ class TaskWorker
                     # 清理数据, 只有 taskId = 0 的进程会被调用
                     $this->clean();
                     break;
+
+                case 'exit':
+                    # 得到进程通知结束
+                    $this->shutdown();
+                    exit;
+                    break;
             }
         }
         catch (Exception $e)
