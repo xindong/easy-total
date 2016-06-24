@@ -96,12 +96,10 @@ class TaskWorker
         $this->workerId  = $workerId;
         $this->startTime = time();
 
-        $hash = substr(md5(EtServer::$configFile), 16, 8);
-        # 设置配置
-        #self::$queueMaxCount       = EtServer::$config['server']['queue_max_count'];
-        #self::$queueBlockSize      = EtServer::$config['server']['queue_size'];
-        self::$dataBlockCount      = intval(EtServer::$config['server']['data_block_count'] * 0.9);
-        self::$dataBlockSize       = EtServer::$config['server']['data_block_size'] - 32;
+        self::$dataBlockCount = intval(EtServer::$config['server']['data_block_count'] * 0.9);
+        self::$dataBlockSize  = EtServer::$config['server']['data_block_size'];
+
+        $hash                      = substr(md5(EtServer::$configFile), 16, 8);
         self::$serverName          = EtServer::$config['server']['host'] . ':' . EtServer::$config['server']['port'];
         self::$dumpFile            = EtServer::$config['server']['dump_path'] . 'easy-total-task-dump-' . $hash . '-' . $taskId . '.txt';
         TaskProcess::$dumpFile     = EtServer::$config['server']['dump_path'] . 'easy-total-task-process-dump-' . $hash . '-' . $taskId . '.txt';
@@ -329,31 +327,6 @@ class TaskWorker
      */
     protected function pushJob(DataJob $job)
     {
-        /*
-        $string = serialize($job);
-        $length = ceil(strlen($string) / self::$dataBlockSize);
-        if ($length > 1)
-        {
-            if (!$this->taskProcess->push('begin'))return false;
-            for ($i = 0; $i < $length; $i++)
-            {
-                $str = substr($string, $i * self::$dataBlockSize, self::$dataBlockSize);
-                if (!$this->taskProcess->push($str))
-                {
-                    # 推送失败
-                    return false;
-                }
-            }
-            debug("Task#$this->taskId data is too length divided $length parts.");
-
-            return $this->taskProcess->push('end');
-        }
-        else
-        {
-            return $this->taskProcess->push("><". $string);
-        }
-        */
-
         $key            = substr(md5($job->uniqueId . microtime(1)), 0, 16);
         $data           = [];
         $data['key']    = $key;

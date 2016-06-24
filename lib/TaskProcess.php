@@ -165,8 +165,7 @@ class TaskProcess
             declare(ticks = 1);
             $sigHandler = function($signo)
             {
-                $this->dumpData();
-                $this->process->freeQueue();
+                $this->shutdown();
                 swoole_process::daemon();
 
                 exit;
@@ -182,7 +181,11 @@ class TaskProcess
             global $argv;
             EtServer::setProcessName("php ". implode(' ', $argv) ." [task sub process]");
 
+            # 运行
             $this->run();
+
+            # 保存数据
+            $this->shutdown();
 
             # 蜕变成守护进程
             swoole_process::daemon();
@@ -193,9 +196,6 @@ class TaskProcess
             # 退出, 不用执行 shutdown_function
             exit(1);
         });
-
-        # 启用队列模式
-        # $this->process->useQueue($this->taskId);
 
         $this->startTime = microtime(1);
         $this->pid       = $this->process->start();
@@ -231,8 +231,8 @@ class TaskProcess
     public function queueCount()
     {
         return count($this->jobsTable);
-//        $stat = $this->process->statQueue();
-//        return $stat['queue_num'];
+        #$stat = $this->process->statQueue();
+        #return $stat['queue_num'];
     }
 
     /**
@@ -246,6 +246,11 @@ class TaskProcess
 
         while (true)
         {
+            if ($this->isExited())
+            {
+                break;
+            }
+
             # 加载数据
             $count += $this->import();
 
@@ -324,171 +329,98 @@ class TaskProcess
      */
     protected function import()
     {
-        /*
         $count = 0;
-
-        if ($queueCount = $this->queueCount())
-        {
-            $max = 10000 - count($this->jobs);
-            if ($max < 0)
-            {
-                if (IS_DEBUG)
-                {
-                    if (time() - $this->doTime['debug.import'] >= 3)
-                    {
-                        debug("Task#$this->taskId process jobs is too much, count is " . count($this->jobs));
-                        $this->doTime['debug.import'] = time();
-                    }
-                }
-                return 0;
-            }
-
-            # 最多读取当前列队中的数量
-            if ($max > $queueCount)
-            {
-                $max = $queueCount;
-            }
-
-            $buffer     = '';
-            $openBuffer = false;
-
-            while (true)
-            {
-                if (!$openBuffer && $count >= $max)
-                {
-                    break;
-                }
-
-                $str = $this->process->pop(65535);
-
-                if ($str === 'end')
-                {
-                    $openBuffer = false;
-                    $str        = $buffer;
-                    $buffer     = '';
-                }
-                elseif ($str === 'begin')
-                {
-                    $buffer     = '';
-                    $openBuffer = true;
-                    continue;
-                }
-                elseif (substr($str, 0, 2) === '><')
-                {
-                    $str = substr($str, 2);
-                    if ($openBuffer)
-                    {
-                        $openBuffer = false;
-                        $buffer     = '';
-                    }
-                }
-                elseif ($openBuffer)
-                {
-                    $buffer .= $str;
-                    continue;
-                }
-
-                $job = @unserialize($str);
-
-                if ($job)
-                {
-                    $count++;
-                    $this->pushJob($job);
-                }
-                elseif (time() - $this->doTime['warn.data'] > 30)
-                {
-                    warn("Task#$this->taskId process unserialize data fail, str: $str");
-                    $this->doTime['warn.data'] = time();
-                }
-            }
-        }
-        */
-
-
-
-        $count = 0;
-        $max   = 10000 - count($this->jobs);
-        $data  = [];
+        $max   = 50000 - count($this->jobs);
 
         if ($max <= 0)return 0;
 
-        $keys = [];
-        $this->jobsTable->rewind();
-        foreach ($this->jobsTable as $item)
+        # 当前时间
+        $begin = microtime(1);
+        while (true)
         {
-            $key    = $item['key'];
-            $keys[] = $key;
-
-            if ($item['index'] > 0)
+            while ($this->jobsTable->valid())
             {
-                $this->jobsTableBlockData[$item['key']][$item['index']] = $item['value'];
-                continue;
-            }
+                $itemKey = $this->jobsTable->key();
+                $item    = $this->jobsTable->get($itemKey);
 
-            $count++;
-            $data[$key] = $item;
+                # 获取后立即移除内容
+                $this->jobsTable->del($itemKey);
 
-            if ($count >= $max)
-            {
-                break;
-            }
-        }
-
-        # 移除分块的数据
-        if ($keys)
-        {
-            foreach ($keys as $key)
-            {
-                $this->jobsTable->del($key);
-            }
-        }
-
-        $count = 0;
-        foreach ($data as $key => $item)
-        {
-            $str = $item['value'];
-
-            if ($item['length'] > 1)
-            {
-                # 多个分组数据
-                for($i = 1; $i < $item['length']; $i++)
+                if ($itemKey != "{$item['key']}_{$item['index']}")
                 {
-                    if (isset($this->jobsTableBlockData[$key][$i]))
+                    warn("Task#$this->taskId process get swoole table data error, key: {$itemKey} != {$item['key']}_{$item['index']}");
+                }
+                else
+                {
+                    $key = $item['key'];
+                    if ($item['index'] > 0)
                     {
-                        $str .= $this->jobsTableBlockData[$key][$i];
+                        $this->jobsTableBlockData[$item['key']][$item['index']] = $item['value'];
                     }
-                    elseif (microtime(1) - $this->doTime['warn.get_data_fail'] > 1)
+                    else
                     {
-                        #读取失败
-                        warn("Task#$this->taskId process get swoole_table fail, key: {$key}_{$i}");
-                        $this->doTime['warn.get_data_fail'] = microtime(1);
+                        $str = $item['value'];
+
+                        if ($item['length'] > 1)
+                        {
+                            # 多个分组数据
+                            for($i = 1; $i < $item['length']; $i++)
+                            {
+                                if (isset($this->jobsTableBlockData[$key][$i]))
+                                {
+                                    $str .= $this->jobsTableBlockData[$key][$i];
+                                }
+                                elseif ($tmp = $this->jobsTable->get("{$key}_{$i}"))
+                                {
+                                    $str .= $tmp['value'];
+                                }
+                                elseif (microtime(1) - $this->doTime['warn.get_data_fail'] > 1)
+                                {
+                                    #读取失败
+                                    warn("Task#$this->taskId process get swoole_table fail, key: {$key}_{$i}");
+
+                                    $this->doTime['warn.get_data_fail'] = microtime(1);
+                                }
+                            }
+                        }
+
+                        # 解析数据
+                        $job = @unserialize($str);
+                        if ($job)
+                        {
+                            $count++;
+                            $this->pushJob($job);
+                        }
+                        elseif (microtime(1) - $this->doTime['warn.data_fail'] >= 1)
+                        {
+                            warn("Task#$this->taskId process unserialize data fail, string: $str");
+                            $this->doTime['warn.data_fail'] = microtime(1);
+                        }
+
+                        if (isset($this->jobsTableBlockData[$key]))
+                        {
+                            unset($this->jobsTableBlockData[$key]);
+                        }
+
+                        if ($count >= $max)
+                        {
+                            # 达到一次获取的数量
+                            break 2;
+                        }
+
+                        if ($count % 1000 === 0)
+                        {
+                            $this->updateStatus();
+                        }
                     }
                 }
             }
 
-
-            $job = @unserialize($str);
-            if ($job)
+            usleep(50);
+            if (microtime(1) - $begin > 2)
             {
-                $count++;
-                $this->pushJob($job);
-            }
-            elseif (microtime(1) - $this->doTime['warn.data_fail'] >= 1)
-            {
-                warn("Task#$this->taskId process unserialize data fail, string: $str");
-                $this->doTime['warn.data_fail'] = microtime(1);
-            }
-
-            # 移除已经预加载的数据
-            if (isset($this->jobsTableBlockData[$key]))
-            {
-                unset($this->jobsTableBlockData[$key]);
-            }
-
-            if (!$this->jobsTable->del($key))
-            {
-                usleep(5);
-                $this->jobsTable->del($key);
+                # 超过2秒钟
+                break;
             }
         }
 
@@ -586,7 +518,7 @@ class TaskProcess
                 if ($job->dist)
                 {
                     # 有唯一序列数据, 保存唯一数据
-                    if (!$this->save($job))
+                    if (!$this->saveJob($job))
                     {
                         # 保存失败, 处理下一个
                         continue;
@@ -639,7 +571,7 @@ class TaskProcess
      * @param $uniqueId
      * @return bool
      */
-    protected function save(DataJob $job)
+    protected function saveJob(DataJob $job)
     {
         foreach ($job->dist as $field => $v)
         {
@@ -863,149 +795,176 @@ class TaskProcess
     }
 
     /**
-     * 杀死进程
-     *
-     * 在子进程里不能调用
-     *
-     * @return bool
-     */
-    public function kill()
-    {
-        if ($this->isSub)
-        {
-            # 子进程里不允许调用
-            return false;
-        }
-        EtServer::$taskWorkerStatus->del("sub{$this->taskId}_{$this->pid}");
-
-        # 强制杀掉进程
-        swoole_process::kill($this->pid, 9);
-
-        # 关闭管道
-        $this->process->close();
-
-        # 回收资源
-        swoole_process::wait(false);
-
-        return true;
-    }
-
-    /**
      * 主进程退出时通知子进程存档数据(在主进程中执行)
      */
     public function close()
     {
-        # 退出子进程
-        swoole_process::kill($this->pid, SIGINT);
+        # 设置一个关闭的数据
+        EtServer::$taskWorkerStatus->set("exit_process_{$this->taskId}_{$this->pid}", ["time" => time()]);
 
         # 关闭管道
         $this->process->close();
 
-        EtServer::$taskWorkerStatus->del("sub{$this->taskId}_{$this->pid}");
+        $time = microtime(1);
+        while (true)
+        {
+            # 尝试回收资源
+            swoole_process::wait(false);
+
+            $rs     = trim(`ps -eopid | grep $this->pid`);
+            $isExit = true;
+            if ($rs)
+            {
+                foreach (explode("\n", $rs) as $item)
+                {
+                    if (trim($item) == $this->pid)
+                    {
+                        $isExit = false;
+                        break;
+                    }
+                }
+            }
+            else
+            {
+                $isExit = true;
+            }
+
+            if ($isExit)
+            {
+                # 进程已经退出
+                break;
+            }
+
+            if ($time - $this->getActiveTime() > 10 || microtime(1) - $time > 120)
+            {
+                # 状态信息里10秒钟没有更新, 发送强制推送的信号
+                swoole_process::kill($this->pid, 9);
+                break;
+            }
+
+            sleep(1);
+
+            info("Task#$this->taskId wait process $this->pid stop ". (microtime(1) - $time) ."...");
+        }
 
         # 回收资源
         swoole_process::wait(true);
     }
 
     /**
+     * 检查程序是否要退出
+     *
+     * @return bool
+     */
+    protected function isExited()
+    {
+        $rs = EtServer::$taskWorkerStatus->get("exit_process_{$this->taskId}_{$this->pid}");
+
+        return $rs ? true : false;
+    }
+
+    /**
      * 存档数据（在子进程中执行）
      */
-    protected function dumpData()
+    protected function shutdown()
     {
+        $i = 0;
         # 写入文件
         if ($this->list)foreach ($this->list as $tag => $value)
         {
             file_put_contents(self::$dumpFile, $tag .','. serialize($value) ."\r\n", FILE_APPEND);
+
+            $i++;
+            if ($i % 1000 === 0)
+            {
+                $this->updateStatus();
+            }
         }
 
+        $i = 0;
         if ($this->jobs)foreach ($this->jobs as $job)
         {
             /**
              * @var DataJob $job
              */
             file_put_contents(self::$dumpFile, 'job,'. serialize($job) ."\r\n", FILE_APPEND);
+
+            $i++;
+            if ($i % 1000 === 0)
+            {
+                $this->updateStatus();
+            }
         }
 
-        # 将任务中的数据导出
-        /*
-        $count      = $this->queueCount();
-        $buffer     = '';
-        $openBuffer = false;
-        if ($count)for($i = 1; $i <= $count; $i++)
+        # 导入内存数据表中的数据
+        $i = 0;
+        while ($this->jobsTable->valid())
         {
-            $str = $this->process->pop(65536);
+            $itemKey = $this->jobsTable->key();
+            $item    = $this->jobsTable->get($itemKey);
 
-            if ($str === 'end')
+            if ($itemKey != "{$item['key']}_{$item['index']}")
             {
-                $openBuffer = false;
-                $str        = $buffer;
-                $buffer     = '';
-            }
-            elseif ($str === 'begin')
-            {
-                $buffer     = '';
-                $openBuffer = true;
-                continue;
-            }
-            elseif (substr($str, 0, 2) === '><')
-            {
-                $str = substr($str, 2);
-            }
-            elseif ($openBuffer)
-            {
-                $buffer .= $str;
-                continue;
-            }
-
-            $job = @unserialize($str);
-            if ($job)
-            {
-                file_put_contents(self::$dumpFile, 'job,'.serialize($job) ."\r\n", FILE_APPEND);
-            }
-        }
-        */
-
-        # 先读取到内存中
-        $data = [];
-        foreach ($this->jobsTable as $item)
-        {
-            if ($item['index'] > 0)
-            {
-                $this->jobsTableBlockData[$item['key']][$item['index']] = $item;
+                warn("Task#$this->taskId process get swoole table data error, key: {$itemKey} != {$item['key']}_{$item['index']}");
             }
             else
             {
-                $data[$item['key']] = $item;
-            }
-        }
-
-        # 写入到文件
-        foreach ($data as $key => $item)
-        {
-            $str = $item['value'];
-
-            if ($item['length'] > 1)
-            {
-                # 多个分组数据
-                for ($i = 1; $i < $item['length']; $i++)
+                $key = $item['key'];
+                if ($item['index'] > 0)
                 {
-                    if (isset($this->jobsTableBlockData[$key][$i]))
+                    $this->jobsTableBlockData[$item['key']][$item['index']] = $item['value'];
+                }
+                else
+                {
+                    $str = $item['value'];
+
+                    if ($item['length'] > 1)
                     {
-                        $str .= $this->jobsTableBlockData[$key][$i];
+                        # 多个分组数据
+                        for($i = 1; $i < $item['length']; $i++)
+                        {
+                            if (isset($this->jobsTableBlockData[$key][$i]))
+                            {
+                                $str .= $this->jobsTableBlockData[$key][$i];
+                            }
+                            elseif ($tmp = $this->jobsTable->get("{$key}_$i"))
+                            {
+                                $str .= $tmp['value'];
+                            }
+                            elseif (microtime(1) - $this->doTime['warn.get_data_fail'] > 1)
+                            {
+                                #读取失败
+                                warn("Task#$this->taskId process get swoole_table fail, key: {$key}_{$i}");
+
+                                $this->doTime['warn.get_data_fail'] = microtime(1);
+                            }
+                        }
                     }
-                    else
+
+                    # 解析数据
+                    $job = @unserialize($str);
+                    if ($job)
                     {
-                        continue;
+                        file_put_contents(self::$dumpFile, 'job,'.serialize($job) ."\r\n", FILE_APPEND);
+                    }
+                    elseif (microtime(1) - $this->doTime['warn.data_fail'] >= 1)
+                    {
+                        warn("Task#$this->taskId process unserialize data fail, string: $str");
+                        $this->doTime['warn.data_fail'] = microtime(1);
                     }
                 }
             }
 
-            $job = @unserialize($str);
-            if ($job)
+            $this->jobsTable->next();
+
+            $i++;
+            if ($i % 1000 === 0)
             {
-                file_put_contents(self::$dumpFile, 'job,'.serialize($job) ."\r\n", FILE_APPEND);
+                $this->updateStatus();
             }
         }
+
+        EtServer::$taskWorkerStatus->del("sub{$this->taskId}_{$this->pid}");
     }
 
     /**

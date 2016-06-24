@@ -794,16 +794,6 @@ class EtServer
             }
         }
 
-        if (!$config['server']['queue_max_count'])
-        {
-            $config['server']['queue_max_count'] = 65535;
-        }
-
-        if (!$config['server']['queue_size'])
-        {
-            $config['server']['queue_size'] = 60000;
-        }
-
 
         if (!$config['server']['data_block_count'])
         {
