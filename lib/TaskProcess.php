@@ -332,7 +332,7 @@ class TaskProcess
         $count = 0;
         $max   = 50000 - count($this->jobs);
 
-        if ($max <= 0)return 0;
+        if ($max <= 0 || !count($this->jobsTable))return 0;
 
         # 当前时间
         $begin = microtime(1);
