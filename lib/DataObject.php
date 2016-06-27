@@ -131,6 +131,7 @@ class DataJob
             'time'        => $this->time,
             'app'         => $this->app,
             'seriesKey'   => $this->seriesKey,
+            'taskTime'    => $this->taskTime,
             'dist'        => [],
         ];
         # 导出唯一列表
