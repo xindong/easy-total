@@ -96,6 +96,7 @@ class TaskData
     public function __construct($taskId)
     {
         $this->taskId = $taskId;
+        $this->driver = new DataDriver(self::$dataConfig);
     }
 
     /**
