@@ -319,13 +319,14 @@ class EtServer
             $config['conf']['log_file'] = $logPath;
         }
 
-        # 更新配置
-        self::formatConfig($config);
-
-        if ($daemonize || $config['conf']['log_file'])
+        if ($daemonize)
         {
             $config['conf']['daemonize'] = true;
         }
+
+        # 更新配置
+        self::formatConfig($config);
+
 
         $lightBlue = "\x1b[36m";
         $end       = "\x1b[39m";
