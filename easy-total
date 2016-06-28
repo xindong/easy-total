@@ -12,7 +12,6 @@ $shortOpts .= 'vhd';    // -v debug模式.  -h : 帮助.  -d: 守护进程化
 $longOpts = [
     'debug',        // --debug
     'help',         // --help
-                    // 以下参数为内部调用task进程用, 无需用户设置
 ];
 
 $options = getOption($shortOpts, $longOpts);
@@ -68,25 +67,21 @@ exit;
  *
  * 与 `getopt()` 具体相似的功能，区别：在命令行中如果执行 `php index.php default test -a=1 -b=c` 这样的命令时，通过 `getopt()` 会获取参数失败，而这个方法可以正确获得相应的参数
  *
- * **示例：**<br/>
- * 在默认项目Shell控制器中加入一个test控制器文件 ( `projects/default/controller_shell/test.controller.php` ) 内容为：
+ *     $shortopts  = "";
+ *     $shortopts .= "f:";  // 必须有值， 比如：-f myvalue，将会得到f=myvalue
+ *     $shortopts .= "v::"; // 可接受值， 比如：-v 则v=false,如果是-v=myvalue，则v=myvalue
+ *     $shortopts .= "abc"; // 不接受值， 比如：-a -v 则获取a=false,v=false，注意，这个并不是接受-abc的参数，而是分别可接受-a,-b,-c
  *
-
- *             $shortopts  = "";
- *             $shortopts .= "f:";  // 必须有值， 比如：-f myvalue，将会得到f=myvalue
- *             $shortopts .= "v::"; // 可接受值， 比如：-v 则v=false,如果是-v=myvalue，则v=myvalue
- *             $shortopts .= "abc"; // 不接受值， 比如：-a -v 则获取a=false,v=false，注意，这个并不是接受-abc的参数，而是分别可接受-a,-b,-c
+ *     $longopts  = array
+ *     (
+ *         "required:",     // 可接受值， 比如：--required abc 或 --required 则获取 false
+ *         "optional::",    // 必须有值， 比如：--optional=abc，获取 optional=abc
+ *         "option",        // 不接受值， 比如：--option 则获取 option=false
+ *         "opt",           // 同上
+ *     );
  *
- *             $longopts  = array
- *             (
- *                 "required:",     // 可接受值， 比如：--required abc 或 --required 则获取 false
- *                 "optional::",    // 必须有值， 比如：--optional=abc，获取 optional=abc
- *                 "option",        // 不接受值， 比如：--option 则获取 option=false
- *                 "opt",           // 同上
- *             );
- *
- *             $options = getOption($shortopts, $longopts);
- *             var_dump($options);
+ *     $options = getOption($shortopts, $longopts);
+ *     var_dump($options);
  *
  * **通过 `php index.php default test run -f "value for f" -v -a --required value --optional="optional value" --option` 运行以上脚本会输出**
  *
