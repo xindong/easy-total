@@ -260,7 +260,7 @@ _id          |_group   | id   |  title  | time                 | count | dist_ti
 ## 数据输入输出TCP协议
 完全兼容 Fluentd 协议，并同时支持 json、msgpack方式，see [http://docs.fluentd.org/articles/in_forward](http://docs.fluentd.org/articles/in_forward)
 
-每个数据库包的大小请不要出国6MB
+每个数据库包的大小请不要超过6MB
 
 ### 单条数据格式：
 `[tag, time, record, option]`
@@ -280,6 +280,8 @@ _id          |_group   | id   |  title  | time                 | count | dist_ti
 ### 多条格式(推荐，处理效率高)：
 
 `[tag, [[time,record], [time,record], ...], option]`
+
+例如：
 ```json
 ["myapp.test",[1234567890,{"id":1,"hello":"world"},1234567891,{"id":2,"hello":"world2"}],{"chunk":"abc"}]
 ```
