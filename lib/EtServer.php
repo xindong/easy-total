@@ -314,18 +314,19 @@ class EtServer
             ini_set('swoole.unixsock_buffer_size', $config['server']['unixsock_buffer_size']);
         }
 
-        if ($daemonize)
-        {
-            $config['conf']['daemonize'] = true;
-        }
-
         if ($logPath)
         {
             $config['conf']['log_file'] = $logPath;
         }
 
+        if ($daemonize)
+        {
+            $config['conf']['daemonize'] = true;
+        }
+
         # 更新配置
         self::formatConfig($config);
+
 
         $lightBlue = "\x1b[36m";
         $end       = "\x1b[39m";
@@ -358,18 +359,6 @@ class EtServer
         self::$taskWorkerStatus->column('time', swoole_table::TYPE_INT, 10);
         self::$taskWorkerStatus->column('pid', swoole_table::TYPE_INT, 10);
         self::$taskWorkerStatus->create();
-
-        # 创建数据统计共享对象
-        for($i = 1; $i < $config['conf']['task_worker_num']; $i++)
-        {
-            $table = new swoole_table($config['server']['data_block_count']);
-            $table->column('length', swoole_table::TYPE_INT, 4);
-            $table->column('index',  swoole_table::TYPE_INT, 4);
-            $table->column('key',    swoole_table::TYPE_STRING, 16);
-            $table->column('value',  swoole_table::TYPE_STRING, $config['server']['data_block_size']);
-            $table->create();
-            self::$jobsTable[$i] = $table;
-        }
 
         # 列出当前任务的内存
         $memory2 = $memory1;
@@ -465,6 +454,8 @@ class EtServer
         self::$server->on('Task',         [$this, 'onTask']);
         self::$server->on('Start',        [$this, 'onStart']);
         self::$server->on('Request',      [$this, 'onManagerRequest']);
+
+
         #self::$server->on('Message',      [$this, 'onManagerMessage']);
         #self::$server->on('Open',         [$this, 'onManagerOpen']);
 
