@@ -270,7 +270,7 @@ class EtServer
             exit;
         }
 
-        if (version_compare(SWOOLE_VERSION, '1.8.6', '<'))
+        if (version_compare(SWOOLE_VERSION, '1.8.0', '<'))
         {
             warn("swoole插件必须>=1.8版本");
             exit;
