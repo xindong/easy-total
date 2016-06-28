@@ -257,11 +257,44 @@ _id          |_group   | id   |  title  | time                 | count | dist_ti
 `log.app1.test` 则会输出到 `merged.app1.test`
 
 
+## 数据输入输出TCP协议
+完全兼容 Fluentd 协议，并同时支持 json、msgpack方式，see [http://docs.fluentd.org/articles/in_forward](http://docs.fluentd.org/articles/in_forward)
+
+每个数据库包的大小请不要出国6MB
+
+### 单条数据格式：
+`[tag, time, record, option]`
+
+例如: 
+```json
+["myapp.test",1234567890,{"id":1,"hello":"world"},{"chunk":"abcdef"}]
+```
+
+其中 abcdef 为随机字符串，服务器收到消息并处理则会返回如下ACK确认内容：
+```json
+{"ack":"abcdef"}
+```
+如果超过180秒没有返回则可视为处理超时，重新提交。
+
+
+### 多条格式(推荐，处理效率高)：
+
+`[tag, [[time,record], [time,record], ...], option]`
+```json
+["myapp.test",[1234567890,{"id":1,"hello":"world"},1234567891,{"id":2,"hello":"world2"}],{"chunk":"abc"}]
+```
+
+处理成功后返回ack确认同单条模式。
+
+处理后输出格式同TCP协议，可以用 Fluentd 接受数据。
+
+另外，不管是单条还是多条模式， option参数都是可选的，不传则服务器不会有任何返回，这个可以在测试期间使用，但是因为没有ACK确认，所以你无法知道服务器到底是否处理成功，所以生产环境务必加入ACK确认。
+
 
 # 使用主意
 
 EasyTotal是为大日志处理量身打造的实时处理服务器，如果你使用 ssdb 做储存数据请务必落盘在ssd硬盘上，如果落在机械硬盘上在处理数据达到一定级别后会导致 ssdb 服务吃满硬盘的IO，导致服务器异常的慢，如果你用的是redis，也请注意保留适当时间的缓存数据或者设定好redis内存限制，否则会导致redis吃满内存。
 
-配置中 worker_num 是用来处理前端数据的进程数，一般10个左右就可以了，如果连接来源比较多，可以调大，task_worker_num 是用来输出推送的进程数据，根据实际运行的任务数进行调节，在不是非常高负载的情况下，3-10个足够，如果任务数特别多，可以调大或分服务器运行。
+配置中 worker_num 是用来处理前端数据的进程数，一般10个左右就可以了，如果连接来源比较多，可以调大，task_worker_num 是用来输出推送的进程数据，根据实际运行的任务数进行调节，20个就差不多了（或CPU数的1-2倍），如果任务数特别多，可以调大或分服务器运行。
 
 
