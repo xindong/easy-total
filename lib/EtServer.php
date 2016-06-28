@@ -792,25 +792,5 @@ class EtServer
                 $config['conf']['task_tmpdir'] = '/tmp/';
             }
         }
-
-
-        if (!$config['server']['data_block_count'])
-        {
-            $config['server']['data_block_count'] = 2 << 16;
-        }
-        else
-        {
-            # 此参数必须是2的指数
-            $count = bindec(str_pad(1, strlen(decbin($config['server']['data_block_count'])), 0));
-            if ($count < $config['server']['data_block_count'])
-            {
-                $config['server']['data_block_count'] = $count * 2;
-            }
-        }
-
-        if (!$config['server']['data_block_size'])
-        {
-            $config['server']['data_block_size'] = 1024;
-        }
     }
 }
