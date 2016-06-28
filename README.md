@@ -30,7 +30,7 @@ ip          | 唯一IP数
 
 ### 依赖
 
-程序需要 php 环境并安装 swoole、redis、msgpack 等php扩展，推荐 php7+, swoole 1.8.6+。需要安装并配置 redis 或 [ssdb](http://ssdb.io/) 服务器用于存储运算中的数据。
+程序需要 php 环境并安装 swoole、redis、msgpack 等php扩展，推荐 php7+, swoole 1.8.0+。需要安装并配置 redis 或 [ssdb](http://ssdb.io/) 服务器用于存储运算中的数据。
 
 数据的汇入汇出使用 [Fluentd](http://fluentd.org/) 处理，推荐使用 Fluentd 来收集和分发日志，相比 flume 它没有 java 的那一套复杂的东西。
 
@@ -218,8 +218,8 @@ id   |  title  | time （time应该是时间戳，但为便于识别所以写成
 
 _id          |_group   | id   |  title  | time                 | count | dist_title | first_id
 -------------|---------|------|---------|----------------------|-------|------------|------------
-1M_1234567   | 1234567 | 2    | b       | 2016-05-01 20:20:20  | 2     | 1          | 1
-1M_1234568   | 1234568 | 5    | e       | 2016-05-01 20:21:30  | 3     | 2          | 3
+1i_1234567   | 1234567 | 2    | b       | 2016-05-01 20:20:20  | 2     | 1          | 1
+1i_1234568   | 1234568 | 5    | e       | 2016-05-01 20:21:30  | 3     | 2          | 3
 
 那么如果 group time 1d (1天) 即 `select *, count(*), dist(title) as dist_title, first(id) as first_id from test group time 1d save as test_per_1d` ，则会产生1条数据：
 
@@ -293,7 +293,7 @@ _id          |_group   | id   |  title  | time                 | count | dist_ti
 另外，不管是单条还是多条模式， option参数都是可选的，不传则服务器不会有任何返回，这个可以在测试期间使用，但是因为没有ACK确认，所以你无法知道服务器到底是否处理成功，所以生产环境务必加入ACK确认。
 
 
-# 使用主意
+# 使用注意
 
 EasyTotal是为大日志处理量身打造的实时处理服务器，如果你使用 ssdb 做储存数据请务必落盘在ssd硬盘上，如果落在机械硬盘上在处理数据达到一定级别后会导致 ssdb 服务吃满硬盘的IO，导致服务器异常的慢，如果你用的是redis，也请注意保留适当时间的缓存数据或者设定好redis内存限制，否则会导致redis吃满内存。
 
