@@ -65,6 +65,8 @@ cp ./server.ini /etc/easy-total.conf
 页面管理工具端口同API端口，默认 8000，例如 [http://127.0.0.1:8000/admin/](http://127.0.0.1:8000/admin/)
 
 
+![后台管理截图](assets/admin01.png)
+
 #### API列表
 
 API为HTTP协议，端口默认 8000，可在配置[manager]部分修改，例如 http://127.0.0.1:8000/api/task/list
