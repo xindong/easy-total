@@ -119,7 +119,7 @@ class TaskData
             # 如果数据太多则清理下
             self::$jobsCache = array_slice(self::$jobsCache, -5000, null, true);
 
-            debug("Task#$this->taskId process clean jobs cache, count: $count");
+            debug("Task#$this->taskId clean jobs cache, count: $count");
         }
     }
 
@@ -255,11 +255,8 @@ class TaskData
             {
                 if (time() - $this->doTime['debug.export'] >= 3)
                 {
-                    $success                      = 0;
-                    $fail                         = 0;
                     $this->doTime['debug.export'] = time();
-
-                    debug("Task#$this->taskId process jobs count: " . count(self::$jobs) . ", success: $success, fail: $fail.");
+                    debug("Task#$this->taskId jobs count: " . count(self::$jobs) . ", success: $success, fail: $fail.");
                 }
             }
         }
@@ -582,11 +579,11 @@ class TaskData
         {
             if (time() - $this->doTime['debug.ack'] >= 3)
             {
+                debug("Task#$this->taskId get ack response success $success, fail: $fail, use time: " . (microtime(1) - $time) . "s");
+
                 $success                   = 0;
                 $fail                      = 0;
                 $this->doTime['debug.ack'] = time();
-
-                debug("Task#$this->taskId get ack response success $success, fail: $fail, use time: " . (microtime(1) - $time) . "s");
             }
         }
     }
@@ -745,6 +742,8 @@ class TaskData
                     {
                         # 超过10个则返回
                         self::$sendEvents[$tag] = [$tag, $send, $retryNum, microtime(1), $socket, $acks];
+
+                        debug("send $tag fluent data $num/". count($data));
 
                         # 截取数据
                         $data = array_slice($data, $num, null, true);
