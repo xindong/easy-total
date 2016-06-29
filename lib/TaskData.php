@@ -142,6 +142,12 @@ class TaskData
             # 设置一个任务投递时间
             $job->taskTime         = self::getJobTime($job);
             self::$jobs[$uniqueId] = $job;
+
+            if (TaskWorker::$timed - $job->time < 60)
+            {
+                # 在60秒内的认为是新数据, 这样就不用再去外部无谓的调1次数据了
+                $job->total->all = true;
+            }
         }
     }
 
