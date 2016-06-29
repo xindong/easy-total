@@ -723,6 +723,12 @@ class TaskData
             {
                 $len += strlen($item);
                 $str .= $item . ',';
+
+                if (!is_string($item))
+                {
+                    echo "error data type: ";
+                    var_dump($item);
+                }
             }
 
             if ($len > $limitLen || $count === $num)
