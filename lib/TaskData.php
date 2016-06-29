@@ -32,9 +32,25 @@ class TaskData
     protected $doTime = [];
 
     /**
+     * 所有任务列表
+     *
      * @var array
      */
     public static $jobs = [];
+
+    /**
+     * 按1分钟时间分组任务列表
+     *
+     * @var array
+     */
+    public static $jobListByTaskTime1 = [];
+
+    /**
+     * 按10分钟时间列表任务分组
+     *
+     * @var array
+     */
+    public static $jobListByTaskTime2 = [];
 
     /**
      * 任务的缓存数据
@@ -132,52 +148,44 @@ class TaskData
             # 合并任务
             self::$jobs[$uniqueId]->merge($job);
         }
-        elseif (isset(self::$jobsCache[$uniqueId]))
-        {
-            self::$jobs[$uniqueId] = self::$jobsCache[$uniqueId];
-            self::$jobs[$uniqueId]->merge($job);
-        }
         else
         {
-            # 设置一个任务投递时间
-            $job->taskTime         = self::getJobTime($job);
-            self::$jobs[$uniqueId] = $job;
-
-            if (TaskWorker::$timed - $job->time < 60)
+            if (isset(self::$jobsCache[$uniqueId]))
             {
-                # 在60秒内的认为是新数据, 这样就不用再去外部无谓的调1次数据了
-                $job->total->all = true;
+                self::$jobs[$uniqueId] = self::$jobsCache[$uniqueId];
+                self::$jobs[$uniqueId]->merge($job);
+            }
+            else
+            {
+                # 加入列表
+                self::$jobs[$uniqueId] = $job;
+
+                if (TaskWorker::$timed - $job->time < 60)
+                {
+                    # 在60秒内的认为是新数据, 这样就不用再去外部无谓的调1次数据了
+                    $job->total->all = true;
+                }
+            }
+
+            # 设置一个任务投递时间
+            switch ($job->timeOpType)
+            {
+                case 'M':      // 分钟
+                case 'i':      // 分钟
+                case 's':      // 秒
+                case 'none':   // none
+                    # 保存间隔1分钟
+                    $job->taskTime                       = TaskWorker::$timed + 60;
+                    self::$jobListByTaskTime1[$uniqueId] = $job;
+                    break;
+
+                default:
+                    # 其它的保存间隔为10分钟
+                    $job->taskTime                       = TaskWorker::$timed + 600;
+                    self::$jobListByTaskTime2[$uniqueId] = $job;
+                    break;
             }
         }
-    }
-
-    /**
-     * 获取一个任务投递时间
-     *
-     * @param string $type
-     * @return int
-     */
-    protected static function getJobTime($type)
-    {
-        # 保存策略（兼顾数据堆积的内存开销和插入频率对性能的影响）:
-        # 时间序列为分钟,秒以及无时间分组的, 每分钟保存一次; 其它时间序列每10分钟保存1次
-        switch ($type)
-        {
-            case 'M':      // 分钟
-            case 'i':      // 分钟
-            case 's':      // 秒
-            case 'none':   // none
-                # 保存间隔1分钟
-                $timeLimit = 60;
-                break;
-
-            default:
-                # 其它的保存间隔为10分钟
-                $timeLimit = 600;
-                break;
-        }
-
-        return TaskWorker::$timed + $timeLimit;
     }
 
     /**
@@ -190,23 +198,38 @@ class TaskData
 
     /**
      * 导出数据
-     *
-     * @param int $taskWorkerId
      */
     protected function export()
+    {
+        $rs                   = $this->exportByJobList(self::$jobListByTaskTime1);
+        list($success, $fail) = $this->exportByJobList(self::$jobListByTaskTime2);
+
+        if (IS_DEBUG)
+        {
+            $success += $rs[0];
+            $fail    += $rs[1];
+
+            if ($success || $fail)
+            {
+                debug("Task#$this->taskId jobs count: " . count(self::$jobs) . ", success: $success".($fail ? ", fail: $fail." : '.'));
+            }
+        }
+    }
+
+    protected function exportByJobList(& $jobs)
     {
         $success = 0;
         $fail    = 0;
 
-        foreach (self::$jobs as $job)
+        foreach ($jobs as $job)
         {
             /**
              * @var DataJob $job
              */
             if ($this->runTime < $job->taskTime)
             {
-                # 还没到任务处理时间
-                continue;
+                # 还没到任务处理时间, 后面的数据肯定也没有到, 直接跳出
+                break;
             }
 
             if (!$job->total->all)
@@ -241,6 +264,7 @@ class TaskData
 
                 # 从当前任务中移除
                 unset(self::$jobs[$job->uniqueId]);
+                unset($jobs[$job->uniqueId]);
 
                 $success++;
             }
@@ -255,17 +279,7 @@ class TaskData
             }
         }
 
-        if (IS_DEBUG)
-        {
-            if ($success || $fail)
-            {
-                if (time() - $this->doTime['debug.export'] >= 3)
-                {
-                    $this->doTime['debug.export'] = time();
-                    debug("Task#$this->taskId jobs count: " . count(self::$jobs) . ", success: $success, fail: $fail.");
-                }
-            }
-        }
+        return [$success, $fail];
     }
 
     /**

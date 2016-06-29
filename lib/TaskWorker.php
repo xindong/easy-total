@@ -226,6 +226,8 @@ class TaskWorker
      */
     public function dumpData()
     {
+        if (!self::$dumpFile)return;
+
         if (TaskData::$jobs)foreach (TaskData::$jobs as $job)
         {
             # 写入到临时数据里, 下次启动时载入
@@ -243,7 +245,7 @@ class TaskWorker
      */
     protected function loadDumpData()
     {
-        if (is_file(self::$dumpFile))
+        if (self::$dumpFile && is_file(self::$dumpFile))
         {
             foreach (explode("\r\n", file_get_contents(self::$dumpFile)) as $item)
             {
@@ -266,6 +268,22 @@ class TaskWorker
                         else
                         {
                             TaskData::$jobs[$tmp->uniqueId] = $tmp;
+
+                            switch ($tmp->timeOpType)
+                            {
+                                case 'M':      // 分钟
+                                case 'i':      // 分钟
+                                case 's':      // 秒
+                                case 'none':   // none
+                                    # 保存间隔1分钟
+                                    TaskData::$jobListByTaskTime1[$tmp->uniqueId] = $tmp;
+                                    break;
+
+                                default:
+                                    # 其它的保存间隔为10分钟
+                                    TaskData::$jobListByTaskTime2[$tmp->uniqueId] = $tmp;
+                                    break;
+                            }
                         }
                     }
                     else
