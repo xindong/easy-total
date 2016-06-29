@@ -131,34 +131,31 @@ class FlushData
         if ($this->jobs)
         {
             $i = 0;
-            while($i < 5)
+            while($i < 500)
             {
                 foreach ($this->jobs as $taskKey => $value)
                 {
-                    $count  = count($value);
+                    # 投递数据
                     $taskId = self::getTaskId($taskKey);
-
-                    if ($count > 100)
+                    $j      = 0;
+                    foreach ($value as $k => $v)
                     {
-                        # 分块投递
-                        $jobs = array_slice($value, 0, 100);
-                    }
-                    else
-                    {
-                        $jobs = $value;
-                    }
-
-                    # 每100个批量投递
-                    if (EtServer::$server->task($jobs, $taskId))
-                    {
-                        if ($count > 100)
+                        if (EtServer::$server->task($v, $taskId))
                         {
-                            $this->jobs[$taskKey] =  array_slice($value, 100, null, true);
+                            # 投递成功移除对象
+                            unset($this->jobs[$taskKey][$k]);
                         }
-                        else
+
+                        $j++;
+                        if ($j === 100)
                         {
-                            unset($this->jobs[$taskKey]);
+                            break;
                         }
+                    }
+
+                    if (!$this->jobs[$taskKey])
+                    {
+                        unset($this->jobs[$taskKey]);
                     }
                 }
 
@@ -277,9 +274,9 @@ class FlushData
 
         $taskNum = EtServer::$server->setting['task_worker_num'] - 1;
 
-        if (count($cache) > 100)
+        if (count($cache) > 200)
         {
-            $cache = array_slice($cache, -10, null, true);
+            $cache = array_slice($cache, -20, null, true);
         }
 
         $cache[$taskKey] = (crc32($taskKey) % ($taskNum - 1)) + 1;
