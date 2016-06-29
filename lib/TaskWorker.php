@@ -47,6 +47,8 @@ class TaskWorker
 
     public static $serverName;
 
+    public static $timed;
+
     /**
      * 数据块大小, 默认 1024
      *
@@ -66,8 +68,7 @@ class TaskWorker
      *
      * @var string
      */
-    public static $dumpFile;
-
+    protected static $dumpFile;
 
     public function __construct(swoole_server $server, $taskId, $workerId)
     {
@@ -108,10 +109,16 @@ class TaskWorker
     {
         try
         {
+            self::$timed = time();
+
             if (is_object($data))
             {
                 # 获取数据类型
                 $type = get_class($data);
+            }
+            elseif (is_array($data))
+            {
+                $type = 'DataJobs';
             }
             else
             {
@@ -121,6 +128,14 @@ class TaskWorker
 
             switch ($type)
             {
+                case 'DataJobs':
+                    # 批量投递
+                    foreach ($data as $item)
+                    {
+                        $this->taskData->push($item);
+                    }
+
+                    break;
                 case 'DataJob':
                     # 任务数据
                     /**
@@ -527,7 +542,7 @@ class TaskWorker
     protected function updateTaskInfo()
     {
         # 更新内存占用
-        if (!isset($this->doTime['updateMemory']) || time() - $this->doTime['updateMemory'] >= 60)
+        if (!isset($this->doTime['updateMemory']) || self::$timed - $this->doTime['updateMemory'] >= 60)
         {
             list($redis) = self::getRedis();
             $memoryUse   = memory_get_usage(true);

@@ -171,7 +171,7 @@ class TaskData
                 break;
         }
 
-        return time() + $timeLimit;
+        return TaskWorker::$timed + $timeLimit;
     }
 
     /**

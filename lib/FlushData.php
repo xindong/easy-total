@@ -131,31 +131,34 @@ class FlushData
         if ($this->jobs)
         {
             $i = 0;
-            while($i < 500)
+            while($i < 5)
             {
                 foreach ($this->jobs as $taskKey => $value)
                 {
-                    # 投递数据
+                    $count  = count($value);
                     $taskId = self::getTaskId($taskKey);
-                    $j      = 0;
-                    foreach ($value as $k => $v)
-                    {
-                        if (EtServer::$server->task($v, $taskId))
-                        {
-                            # 投递成功移除对象
-                            unset($this->jobs[$taskKey][$k]);
-                        }
 
-                        $j++;
-                        if ($j === 100)
-                        {
-                            break;
-                        }
+                    if ($count > 100)
+                    {
+                        # 分块投递
+                        $jobs = array_slice($value, 0, 100);
+                    }
+                    else
+                    {
+                        $jobs = $value;
                     }
 
-                    if (!$this->jobs[$taskKey])
+                    # 每100个批量投递
+                    if (EtServer::$server->task($jobs, $taskId))
                     {
-                        unset($this->jobs[$taskKey]);
+                        if ($count > 100)
+                        {
+                            $this->jobs[$taskKey] =  array_slice($value, 100, null, true);
+                        }
+                        else
+                        {
+                            unset($this->jobs[$taskKey]);
+                        }
                     }
                 }
 
@@ -269,9 +272,18 @@ class FlushData
      */
     public static function getTaskId($taskKey)
     {
+        static $cache = [];
+        if (isset($cache[$taskKey]))return $cache[$taskKey];
+
         $taskNum = EtServer::$server->setting['task_worker_num'] - 1;
 
-        if ($taskNum === 1)return 1;
-        return (crc32($taskKey) % ($taskNum - 1)) + 1;
+        if (count($cache) > 100)
+        {
+            $cache = array_slice($cache, -10, null, true);
+        }
+
+        $cache[$taskKey] = (crc32($taskKey) % ($taskNum - 1)) + 1;
+
+        return $cache[$taskKey];
     }
 }
