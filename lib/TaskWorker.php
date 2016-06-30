@@ -116,10 +116,6 @@ class TaskWorker
                 # 获取数据类型
                 $type = get_class($data);
             }
-            elseif (is_array($data))
-            {
-                $type = 'DataJobs';
-            }
             else
             {
                 $data = explode('|', $data);
@@ -128,14 +124,6 @@ class TaskWorker
 
             switch ($type)
             {
-                case 'DataJobs':
-                    # 批量投递
-                    foreach ($data as $item)
-                    {
-                        $this->taskData->push($item);
-                    }
-
-                    break;
                 case 'DataJob':
                     # 任务数据
                     /**
