@@ -325,43 +325,46 @@ class MainWorker
         if ($this->workerId == 0)
         {
             # 每3秒通知处理一次
-            swoole_timer_tick(3000, function()
+            # 分散投递任务时间
+            for ($i = 1; $i < $this->server->setting['task_worker_num']; $i++)
             {
-                self::$timed = time();
-
-                # 通知 taskWorker 处理, 不占用当前 worker 资源
-                for($i = 1; $i < $this->server->setting['task_worker_num']; $i++)
+                swoole_timer_after(intval(3000 * $i / $this->server->setting['task_worker_num']), function() use ($i)
                 {
-                    $rs = EtServer::$taskWorkerStatus->get("task{$i}");
-                    # $rs['status'] 1表示忙碌, 0表示空闲
-                    if (!$rs || !$rs['status'])
+                    swoole_timer_tick(3000, function() use ($i)
                     {
-                        # 更新状态
-                        EtServer::$taskWorkerStatus->set("task{$i}", ['status' => 1, 'time' => self::$timed]);
+                        self::$timed = time();
 
-                        # 调用任务
-                        $this->server->task('job', $i);
-                    }
-                    elseif ($rs['pid'] && self::$timed - $rs['time'] > 300)
-                    {
-                        # 5分钟还没反应, 避免极端情况下卡死, 发送一个重启信号, 这种情况下可能会丢失部分数据
-                        warn("task worker {$i} is dead, now restart it.");
-                        swoole_process::kill($rs['pid']);
-                        EtServer::$taskWorkerStatus->del("task{$i}");
-
-                        # 过5秒后处理
-                        $pid = $rs['pid'];
-                        swoole_timer_after(5000, function() use ($pid)
+                        $rs = EtServer::$taskWorkerStatus->get("task{$i}");
+                        # $rs['status'] 1表示忙碌, 0表示空闲
+                        if (!$rs || !$rs['status'])
                         {
-                            if (in_array($pid, explode("\n", str_replace(' ', '', trim(`ps -eopid | grep {$pid}`)))))
+                            # 更新状态
+                            EtServer::$taskWorkerStatus->set("task{$i}", ['status' => 1, 'time' => self::$timed]);
+
+                            # 调用任务
+                            $this->server->task('job', $i);
+                        }
+                        elseif ($rs['pid'] && self::$timed - $rs['time'] > 300)
+                        {
+                            # 5分钟还没反应, 避免极端情况下卡死, 发送一个重启信号, 这种情况下可能会丢失部分数据
+                            warn("task worker {$i} is dead, now restart it.");
+                            swoole_process::kill($rs['pid']);
+                            EtServer::$taskWorkerStatus->del("task{$i}");
+
+                            # 过5秒后处理
+                            $pid = $rs['pid'];
+                            swoole_timer_after(5000, function() use ($pid)
                             {
-                                # 如果还存在进程, 强制关闭
-                                swoole_process::kill($pid, 9);
-                            }
-                        });
-                    }
-                }
-            });
+                                if (in_array($pid, explode("\n", str_replace(' ', '', trim(`ps -eopid | grep {$pid}`)))))
+                                {
+                                    # 如果还存在进程, 强制关闭
+                                    swoole_process::kill($pid, 9);
+                                }
+                            });
+                        }
+                    });
+                });
+            }
 
             swoole_timer_tick(1000 * 30, function()
             {
