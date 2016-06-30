@@ -214,6 +214,7 @@ class TaskWorker
      */
     public function dumpData()
     {
+        info("Task#$this->taskId is dumping file.");
         if (!self::$dumpFile)return;
 
         if (TaskData::$jobs)foreach (TaskData::$jobs as $job)
@@ -226,6 +227,8 @@ class TaskWorker
         {
             file_put_contents(self::$dumpFile, $tag .','. serialize($list) ."\r\n", FILE_APPEND);
         }
+
+        info("Task#$this->taskId is dump job: ". count(TaskData::$jobs) .". list: ". count(TaskData::$list) .".");
     }
 
     /**
@@ -239,12 +242,12 @@ class TaskWorker
             {
                 if (!$item)continue;
 
-                list($type, $item) = explode(',', $item, 2);
-                $tmp  = @unserialize($item);
+                list($type, $tmp) = explode(',', $item, 2);
+                $tmp  = @unserialize($tmp);
 
                 if ($tmp)
                 {
-                    if ($type === 'job')
+                    if ($type === 'jobs')
                     {
                         /**
                          * @var DataJob $tmp
@@ -281,7 +284,7 @@ class TaskWorker
                 }
             }
 
-            info("Task#$this->taskId reload ". count(TaskData::$jobs) . ' jobs, ' .count(TaskData::$list). ' list from dump file.');
+            info("Task#$this->taskId load ". count(TaskData::$jobs) . ' jobs, ' .count(TaskData::$list). ' list from dump file.');
 
             unlink(self::$dumpFile);
         }
