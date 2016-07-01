@@ -152,7 +152,7 @@ class FlushData
                         else
                         {
                             # 发送失败可能是缓冲区塞满了, 此时不应该再发送信息了
-                            continue 2;
+                            break;
                         }
 
                         $j++;
