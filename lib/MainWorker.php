@@ -1204,6 +1204,8 @@ class MainWorker
                     $count += count($tmp);
                 }
 
+                debug('Worker#'. $this->workerId ." now jobs: $count, flush time: {$useTime}s");
+
                 if ($count > 10000 || $useTime > 2)
                 {
                     if (!$this->pause)
@@ -1212,23 +1214,14 @@ class MainWorker
                         $this->pause     = true;
                         $this->autoPause = true;
 
-                        info('Worker#' . $this->workerId . ' is busy, now pause accept new data.');
+                        info('Worker#' . $this->workerId . " is busy. jobs: $count, task time: $useTime, now pause accept new data.");
                     }
                 }
                 elseif ($this->pause && $this->autoPause && $count < 5000)
                 {
                     # 关闭自动暂停
-                    $this->pause      = false;
-                    $this->autoPause  = false;
-
-                    $this->buffer     = [];
-                    $this->bufferLen  = [];
-                    $this->bufferTime = [];
-
-                    info('Worker#'. $this->workerId .' re-accept new data.');
+                    goto closeAutoPause;
                 }
-
-                debug('Worker#'. $this->workerId ." now jobs: $count, flush time: {$useTime}s");
             }
             catch (Exception $e)
             {
@@ -1237,6 +1230,20 @@ class MainWorker
                 # 如果有错误则检查下
                 $this->checkRedis();
             }
+        }
+        elseif ($this->pause && $this->autoPause)
+        {
+            # 关闭自动暂停
+            closeAutoPause:
+
+            $this->pause      = false;
+            $this->autoPause  = false;
+
+            $this->buffer     = [];
+            $this->bufferLen  = [];
+            $this->bufferTime = [];
+
+            info('Worker#'. $this->workerId .' re-accept new data.');
         }
     }
 
