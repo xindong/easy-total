@@ -145,6 +145,11 @@ class FlushData
                             # 投递成功移除对象
                             unset($this->jobs[$taskKey][$k]);
                         }
+                        else
+                        {
+                            # 发送失败可能是缓冲区塞满了, 此时不应该再发送信息了
+                            continue 2;
+                        }
 
                         $j++;
                         if ($j === 100)

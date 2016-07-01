@@ -84,6 +84,8 @@ class MainWorker
      */
     protected $pause = false;
 
+    protected $autoPause = false;
+
     /**
      * 需要刷新的任务数据
      *
@@ -469,14 +471,6 @@ class MainWorker
             unset($this->bufferLen[$fromId]);
 
             debug("accept data length ". strlen($data));
-        }
-
-        if ($count = count($this->flushData->jobs) > 20000)
-        {
-            # 积累的任务太多, 不再接受处理新数据
-
-            debug("worker($this->workerId) have too many jobs ". $count);
-            return false;
         }
 
         if ($data[0] === '[')
@@ -1191,10 +1185,41 @@ class MainWorker
             try
             {
                 $time = microtime(1);
-
                 $this->flushData->flush($this->redis);
+                $useTime = microtime(1) - $time;
 
-                debug('worker '. $this->workerId .' do flush use time: '. (microtime(1) - $time) .'s');
+                # 读取总数
+                $count = 0;
+                foreach ($this->flushData->jobs as $taskKey => $tmp)
+                {
+                    $count += count($tmp);
+                }
+
+                if ($count > 10000 || $useTime > 2)
+                {
+                    if (!$this->pause)
+                    {
+                        # 超过10000个任务或者投递时间超过了2秒, 开启自动暂停
+                        $this->pause     = true;
+                        $this->autoPause = true;
+
+                        info('Worker#' . $this->workerId . ' is busy, now pause accept new data.');
+                    }
+                }
+                elseif ($this->pause && $this->autoPause && $count < 5000)
+                {
+                    # 关闭自动暂停
+                    $this->pause      = false;
+                    $this->autoPause  = false;
+
+                    $this->buffer     = [];
+                    $this->bufferLen  = [];
+                    $this->bufferTime = [];
+
+                    info('Worker#'. $this->workerId .' re-accept new data.');
+                }
+
+                debug('Worker#'. $this->workerId ." now jobs: $count, flush time: {$useTime}s");
             }
             catch (Exception $e)
             {
