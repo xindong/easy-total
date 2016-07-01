@@ -410,6 +410,9 @@ class EtServer
             RemoteShell::listen(self::$server, self::$config['remote']['host'], self::$config['remote']['port']);
         }
 
+        # 设置不阻塞
+        swoole_async_set(['socket_dontwait' => 1]);
+
         self::$server->start();
     }
 
