@@ -149,31 +149,31 @@ class TaskWorker
                     exit;
                     break;
             }
+
+            # 更新任务信息
+            $this->updateTaskInfo();
+
+            # 标记状态为成功
+            $this->updateStatus(true);
+
+            # 如果启动超过1小时
+            if ($type === 'job' && self::$timed - $this->startTime > 3600)
+            {
+                if (mt_rand(1, 200) === 1)
+                {
+                    # 重启进程避免数据溢出、未清理数据占用超大内存
+                    $this->shutdown();
+
+                    info('now restart task worker#'. $this->taskId);
+
+                    exit(0);
+                }
+            }
         }
         catch (Exception $e)
         {
             warn($e->getMessage());
         }
-
-        # 更新任务信息
-        $this->updateTaskInfo();
-
-        # 标记状态为成功
-        $this->updateStatus(true);
-
-//        # 如果启动超过1小时
-//        if (time() - $this->startTime > 3600)
-//        {
-//            if (mt_rand(1, 200) === 1)
-//            {
-//                # 重启进程避免数据溢出、未清理数据占用超大内存
-//                $this->shutdown();
-//
-//                info('now restart task worker: '. $this->taskId);
-//
-//                exit(0);
-//            }
-//        }
     }
 
     /**
@@ -214,9 +214,11 @@ class TaskWorker
      */
     public function dumpData()
     {
-        info("Task#$this->taskId is dumping file.");
         if (!self::$dumpFile)return;
 
+        info("Task#$this->taskId is dumping file.");
+
+        $time = microtime(1);
         if (TaskData::$jobs)foreach (TaskData::$jobs as $job)
         {
             # 写入到临时数据里, 下次启动时载入
@@ -228,7 +230,7 @@ class TaskWorker
             file_put_contents(self::$dumpFile, $tag .','. serialize($list) ."\r\n", FILE_APPEND);
         }
 
-        info("Task#$this->taskId is dump job: ". count(TaskData::$jobs) .". list: ". count(TaskData::$list) .".");
+        info("Task#$this->taskId dump job: ". count(TaskData::$jobs) .". list: ". count(TaskData::$list) .", use time:". (microtime(1) - $time) ."s.");
     }
 
     /**
