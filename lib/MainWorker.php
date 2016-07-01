@@ -1217,17 +1217,18 @@ class MainWorker
 
                 debug('Worker#'. $this->workerId ." now jobs: $count, flush time: {$useTime}s");
 
-                if ($count > 10000 || $useTime > 5)
+                if ($count > 30000 || $useTime > 5)
                 {
                     if (!$this->pause)
                     {
                         # 超过10000个任务或者投递时间超过了2秒, 开启自动暂停
+                        $this->autoPause = true;
                         $this->pause();
 
                         warn('Worker#' . $this->workerId . " is busy. jobs: $count, task time: $useTime, now pause accept new data.");
                     }
                 }
-                elseif ($this->pause && $this->autoPause && $count < 5000)
+                elseif ($this->pause && $this->autoPause && $count < 20000)
                 {
                     # 关闭自动暂停
                     goto closeAutoPause;
