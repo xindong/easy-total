@@ -130,12 +130,16 @@ class FlushData
         # 投递任务处理任务数据
         if ($this->jobs)
         {
-            $i = 0;
+            $i    = 0;
+            $time = microtime(1);
             while($i < 500)
             {
+                if (microtime(1) - $time > 3)break;
+
                 foreach ($this->jobs as $taskKey => $value)
                 {
-                    # 投递数据
+                    # 投递数据, 每次执行不超过3秒钟
+
                     $taskId = self::getTaskId($taskKey);
                     $j      = 0;
                     foreach ($value as $k => $v)
