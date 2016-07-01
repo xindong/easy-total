@@ -982,6 +982,15 @@ class MainWorker
             $this->flush();
         }
 
+        if ($this->workerId === 0)
+        {
+            # 由于 swoole 的退出机制不好, 所以这里直接全部投递一个结束的任务让任务主动关闭
+            for ($i = 0; $i < $this->server->setting['task_worker_num']; $i++)
+            {
+                $this->server->task('exit', $i);
+            }
+        }
+
         $this->dumpData();
     }
 
