@@ -749,31 +749,42 @@ class MainWorker
 
             case 'pause':
                 # 暂停接受任何数据
-                $this->pause      = true;
-                $this->buffer     = [];
-                $this->bufferLen  = [];
-                $this->bufferTime = [];
+                $this->pause();
                 break;
 
             case 'continue':
                 # 继续接受数据
-                if ($this->delayCloseFd)
-                {
-                    # 有延迟的需要关闭的连接, 先把这些连接全部关闭了
-                    foreach ($this->delayCloseFd as $fd)
-                    {
-                        try
-                        {
-                            $this->server->close($fd);
-                        }
-                        catch(Exception $e){}
-                    }
-                    $this->delayCloseFd = [];
-                }
+                $this->stopPause();
 
-                $this->pause = false;
                 break;
         }
+    }
+
+    protected function pause()
+    {
+        $this->pause      = true;
+        $this->buffer     = [];
+        $this->bufferLen  = [];
+        $this->bufferTime = [];
+    }
+
+    protected function stopPause()
+    {
+        if ($this->delayCloseFd)
+        {
+            # 有延迟的需要关闭的连接, 先把这些连接全部关闭了
+            foreach ($this->delayCloseFd as $fd)
+            {
+                try
+                {
+                    $this->server->close($fd);
+                }
+                catch(Exception $e){}
+            }
+            $this->delayCloseFd = [];
+        }
+
+        $this->pause = false;
     }
 
     public function onFinish($server, $task_id, $data)
@@ -1206,15 +1217,14 @@ class MainWorker
 
                 debug('Worker#'. $this->workerId ." now jobs: $count, flush time: {$useTime}s");
 
-                if ($count > 10000 || $useTime > 2)
+                if ($count > 10000 || $useTime > 5)
                 {
                     if (!$this->pause)
                     {
                         # 超过10000个任务或者投递时间超过了2秒, 开启自动暂停
-                        $this->pause     = true;
-                        $this->autoPause = true;
+                        $this->pause();
 
-                        info('Worker#' . $this->workerId . " is busy. jobs: $count, task time: $useTime, now pause accept new data.");
+                        warn('Worker#' . $this->workerId . " is busy. jobs: $count, task time: $useTime, now pause accept new data.");
                     }
                 }
                 elseif ($this->pause && $this->autoPause && $count < 5000)
@@ -1235,13 +1245,8 @@ class MainWorker
         {
             # 关闭自动暂停
             closeAutoPause:
-
-            $this->pause      = false;
             $this->autoPause  = false;
-
-            $this->buffer     = [];
-            $this->bufferLen  = [];
-            $this->bufferTime = [];
+            $this->stopPause();
 
             info('Worker#'. $this->workerId .' re-accept new data.');
         }
