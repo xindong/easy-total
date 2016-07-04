@@ -712,7 +712,7 @@ class MainWorker
             if ($isSend)
             {
                 # 发送成功
-                if ($tag === 'charge')
+                if ($table === 'charge')
                 {
                     # 测试
                     foreach ($records as $record)
