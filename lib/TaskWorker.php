@@ -157,18 +157,18 @@ class TaskWorker
             $this->updateStatus(true);
 
             # 如果启动超过1小时
-            if ($type === 'job' && self::$timed - $this->startTime > 3600)
-            {
-                if (mt_rand(1, 200) === 1)
-                {
-                    # 重启进程避免数据溢出、未清理数据占用超大内存
-                    $this->shutdown();
-
-                    info('now restart task worker#'. $this->taskId);
-
-                    exit(0);
-                }
-            }
+            //if ($type === 'job' && self::$timed - $this->startTime > 3600)
+            //{
+            //    if (mt_rand(1, 200) === 1)
+            //    {
+            //        # 重启进程避免数据溢出、未清理数据占用超大内存
+            //        $this->shutdown();
+            //
+            //        info('now restart task worker#'. $this->taskId);
+            //
+            //        exit(0);
+            //    }
+            //}
         }
         catch (Exception $e)
         {
