@@ -148,6 +148,7 @@ class TaskData
             $type = '1';
             # 合并任务
             self::$jobs[$uniqueId]->merge($job);
+            $job = self::$jobs[$uniqueId];
         }
         else
         {
