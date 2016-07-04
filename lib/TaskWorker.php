@@ -87,15 +87,14 @@ class TaskWorker
             TaskData::$redisConfig  = EtServer::$config['redis'];
             TaskData::$outputConfig = EtServer::$config['output'];
             $this->taskData         = new TaskData($this->taskId);
+
+            $this->loadDumpData();
         }
     }
 
     public function init()
     {
-        if ($this->taskId > 0)
-        {
-            $this->loadDumpData();
-        }
+
     }
 
     /**
