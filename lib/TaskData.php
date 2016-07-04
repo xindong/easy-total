@@ -145,6 +145,7 @@ class TaskData
 
         if (isset(self::$jobs[$uniqueId]))
         {
+            $type = '1';
             # 合并任务
             self::$jobs[$uniqueId]->merge($job);
         }
@@ -159,11 +160,13 @@ class TaskData
 
                 # 重新赋值
                 $job = self::$jobs[$uniqueId];
+                $type = '2';
             }
             else
             {
                 # 加入列表
                 self::$jobs[$uniqueId] = $job;
+                $type = '3';
             }
 
             # 设置一个任务投递时间
@@ -184,6 +187,11 @@ class TaskData
                     self::$jobListByTaskTime2[$uniqueId] = $job;
                     break;
             }
+        }
+
+        if ($job->seriesKey == '06f32e37e3da95fe')
+        {
+            file_put_contents('/tmp/et-test.txt', $type."\t".$job->timeKey."\t".serialize($job) ."\n", FILE_APPEND);
         }
     }
 
