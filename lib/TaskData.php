@@ -153,7 +153,12 @@ class TaskData
             if (isset(self::$jobsCache[$uniqueId]))
             {
                 self::$jobs[$uniqueId] = self::$jobsCache[$uniqueId];
+                
+                # 将 $job 合并到当前缓存对象里
                 self::$jobs[$uniqueId]->merge($job);
+
+                # 重新赋值
+                $job = self::$jobs[$uniqueId];
             }
             else
             {
