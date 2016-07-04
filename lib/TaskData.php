@@ -191,7 +191,7 @@ class TaskData
 
         if ($job->seriesKey == '06f32e37e3da95fe')
         {
-            file_put_contents('/tmp/et-test.txt', $type."\t".$job->timeKey."\t".serialize($job) ."\n", FILE_APPEND);
+            file_put_contents('/tmp/et-test.txt', "Task#{$this->taskId}\t".$type."\t".$job->timeKey."\t".serialize($job) ."\n", FILE_APPEND);
         }
     }
 
