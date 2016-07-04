@@ -1033,6 +1033,10 @@ class MainWorker
                 {
                     $this->flushData->jobs[$job->uniqueId] = $job;
                 }
+                else
+                {
+                    warn("load data error: ". $item);
+                }
             }
 
             unlink($this->dumpFile);
