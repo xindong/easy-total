@@ -717,7 +717,7 @@ class MainWorker
                     # 测试
                     foreach ($records as $record)
                     {
-                        file_put_contents('/data/easy-total/', $record[1] ."\n", FILE_APPEND);
+                        file_put_contents('/data/easy-total/charge.log', $record[1] ."\n", FILE_APPEND);
                     }
                 }
 
