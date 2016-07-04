@@ -712,6 +712,14 @@ class MainWorker
             if ($isSend)
             {
                 # 发送成功
+                if ($tag === 'charge')
+                {
+                    # 测试
+                    foreach ($records as $record)
+                    {
+                        file_put_contents('/data/easy-total/', $record[1] ."\n", FILE_APPEND);
+                    }
+                }
 
                 # 标记为任务完成
                 $this->flushData->commit();
