@@ -141,7 +141,7 @@ class DataJob
         }
 
         $this->_serialized = json_encode($array, JSON_UNESCAPED_UNICODE);
-        return ['total', 'data', '_serialized'];
+        return ['_serialized', 'data', 'total'];
     }
 
     public function __wakeup()
