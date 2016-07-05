@@ -266,7 +266,7 @@ class TaskWorker
                                 case 'M':      // 分钟
                                 case 'i':      // 分钟
                                 case 's':      // 秒
-                                case 'none':   // none
+                                case '-':      // 不分组
                                     # 保存间隔1分钟
                                     TaskData::$jobListByTaskTime1[$tmp->uniqueId] = $tmp;
                                     break;

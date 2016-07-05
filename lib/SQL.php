@@ -198,7 +198,7 @@ class SQL
                 {
                     if ($item === 'none')
                     {
-                        $groupTimeSet['none'] = true;
+                        $groupTimeSet['-'] = true;
                     }
                     elseif (preg_match('#^(\d+)([a-z]+)$#i', $item, $m))
                     {

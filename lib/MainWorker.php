@@ -946,12 +946,12 @@ class MainWorker
         {
             # Exp: $groupTimeKey = 1M
 
-            if ($timeOptKey === 'none')
+            if ($timeOptKey === '-')
             {
                 # 不分组
                 $timeKey = 0;
                 $id      = $groupValue ?: (isset($item['_id']) && $item['_id'] ? $item['_id'] : md5(json_decode($item, JSON_UNESCAPED_UNICODE)));
-                # $timeOpt = [0, 'none'];
+                # $timeOpt = [0, '-'];
             }
             else
             {

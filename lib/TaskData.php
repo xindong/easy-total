@@ -172,7 +172,7 @@ class TaskData
                 case 'M':      // 分钟
                 case 'i':      // 分钟
                 case 's':      // 秒
-                case 'none':   // none
+                case '-':      // 不分组
                     # 保存间隔1分钟
                     $job->taskTime                       = TaskWorker::$timed + 60;
                     self::$jobListByTaskTime1[$uniqueId] = $job;
@@ -350,9 +350,9 @@ class TaskData
         $seriesOption = self::$series[$seriesKey];
         $queries      = $seriesOption['queries'] ?: [];
 
-        if ($job->timeOpType === 'none')
+        if ($job->timeOpType === '-')
         {
-            $timeOptKey = 'none';
+            $timeOptKey = '-';
         }
         else
         {
