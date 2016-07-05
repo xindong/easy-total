@@ -1023,15 +1023,17 @@ class MainWorker
     {
         if (is_file($this->dumpFile))
         {
-            foreach (explode("\r\n", trim(file_get_contents($this->dumpFile))) as $item)
+            foreach (explode("\r\n", file_get_contents($this->dumpFile)) as $item)
             {
+                if (!$item)continue;
+                list($taskKey, $tmp) = explode(',', $item, 2);
                 /**
                  * @var DataJob $job
                  */
-                $job = @unserialize($item);
-                if ($job && is_object($job))
+                $job = @unserialize($tmp);
+                if ($job)
                 {
-                    $this->flushData->jobs[$job->uniqueId] = $job;
+                    $this->flushData->jobs[$taskKey][$job->uniqueId] = $job;
                 }
                 else
                 {
@@ -1053,9 +1055,12 @@ class MainWorker
         if ($this->flushData->jobs)
         {
             # 有数据
-            foreach ($this->flushData->jobs as $item)
+            foreach ($this->flushData->jobs as $taskKey => $item)
             {
-                file_put_contents($this->dumpFile, serialize($item) . "\r\n", FILE_APPEND);
+                foreach ($item as $value)
+                {
+                    file_put_contents($this->dumpFile, $taskKey .','. serialize($value) . "\r\n", FILE_APPEND);
+                }
             }
         }
     }
