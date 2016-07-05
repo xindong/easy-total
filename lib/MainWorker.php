@@ -1023,6 +1023,7 @@ class MainWorker
     {
         if (is_file($this->dumpFile))
         {
+            $count = 0;
             foreach (explode("\r\n", file_get_contents($this->dumpFile)) as $item)
             {
                 if (!$item)continue;
@@ -1033,6 +1034,7 @@ class MainWorker
                 $job = @unserialize($tmp);
                 if ($job)
                 {
+                    $count++;
                     $this->flushData->jobs[$taskKey][$job->uniqueId] = $job;
                 }
                 else
@@ -1043,7 +1045,7 @@ class MainWorker
 
             unlink($this->dumpFile);
 
-            info("worker($this->workerId) load ". count($this->flushData->jobs) ." job(s) from file {$this->dumpFile}.");
+            info("worker($this->workerId) load {$count} job(s) from file {$this->dumpFile}.");
         }
     }
 
