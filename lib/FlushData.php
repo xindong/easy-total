@@ -132,6 +132,7 @@ class FlushData
         {
             $i    = 0;
             $time = microtime(1);
+            $err  = [];
             while($i < 500)
             {
                 if (microtime(1) - $time > 3)break;
@@ -142,6 +143,11 @@ class FlushData
 
                     $taskId = self::getTaskId($taskKey);
                     $j      = 0;
+                    if (isset($err[$taskId]))
+                    {
+                        continue;
+                    }
+
                     foreach ($value as $k => $v)
                     {
                         if (EtServer::$server->task($v, $taskId))
@@ -152,6 +158,7 @@ class FlushData
                         else
                         {
                             # 发送失败可能是缓冲区塞满了, 此时不应该再发送信息了
+                            $err[$taskId] = 1;
                             break;
                         }
 
