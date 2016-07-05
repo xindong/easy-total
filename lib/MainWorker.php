@@ -450,14 +450,16 @@ class MainWorker
 
                 goto jsonFormat;
             }
-            elseif ($this->bufferLen[$fromId] > 10000000)
+            elseif ($this->bufferLen[$fromId] > 50000000)
             {
-                # 超过10MB
+                # 超过50MB
                 unset($this->buffer[$fromId]);
                 unset($this->bufferTime[$fromId]);
                 unset($this->bufferLen[$fromId]);
 
                 $server->close($fd);
+
+                warn("pack data is too long: ". $this->bufferLen[$fromId] .'byte. now close client.');
             }
 
             return true;
@@ -712,16 +714,6 @@ class MainWorker
             if ($isSend)
             {
                 # 发送成功
-                if ($table === 'charge')
-                {
-                    # 测试
-                    foreach ($records as $record)
-                    {
-                        $str = json_encode($record[1], JSON_UNESCAPED_UNICODE) ."\n";
-                        file_put_contents('/data/easy-total/charge-'.date('YmdH', $record[1]['time']).'.log', $str, FILE_APPEND);
-                        file_put_contents('/data/easy-total/charge-'.date('Ymd', $record[1]['time']).'.log', $str, FILE_APPEND);
-                    }
-                }
 
                 # 标记为任务完成
                 $this->flushData->commit();
