@@ -317,12 +317,12 @@ class MainWorker
 
 
         # 进程定时重启, 避免数据没清理占用较大内存的情况
-        //swoole_timer_tick(mt_rand(1000 * 3600 * 2, 1000 * 3600 * 3), function()
-        //{
-        //    info('now restart worker#'. $this->workerId);
-        //    $this->shutdown();
-        //    exit;
-        //});
+        swoole_timer_tick(mt_rand(1000 * 3600 * 2, 1000 * 3600 * 3), function()
+        {
+            info('now restart worker#'. $this->workerId);
+            $this->shutdown();
+            exit;
+        });
 
         # 只有需要第一个进程处理
         if ($this->workerId == 0)
