@@ -266,7 +266,7 @@ class EtServer
     {
         if (!defined('SWOOLE_VERSION'))
         {
-            warn("必须安装swoole插件,see http://www.swoole.com/");
+            warn("必须安装swoole插件, see http://www.swoole.com/");
             exit;
         }
 
@@ -275,6 +275,8 @@ class EtServer
             warn("swoole插件必须>=1.8版本");
             exit;
         }
+
+
 
         if (!$configFile)
         {
@@ -294,6 +296,15 @@ class EtServer
         if (!$config)
         {
             warn("config error");
+            exit;
+        }
+
+        # 是否使用共享内存模式
+        define('SHMOP_MODE', $config['server']['shmop_mode'] === false ? false : true);
+
+        if (SHMOP_MODE && !function_exists('shmop_open'))
+        {
+            warn("你开启了共享内存模式, 但没有安装shmop扩展, see http://cn.php.net/manual/zh/book.shmop.php");
             exit;
         }
 

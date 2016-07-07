@@ -146,7 +146,7 @@ class MainWorker
         require_once __DIR__ .'/FlushData.php';
 
         $this->server    = $server;
-        $this->workerId  = $id;
+        $this->workerId  = FlushData::$workerId = $id;
         $this->dumpFile  = EtServer::$config['server']['dump_path'] .'total-dump-'. substr(md5(EtServer::$configFile), 16, 8) . '-'. $id .'.txt';
         $this->flushData = new FlushData();
 
@@ -961,17 +961,17 @@ class MainWorker
                 $id      = $groupValue ? "{$timeKey}_{$groupValue}" : $timeKey;
             }
 
-            # 任务分片的key
-            $taskKey  = md5("$key,$timeOptKey,$app");
+            # 任务ID
+            $taskId   = self::getTaskId($key, $timeOptKey, $app);
 
             # 数据的唯一key, Exp: abcde123af32,1d,hsqj,2016001,123_abc
             $uniqueId = "$key,$timeOptKey,$app,$timeKey,$groupValue";
 
             # 设置到备份里
-            $this->flushData->setBackup($taskKey, $uniqueId);
+            $this->flushData->setBackup($taskId, $uniqueId);
 
             # 获取任务对象
-            $dataJob              = $this->flushData->getJob($taskKey, $uniqueId);
+            $dataJob              = $this->flushData->getJob($taskId, $uniqueId);
             $dataJob->dataId      = $id;
             $dataJob->timeOpLimit = $timeOpt[0];
             $dataJob->timeOpType  = $timeOpt[1];
@@ -1019,15 +1019,15 @@ class MainWorker
             foreach (explode("\r\n", file_get_contents($this->dumpFile)) as $item)
             {
                 if (!$item)continue;
-                list($taskKey, $tmp) = explode(',', $item, 2);
+                list($taskId, $tmp) = explode(',', $item, 2);
                 /**
                  * @var DataJob $job
                  */
-                $job = @unserialize($tmp);
-                if ($job)
+                $job = @msgpack_unpack($tmp);
+                if ($job && $job instanceof DataJob)
                 {
                     $count++;
-                    $this->flushData->jobs[$taskKey][$job->uniqueId] = $job;
+                    $this->flushData->jobs[$taskId][$job->uniqueId] = $job;
                 }
                 else
                 {
@@ -1049,11 +1049,11 @@ class MainWorker
         if ($this->flushData->jobs)
         {
             # 有数据
-            foreach ($this->flushData->jobs as $taskKey => $item)
+            foreach ($this->flushData->jobs as $taskId => $item)
             {
                 foreach ($item as $value)
                 {
-                    file_put_contents($this->dumpFile, $taskKey .','. serialize($value) . "\r\n", FILE_APPEND);
+                    file_put_contents($this->dumpFile, $taskId .','. msgpack_pack($value) . "\r\n", FILE_APPEND);
                 }
             }
         }
@@ -1224,7 +1224,7 @@ class MainWorker
 
                 # 读取总数
                 $count = 0;
-                foreach ($this->flushData->jobs as $taskKey => $tmp)
+                foreach ($this->flushData->jobs as $taskId => $tmp)
                 {
                     $count += count($tmp);
                 }
@@ -1421,6 +1421,34 @@ class MainWorker
         }
 
         return true;
+    }
+
+    /**
+     * 根据任务key获取taskId
+     *
+     * 不分配id = 0的任务
+     *
+     * @param $key
+     * @param $timeOptKey
+     * @param $app
+     * @return mixed
+     */
+    protected static function getTaskId($key, $timeOptKey, $app)
+    {
+        $taskKey      = "$key,$timeOptKey,$app";
+        static $cache = [];
+        if (isset($cache[$taskKey]))return $cache[$taskKey];
+
+        $taskNum = EtServer::$server->setting['task_worker_num'] - 1;
+
+        if (count($cache) > 200)
+        {
+            $cache = array_slice($cache, -20, null, true);
+        }
+
+        $cache[$taskKey] = (crc32(md5($taskKey)) % ($taskNum - 1)) + 1;
+
+        return $cache[$taskKey];
     }
 
     protected static function checkWhereEx($v1, $v2, $type)

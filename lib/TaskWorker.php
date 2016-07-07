@@ -117,7 +117,7 @@ class TaskWorker
             }
             else
             {
-                $data = explode('|', $data);
+                $data = explode('|', $data, 2);
                 $type = $data[0];
             }
 
@@ -135,6 +135,11 @@ class TaskWorker
                 case 'job':
                     # 每3秒会被调用1次
                     $this->taskData->run();
+                    break;
+
+                case 'shm':
+                    # 收到一个内存投递的请求
+                    $this->loadDataByShmId($data[1]);
                     break;
 
                 case 'clean':
@@ -172,6 +177,109 @@ class TaskWorker
         catch (Exception $e)
         {
             warn($e->getMessage());
+        }
+    }
+
+    /**
+     * 通过共享内存来读取数据
+     *
+     * @param $shmKey
+     */
+    protected function loadDataByShmId($shmKey)
+    {
+        $shmId = @shmop_open($shmKey, 'w', 0664, 0);
+
+        if ($shmId)
+        {
+            # 读取记录的成功的位置
+            $pos = rtrim(@shmop_read($shmId, 0, 8), "\0");
+            if ($pos)
+            {
+                $pos = unpack('J', $pos);
+                if ($pos)
+                {
+                    if (is_array($pos))
+                    {
+                        $pos = $pos[1];
+                    }
+
+                    if ($pos < 8)$pos = 8;
+                }
+                else
+                {
+                    $pos = 8;
+                }
+            }
+            else
+            {
+                $pos = 8;
+            }
+
+            $rs    = '';
+            $str   = '';
+            $size  = shmop_size($shmId);
+            $limit = 4096;
+
+            if ($limit + $pos >= $size)
+            {
+                # 如果超过内存大小则缩小读取量
+                $limit = $size - $pos;
+            }
+
+            # 读取共享内存数据
+            if ($limit > 0)while ($rs = @shmop_read($shmId, $pos, $limit))
+            {
+                $data = rtrim($rs, "\0");
+                $pos += $limit;
+
+                if (false !== strpos($data, "\r\n"))
+                {
+                    $arr = explode("\r\n", $str . $data);
+                    foreach ($arr as $item)
+                    {
+                        if ($item === '')continue;
+
+                        # 解开数据
+                        $dataJob = @msgpack_unpack($item);
+                        if ($dataJob && $dataJob instanceof DataJob)
+                        {
+                            # 合并任务
+                            $this->taskData->push($dataJob);
+
+                            # 写入当前成功的位置
+                            @shmop_write($shmId, pack('J', $pos), 0);
+                        }
+                        else
+                        {
+                            # 记录到 $str 里继续读取
+                            $str = $item;
+                        }
+                    }
+                }
+                else
+                {
+                    $str .= $data;
+                }
+
+                if ($pos + $limit > $size)
+                {
+                    $limit = $size - $pos;
+
+                    # 已经到结尾了
+                    if ($limit <= 0)break;
+                }
+            }
+
+            if ($rs !== false)
+            {
+                # 移除数据
+                shmop_delete($shmId);
+                shmop_close($shmId);
+            }
+        }
+        else
+        {
+            warn("can not open shm, shm key is : $shmKey");
         }
     }
 
@@ -221,12 +329,12 @@ class TaskWorker
         if (TaskData::$jobs)foreach (TaskData::$jobs as $job)
         {
             # 写入到临时数据里, 下次启动时载入
-            file_put_contents(self::$dumpFile, 'jobs,'. serialize($job) ."\r\n", FILE_APPEND);
+            file_put_contents(self::$dumpFile, 'jobs,'. msgpack_pack($job) ."\r\n", FILE_APPEND);
         }
 
         if (TaskData::$list)foreach (TaskData::$list as $tag => $list)
         {
-            file_put_contents(self::$dumpFile, $tag .','. serialize($list) ."\r\n", FILE_APPEND);
+            file_put_contents(self::$dumpFile, $tag .','. msgpack_pack($list) ."\r\n", FILE_APPEND);
         }
 
         info("Task#$this->taskId dump job: ". count(TaskData::$jobs) .". list: ". count(TaskData::$list) .", use time:". (microtime(1) - $time) ."s.");
@@ -244,43 +352,46 @@ class TaskWorker
                 if (!$item)continue;
 
                 list($type, $tmp) = explode(',', $item, 2);
-                $tmp  = @unserialize($tmp);
+                $tmp  = @msgpack_unpack($tmp);
 
                 if ($tmp)
                 {
                     if ($type === 'jobs')
                     {
-                        /**
-                         * @var DataJob $tmp
-                         */
-                        if (isset(TaskData::$jobs[$tmp->uniqueId]))
+                        if (is_object($tmp) && $tmp instanceof DataJob)
                         {
-                            TaskData::$jobs[$tmp->uniqueId]->merge($tmp);
-                        }
-                        else
-                        {
-                            TaskData::$jobs[$tmp->uniqueId] = $tmp;
-
-                            switch ($tmp->timeOpType)
+                            if (isset(TaskData::$jobs[$tmp->uniqueId]))
                             {
-                                case 'M':      // 分钟
-                                case 'i':      // 分钟
-                                case 's':      // 秒
-                                case '-':      // 不分组
-                                    # 保存间隔1分钟
-                                    TaskData::$jobListByTaskTime1[$tmp->uniqueId] = $tmp;
-                                    break;
+                                TaskData::$jobs[$tmp->uniqueId]->merge($tmp);
+                            }
+                            else
+                            {
+                                TaskData::$jobs[$tmp->uniqueId] = $tmp;
 
-                                default:
-                                    # 其它的保存间隔为10分钟
-                                    TaskData::$jobListByTaskTime2[$tmp->uniqueId] = $tmp;
-                                    break;
+                                switch ($tmp->timeOpType)
+                                {
+                                    case 'M':      // 分钟
+                                    case 'i':      // 分钟
+                                    case 's':      // 秒
+                                    case '-':      // 不分组
+                                        # 保存间隔1分钟
+                                        TaskData::$jobListByTaskTime1[$tmp->uniqueId] = $tmp;
+                                        break;
+
+                                    default:
+                                        # 其它的保存间隔为10分钟
+                                        TaskData::$jobListByTaskTime2[$tmp->uniqueId] = $tmp;
+                                        break;
+                                }
                             }
                         }
                     }
                     else
                     {
-                        TaskData::$list[$type] = $tmp;
+                        if (is_array($tmp))
+                        {
+                            TaskData::$list[$type] = $tmp;
+                        }
                     }
                 }
             }
