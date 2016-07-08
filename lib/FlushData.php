@@ -133,7 +133,7 @@ class FlushData
         $this->delayCount = 0;
         foreach ($this->jobs as $taskId => $value)
         {
-            foreach ($value as $uniqueId => $job)
+            foreach ($value as $job)
             {
                 /**
                  * @var $job DataJob
@@ -285,65 +285,67 @@ class FlushData
      */
     protected function flushByTask()
     {
+        if (!$this->jobs)return 0;
+
         $time    = microtime(1);
         $i       = 0;
         $count   = 0;
         # 所有任务ID列表
         $taskIds = array_keys($this->jobs);
 
-        while($i < 100)
+        flush:
+        if (microtime(1) - $time > 3)return $count;
+
+        $taskCount = count($taskIds);
+        for ($k = 0; $k < $taskCount; $k++)
         {
-            if (microtime(1) - $time > 3)break;
+            $all    = true;
+            $j      = 0;
+            $taskId = $taskIds[$k];
 
-            foreach ($taskIds as $k => $taskId)
+            foreach ($this->jobs[$taskId] as $uniqueId => $job)
             {
-                $j   = 0;
-                $all = true;
-
-                foreach ($this->jobs[$taskId] as $uniqueId => $job)
+                /**
+                 * @var $job DataJob
+                 */
+                if ($time < $job->taskTime)
                 {
-                    /**
-                     * @var $job DataJob
-                     */
-                    if ($time < $job->taskTime)
-                    {
-                        # 没有到投递时间
-                        break;
-                    }
-
-                    if (EtServer::$server->task($job, $taskId))
-                    {
-                        # 投递成功移除对象
-                        unset($this->jobs[$taskId][$uniqueId]);
-                        $count++;
-                    }
-                    else
-                    {
-                        # 发送失败可能是缓冲区塞满了
-                        $all = false;
-                        warn("send task fail, task id: {$taskId}");
-                        break;
-                    }
-
-                    $j++;
-                    if ($j === 100)
-                    {
-                        $all = false;
-                        break;
-                    }
+                    # 没有到投递时间
+                    break;
                 }
 
-                if ($all)
+                if (EtServer::$server->task($job, $taskId))
                 {
-                    unset($taskIds[$k]);
-                    $taskIds = array_values($taskIds);
+                    # 投递成功移除对象
+                    unset($this->jobs[$taskId][$uniqueId]);
+                    $count++;
+                }
+                else
+                {
+                    # 发送失败可能是缓冲区塞满了
+                    $all = false;
+                    warn("send task fail, task id: {$taskId}");
+                    break;
+                }
+
+                $j++;
+                if ($j === 100)
+                {
+                    $all = false;
+                    break;
                 }
             }
 
-            if (!$taskIds)break;
-
-            $i++;
+            if ($all)
+            {
+                unset($taskIds[$k]);
+                $taskIds = array_values($taskIds);
+            }
         }
+
+        $i++;
+        
+        if ($taskIds && $i < 100)goto flush;
 
         return $count;
     }
