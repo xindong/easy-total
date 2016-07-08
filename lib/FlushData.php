@@ -84,7 +84,7 @@ class FlushData
         else
         {
             # 将对象克隆出来
-            $obj = clone $this->jobs->$uniqueId;
+            $obj = clone $this->jobs[$taskId][$uniqueId];
             self::$DataJobs[$uniqueId] = [$taskId, $obj];
         }
     }
