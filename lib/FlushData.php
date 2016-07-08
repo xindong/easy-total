@@ -119,8 +119,6 @@ class FlushData
     public function flush()
     {
         # 投递任务处理任务数据
-        $time = microtime(1);
-
         if (SHMOP_MODE)
         {
             $rs = $this->flushByShm();
@@ -133,19 +131,7 @@ class FlushData
         $this->delayCount = 0;
         foreach ($this->jobs as $taskId => $value)
         {
-            foreach ($value as $job)
-            {
-                /**
-                 * @var $job DataJob
-                 */
-                if ($time < $job->taskTime)
-                {
-                    # 没有到投递时间
-                    break;
-                }
-
-                $this->delayCount++;
-            }
+            $this->delayCount += count($value);
         }
 
         return $rs;
@@ -200,12 +186,6 @@ class FlushData
                     /**
                      * @var $job DataJob
                      */
-                    if ($time < $job->taskTime)
-                    {
-                        # 没有到投递时间
-                        break;
-                    }
-
                     $j++;
                     $tmp    = msgpack_pack($job) . "\1\r\n";
                     $len   += strlen($tmp);
@@ -226,7 +206,6 @@ class FlushData
                 {
                     # 没有可读取的任务了
                     unset($taskIds[$k]);
-                    $taskIds = array_values($taskIds);
                     continue;
                 }
 
@@ -259,7 +238,6 @@ class FlushData
                     {
                         # 移除列表
                         unset($taskIds[$k]);
-                        $taskIds = array_values($taskIds);
                     }
                 }
                 else
@@ -271,6 +249,8 @@ class FlushData
             }
 
             if (!$taskIds)break;
+
+            $taskIds = array_values($taskIds);
 
             $i++;
         }
@@ -309,12 +289,6 @@ class FlushData
                 /**
                  * @var $job DataJob
                  */
-                if ($time < $job->taskTime)
-                {
-                    # 没有到投递时间
-                    break;
-                }
-
                 $j++;
                 if ($j === 100)
                 {

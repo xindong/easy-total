@@ -983,7 +983,6 @@ class MainWorker
                 $dataJob->timeKey     = $timeKey;
                 $dataJob->time        = $time;
                 $dataJob->app         = $app;
-                $dataJob->taskTime    = self::$timed + 60;
 
                 $this->flushData->jobs[$taskId][$uniqueId] = $dataJob;
             }
