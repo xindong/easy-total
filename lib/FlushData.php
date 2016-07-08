@@ -343,9 +343,9 @@ class FlushData
             if ($all)
             {
                 unset($taskIds[$k]);
-                $taskIds = array_values($taskIds);
             }
         }
+        $taskIds = array_values($taskIds);
 
         if (microtime(1) - $time > 3)
         {
