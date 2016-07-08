@@ -300,7 +300,7 @@ class EtServer
         }
 
         # 是否使用共享内存模式
-        define('SHMOP_MODE', $config['server']['shmop_mode'] === false ? false : true);
+        define('SHMOP_MODE', $config['server']['shmop_mode'] ? true : false);
 
         if (SHMOP_MODE && !function_exists('shmop_open'))
         {
@@ -343,8 +343,7 @@ class EtServer
         $end       = "\x1b[39m";
         info("{$lightBlue}======= Swoole Config ========\n". json_encode($config['conf'], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE). "{$end}");
 
-        self::$config        = $config;
-
+        self::$config   = $config;
         # 初始化计数器
         self::$counter  = new swoole_atomic();
         self::$counterX = new swoole_atomic();
