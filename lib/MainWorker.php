@@ -1032,7 +1032,7 @@ class MainWorker
 
                 if ($job && $job instanceof DataJob)
                 {
-                    $limit  = SQL::getDelayTime([$job->timeOpLimit, $job->timeOpType]);
+                    $limit  = DataJob::getDelayTime([$job->timeOpLimit, $job->timeOpType]);
                     $taskId = $job->taskId();
 
                     $this->flushData->jobs[$job->uniqueId]                           = $job;
