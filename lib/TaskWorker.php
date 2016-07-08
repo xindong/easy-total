@@ -416,7 +416,6 @@ class TaskWorker
         for ($i = 0; $i <= 20; $i++)
         {
             $k1     = date('Ymd', $time);
-            $keys[] = "counter.pushtime.$k1.$key";
             $keys[] = "counter.total.$k1.$key";
             $keys[] = "counter.time.$k1.$key";
             $time  -= 86400;
@@ -586,12 +585,12 @@ class TaskWorker
 
         # 清理每天的统计数据, 只保留10天内的
         $time = time();
-        $k1   = date('Y-m-d', $time - 86400 * 12);
-        $k2   = date('Y-m-d', $time - 86400 * 11);
+        $k1   = date('Ymd', $time - 86400 * 12);
+        $k2   = date('Ymd', $time - 86400 * 11);
 
         if ($ssdb)
         {
-            foreach (['total', 'time', 'pushtime'] as $item)
+            foreach (['total', 'time'] as $item)
             {
                 foreach (['counter', 'counterApp'] as $k0)
                 {
@@ -607,12 +606,12 @@ class TaskWorker
                 }
             }
 
-            $ssdb->hclear("counter.allpushtime.$k1");
-            $ssdb->hclear("counter.allpushtime.$k2");
+            $ssdb->hclear("counter.flush.time.$k1");
+            $ssdb->hclear("counter.flush.time.$k2");
         }
         else
         {
-            foreach (['total', 'time', 'pushtime'] as $item)
+            foreach (['total', 'time'] as $item)
             {
                 foreach (['counter', 'counterApp'] as $k0)
                 {
@@ -636,8 +635,8 @@ class TaskWorker
                 }
             }
 
-            $redis->del("counter.allpushtime.$k1");
-            $redis->del("counter.allpushtime.$k2");
+            $redis->del("counter.flush.time.$k1");
+            $redis->del("counter.flush.time.$k2");
         }
 
         $redis->close();
