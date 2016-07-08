@@ -231,10 +231,11 @@ class TaskWorker
             {
                 $data = rtrim($rs, "\0");
                 $pos += $limit;
+                $tmp  = $str . $data;
 
-                if (false !== strpos($data, "\r\n"))
+                if (false !== strpos($tmp, "\r\n"))
                 {
-                    $arr = explode("\r\n", $str . $data);
+                    $arr = explode("\r\n", $tmp);
                     foreach ($arr as $item)
                     {
                         if ($item === '')continue;

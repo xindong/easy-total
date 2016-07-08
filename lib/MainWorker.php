@@ -967,7 +967,7 @@ class MainWorker
             $uniqueId = "$key,$timeOptKey,$app,$timeKey,$groupValue";
 
             # 设置到备份里
-            $this->flushData->setBackup($taskId, $uniqueId);
+            $this->flushData->setBackup($taskId, $uniqueId, $timeOpt[2]);
 
             if (isset($this->flushData->jobs[$uniqueId]))
             {

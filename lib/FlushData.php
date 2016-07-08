@@ -76,7 +76,7 @@ class FlushData
      * @param $uniqueId
      * @return DataJob
      */
-    public function setBackup($taskId, $uniqueId)
+    public function setBackup($taskId, $uniqueId, $timeGroup)
     {
         if (isset(self::$DataJobs[$uniqueId]))
         {
@@ -84,15 +84,15 @@ class FlushData
             return;
         }
 
-        if (!isset($this->jobs[$taskId][$uniqueId]))
+        if (!isset($this->jobs[$uniqueId]))
         {
-            self::$DataJobs[$uniqueId] = [$taskId, -1];
+            self::$DataJobs[$uniqueId] = [$taskId, $timeGroup, -1];
         }
         else
         {
             # 将对象克隆出来
-            $obj = clone $this->jobs[$taskId][$uniqueId];
-            self::$DataJobs[$uniqueId] = [$taskId, $obj];
+            $obj = clone $this->jobs[$uniqueId];
+            self::$DataJobs[$uniqueId] = [$taskId, $timeGroup, $obj];
         }
     }
 
@@ -103,14 +103,16 @@ class FlushData
     {
         foreach (self::$DataJobs as $uniqueId => $item)
         {
-            list($taskId, $obj) = $item;
+            list($taskId, $timeGroup, $obj) = $item;
             if ($obj === -1)
             {
-                unset($this->jobs[$taskId][$uniqueId]);
+                unset($this->jobs[$uniqueId]);
+                unset($this->jobsTaskQueue[$taskId][$timeGroup][$uniqueId]);
             }
             else
             {
-                $this->jobs[$taskId][$uniqueId] = $obj;
+                $this->jobs[$uniqueId] = $obj;
+                $this->jobsTaskQueue[$taskId][$timeGroup][$uniqueId] = $obj;
             }
         }
 
@@ -178,6 +180,7 @@ class FlushData
                 unset(self::$shmKeys[$uniqueId]);
             }
         }
+        if (!$this->jobsTaskQueue)return 0;
 
         # 所有任务ID列表
         $taskIds = array_keys($this->jobsTaskQueue);
@@ -302,6 +305,8 @@ class FlushData
      */
     protected function flushByTask()
     {
+        if (!$this->jobsTaskQueue)return 0;
+
         $time    = microtime(1);
         $i       = 0;
         $count   = 0;
@@ -317,6 +322,7 @@ class FlushData
                 $j    = 0;
                 $all  = true;
                 $tmpK = array_keys($this->jobsTaskQueue[$taskId]);
+
                 # 打乱数组, 这样就不会每次必定从第一个时间分组读数据了（有2个时间分组, 分别是 60 和 600）
                 shuffle($tmpK);
 

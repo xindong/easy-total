@@ -170,11 +170,6 @@ class DataJob
             }
 
             $this->_serialized = null;
-
-            if (!$this->total)
-            {
-                $this->total = new DataTotalItem();
-            }
         }
     }
 
