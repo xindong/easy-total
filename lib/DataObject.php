@@ -336,6 +336,45 @@ class DataJob
     }
 
     /**
+     * 获取当前任务的投递ID
+     *
+     * @return int
+     */
+    public function taskId()
+    {
+        return self::getTaskId($this->seriesKey, $this->timeOpType === '-' ? '-' : $this->timeOpLimit.$this->timeOpType, $this->app);
+    }
+
+
+    /**
+     * 根据任务key获取taskId
+     *
+     * 不分配id = 0的任务
+     *
+     * @param $seriesKey
+     * @param $timeOptKey
+     * @param $app
+     * @return int
+     */
+    public static function getTaskId($seriesKey, $timeOptKey, $app)
+    {
+        $taskKey      = "$seriesKey,$timeOptKey,$app";
+        static $cache = [];
+        if (isset($cache[$taskKey]))return $cache[$taskKey];
+
+        $taskNum = EtServer::$server->setting['task_worker_num'] - 1;
+
+        if (count($cache) > 200)
+        {
+            $cache = array_slice($cache, -20, null, true);
+        }
+
+        $cache[$taskKey] = (crc32(md5($taskKey)) % ($taskNum - 1)) + 1;
+
+        return $cache[$taskKey];
+    }
+
+    /**
      * 统计数据
      *
      * @param $total

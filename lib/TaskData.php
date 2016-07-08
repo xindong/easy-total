@@ -39,20 +39,6 @@ class TaskData
     public static $jobs = [];
 
     /**
-     * 按1分钟时间分组任务列表
-     *
-     * @var array
-     */
-    public static $jobListByTaskTime1 = [];
-
-    /**
-     * 按10分钟时间列表任务分组
-     *
-     * @var array
-     */
-    public static $jobListByTaskTime2 = [];
-
-    /**
      * 任务的缓存数据
      *
      * @var array
@@ -166,24 +152,9 @@ class TaskData
                 self::$jobs[$uniqueId] = $job;
             }
 
-            # 设置一个任务投递时间
-            switch ($job->timeOpType)
-            {
-                case 'M':      // 分钟
-                case 'i':      // 分钟
-                case 's':      // 秒
-                case '-':      // 不分组
-                    # 保存间隔1分钟
-                    $job->taskTime                       = TaskWorker::$timed + 60;
-                    self::$jobListByTaskTime1[$uniqueId] = $job;
-                    break;
-
-                default:
-                    # 其它的保存间隔为10分钟
-                    $job->taskTime                       = TaskWorker::$timed + 600;
-                    self::$jobListByTaskTime2[$uniqueId] = $job;
-                    break;
-            }
+            # 设置投递时间
+            # 因为在worker进程已经对数据做过延迟投递处理, 所以这边只需要延迟1分钟就可以了
+            $job->taskTime = TaskWorker::$timed + 60;
         }
     }
 
@@ -200,27 +171,10 @@ class TaskData
      */
     protected function export()
     {
-        $rs                   = $this->exportByJobList(self::$jobListByTaskTime1);
-        list($success, $fail) = $this->exportByJobList(self::$jobListByTaskTime2);
-
-        if (IS_DEBUG)
-        {
-            $success += $rs[0];
-            $fail    += $rs[1];
-
-            if ($success || $fail)
-            {
-                debug("Task#$this->taskId jobs count: " . count(self::$jobs) . ", success: $success".($fail ? ", fail: $fail." : '.'));
-            }
-        }
-    }
-
-    protected function exportByJobList(& $jobs)
-    {
         $success = 0;
         $fail    = 0;
 
-        foreach ($jobs as $job)
+        foreach (self::$jobs as $job)
         {
             /**
              * @var DataJob $job
@@ -263,8 +217,6 @@ class TaskData
 
                 # 从当前任务中移除
                 unset(self::$jobs[$job->uniqueId]);
-                unset($jobs[$job->uniqueId]);
-
                 $success++;
             }
             else
@@ -278,7 +230,13 @@ class TaskData
             }
         }
 
-        return [$success, $fail];
+        if (IS_DEBUG)
+        {
+            if ($success || $fail)
+            {
+                debug("Task#$this->taskId jobs count: " . count(self::$jobs) . ", success: $success".($fail ? ", fail: $fail." : '.'));
+            }
+        }
     }
 
     /**

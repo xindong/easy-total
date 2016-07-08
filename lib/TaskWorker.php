@@ -352,7 +352,16 @@ class TaskWorker
                 if (!$item)continue;
 
                 list($type, $tmp) = explode(',', $item, 2);
-                $tmp  = @msgpack_unpack($tmp);
+
+                if ($tmp[0] === 'O' || $tmp[0] === 'a')
+                {
+                    # 兼容旧的数据
+                    $tmp = @unserialize($tmp);
+                }
+                else
+                {
+                    $tmp = @msgpack_unpack($tmp);
+                }
 
                 if ($tmp)
                 {
@@ -367,22 +376,6 @@ class TaskWorker
                             else
                             {
                                 TaskData::$jobs[$tmp->uniqueId] = $tmp;
-
-                                switch ($tmp->timeOpType)
-                                {
-                                    case 'M':      // 分钟
-                                    case 'i':      // 分钟
-                                    case 's':      // 秒
-                                    case '-':      // 不分组
-                                        # 保存间隔1分钟
-                                        TaskData::$jobListByTaskTime1[$tmp->uniqueId] = $tmp;
-                                        break;
-
-                                    default:
-                                        # 其它的保存间隔为10分钟
-                                        TaskData::$jobListByTaskTime2[$tmp->uniqueId] = $tmp;
-                                        break;
-                                }
                             }
                         }
                     }
