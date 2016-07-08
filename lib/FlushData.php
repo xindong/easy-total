@@ -295,7 +295,7 @@ class FlushData
         {
             if (microtime(1) - $time > 3)break;
 
-            foreach ($taskIds as $taskId)
+            foreach ($taskIds as $k => $taskId)
             {
                 $j   = 0;
                 $all = true;
@@ -335,7 +335,7 @@ class FlushData
 
                 if ($all)
                 {
-                    unset($taskIds[$taskId]);
+                    unset($taskIds[$k]);
                     $taskIds = array_values($taskIds);
                 }
             }
