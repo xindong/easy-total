@@ -295,15 +295,13 @@ class FlushData
 
         flush:
 
-        $taskCount = count($taskIds);
-        for ($k = 0; $k < $taskCount; $k++)
+        foreach ($taskIds as $k => $taskId)
         {
             $all    = true;
             $j      = 0;
             $taskId = $taskIds[$k];
             $ids    = [];
 
-            # 读取所有ID
             foreach ($this->jobs[$taskId] as $uniqueId => $job)
             {
                 $ids[] = $uniqueId;
