@@ -26,9 +26,9 @@ class FlushData
     /**
      * 任务列表
      *
-     * @var array
+     * @var ArrayIterator
      */
-    public $jobs = [];
+    public $jobs;
 
     /**
      * 任务推送列表
@@ -59,6 +59,7 @@ class FlushData
 
     public function __construct()
     {
+        $this->jobs = new ArrayIterator();
     }
 
     /**
@@ -84,14 +85,14 @@ class FlushData
             return;
         }
 
-        if (!isset($this->jobs[$uniqueId]))
+        if (!isset($this->jobs->$uniqueId))
         {
             self::$DataJobs[$uniqueId] = [$taskId, $timeGroup, -1];
         }
         else
         {
             # 将对象克隆出来
-            $obj = clone $this->jobs[$uniqueId];
+            $obj = clone $this->jobs->$uniqueId;
             self::$DataJobs[$uniqueId] = [$taskId, $timeGroup, $obj];
         }
     }
@@ -106,12 +107,12 @@ class FlushData
             list($taskId, $timeGroup, $obj) = $item;
             if ($obj === -1)
             {
-                unset($this->jobs[$uniqueId]);
+                unset($this->jobs->$uniqueId);
                 unset($this->jobsTaskQueue[$taskId][$timeGroup][$uniqueId]);
             }
             else
             {
-                $this->jobs[$uniqueId] = $obj;
+                $this->jobs->$uniqueId = $obj;
                 $this->jobsTaskQueue[$taskId][$timeGroup][$uniqueId] = $obj;
             }
         }
@@ -264,7 +265,7 @@ class FlushData
                     foreach ($keys as $key)
                     {
                         list ($timeGroup, $uniqueId) = $key;
-                        unset($this->jobs[$taskId]);
+                        unset($this->jobs->$uniqueId);
                         unset($this->jobsTaskQueue[$taskId][$timeGroup][$uniqueId]);
                     }
 
@@ -342,7 +343,7 @@ class FlushData
                         if (EtServer::$server->task($job, $taskId))
                         {
                             # 投递成功移除对象
-                            unset($this->jobs[$uniqueId]);
+                            unset($this->jobs->$uniqueId);
                             unset($this->jobsTaskQueue[$taskId][$timeGroup][$uniqueId]);
                             $count++;
                         }
@@ -350,6 +351,7 @@ class FlushData
                         {
                             # 发送失败可能是缓冲区塞满了
                             $all = false;
+                            warn("send task fail, task id: {$taskId}");
                             break 2;
                         }
 

@@ -969,9 +969,9 @@ class MainWorker
             # 设置到备份里
             $this->flushData->setBackup($taskId, $uniqueId, $timeOpt[2]);
 
-            if (isset($this->flushData->jobs[$uniqueId]))
+            if (isset($this->flushData->jobs->$uniqueId))
             {
-                $dataJob = $this->flushData->jobs[$uniqueId];
+                $dataJob = $this->flushData->jobs->$uniqueId;
             }
             else
             {
@@ -985,8 +985,8 @@ class MainWorker
                 $dataJob->app         = $app;
                 $dataJob->taskTime    = self::$timed + $timeOpt[2];
 
-                $this->flushData->jobs[$uniqueId] = $dataJob;
-                $this->flushData->jobsTaskQueue[$taskId][$timeOpt[2]][$uniqueId] = $dataJob;
+                $this->flushData->jobs->$uniqueId = $dataJob;
+                $this->flushData->jobsTaskQueue[$taskId][$timeOpt[1]][$uniqueId] = $dataJob;
             }
 
             $dataJob->setData($item, $fun, $option['allField']);
@@ -1032,10 +1032,11 @@ class MainWorker
 
                 if ($job && $job instanceof DataJob)
                 {
-                    $limit  = DataJob::getDelayTime([$job->timeOpLimit, $job->timeOpType]);
-                    $taskId = $job->taskId();
+                    $limit    = DataJob::getDelayTime([$job->timeOpLimit, $job->timeOpType]);
+                    $taskId   = $job->taskId();
+                    $uniqueId = $job->uniqueId;
 
-                    $this->flushData->jobs[$job->uniqueId]                           = $job;
+                    $this->flushData->jobs->$uniqueId                                = $job;
                     $this->flushData->jobsTaskQueue[$taskId][$limit][$job->uniqueId] = $job;
                 }
                 else
