@@ -351,7 +351,7 @@ class FlushData
                         if ($j === 100)
                         {
                             $all = false;
-                            break 2;
+                            break;
                         }
                     }
                 }
