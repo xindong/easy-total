@@ -294,7 +294,6 @@ class FlushData
         $taskIds = array_keys($this->jobs);
 
         flush:
-        if (microtime(1) - $time > 3)return $count;
 
         $taskCount = count($taskIds);
         for ($k = 0; $k < $taskCount; $k++)
@@ -302,9 +301,13 @@ class FlushData
             $all    = true;
             $j      = 0;
             $taskId = $taskIds[$k];
+            $ids    = [];
 
+            # 读取所有ID
             foreach ($this->jobs[$taskId] as $uniqueId => $job)
             {
+                $ids[] = $uniqueId;
+
                 /**
                  * @var $job DataJob
                  */
@@ -314,7 +317,17 @@ class FlushData
                     break;
                 }
 
-                if (EtServer::$server->task($job, $taskId))
+                $j++;
+                if ($j === 100)
+                {
+                    $all = false;
+                    break;
+                }
+            }
+
+            foreach ($ids as $uniqueId)
+            {
+                if (EtServer::$server->task($this->jobs[$taskId][$uniqueId], $taskId))
                 {
                     # 投递成功移除对象
                     unset($this->jobs[$taskId][$uniqueId]);
@@ -327,13 +340,6 @@ class FlushData
                     warn("send task fail, task id: {$taskId}");
                     break;
                 }
-
-                $j++;
-                if ($j === 100)
-                {
-                    $all = false;
-                    break;
-                }
             }
 
             if ($all)
@@ -343,9 +349,17 @@ class FlushData
             }
         }
 
+        if (microtime(1) - $time > 3)
+        {
+            return $count;
+        }
+
         $i++;
-        
-        if ($taskIds && $i < 100)goto flush;
+
+        if ($taskIds && $i < 100)
+        {
+            goto flush;
+        }
 
         return $count;
     }
