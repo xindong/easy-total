@@ -1223,7 +1223,7 @@ class MainWorker
             $count   = $this->flushData->flush();
             $useTime = microtime(1) - $time;
 
-            if (IS_DEBUG)
+            if (IS_DEBUG && ($count || $this->flushData->delayCount))
             {
                 debug('Worker#' . $this->workerId . " flush {$count} jobs, use time: {$useTime}s" . ($this->flushData->delayCount > 0 ? ", delay jobs: {$this->flushData->delayCount}." : '.'));
             }

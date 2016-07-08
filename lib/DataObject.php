@@ -170,6 +170,11 @@ class DataJob
             }
 
             $this->_serialized = null;
+
+            if (!$this->total)
+            {
+                $this->total = new DataTotalItem();
+            }
         }
     }
 
@@ -251,7 +256,10 @@ class DataJob
         }
 
         # 合并统计数据
-        $this->mergeTotal($job->total);
+        if ($job->total)
+        {
+            $this->mergeTotal($job->total);
+        }
 
         $this->dataId = $job->dataId;
         $this->time   = $job->time;
