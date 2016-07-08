@@ -291,7 +291,6 @@ if (!$query)
 $time      = time() - 60;
 $timeBegin = strtotime(date('Y-m-d 00:00:00'));
 $useTime   = [];
-$pushTime  = [];
 $total     = [];
 $arrKeys   = [];
 for ($i = 0; $i < 1440 ; $i++)
@@ -304,26 +303,18 @@ for ($i = 0; $i < 1440 ; $i++)
     {
         $useTime[$k]  = 0;
         $total[$k]    = 0;
-        $pushTime[$k] = 0;
     }
 }
 $seriesKey = $query['seriesKey'];
 $timeKey   = date('Ymd');
 $useTime   = array_merge($useTime, $this->worker->redis->hGetAll("counter.time.$timeKey.$seriesKey") ?: []);
 $total     = array_merge($total, $this->worker->redis->hGetAll("counter.total.$timeKey.$seriesKey") ?: []);
-$pushTime  = array_merge($total, $this->worker->redis->hGetAll("counter.pushtime.$timeKey.$seriesKey") ?: []);
 
 $useTime = array_map(function($v)
 {
     # 转成毫秒
     return number_format($v / 1000, 3, '.', '');
 }, $useTime);
-
-$pushTime = array_map(function($v)
-{
-    # 转成毫秒
-    return number_format($v / 1000, 3, '.', '');
-}, $pushTime);
 ?>
 
 <script type="text/javascript">
@@ -402,18 +393,6 @@ $('#container').highcharts({
         name: '处理数据耗时',
         type: 'spline',
         data: <?php echo json_encode(array_values($useTime), JSON_NUMERIC_CHECK);?>,
-        yAxis: 1,
-        dashStyle: 'shortdot',
-        tooltip: {
-            valueSuffix: 'ms'
-        },
-        marker: {
-            enabled: false
-        }
-    }, {
-        name: '汇总合并耗时',
-        type: 'spline',
-        data: <?php echo json_encode(array_values($pushTime), JSON_NUMERIC_CHECK);?>,
         yAxis: 1,
         dashStyle: 'shortdot',
         tooltip: {

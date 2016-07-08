@@ -44,6 +44,13 @@ class FlushData
      */
     public $counterApp = [];
 
+    /**
+     * 推送统计计数器
+     *
+     * @var array
+     */
+    public $counterFlush = [];
+
     public static $workerId = 0;
 
     protected static $DataJobs = [];
@@ -437,6 +444,18 @@ class FlushData
 
                 $redis->hIncrBy('counterApp', $app, $allCount);
                 unset($this->counterApp[$app]);
+            }
+        }
+
+        # 推送统计
+        if ($this->counterFlush)
+        {
+            foreach ($this->counterFlush as $timeKey => $value)
+            {
+                foreach ($value as $k2 => $v)
+                {
+                    $redis->hIncrBy($timeKey, $k2, $v);
+                }
             }
         }
     }

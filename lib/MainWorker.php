@@ -998,10 +998,10 @@ class MainWorker
      */
     public function shutdown()
     {
-        if (EtServer::$config['server']['flush_at_shutdown'])
-        {
-            $this->flush();
-        }
+        //if (EtServer::$config['server']['flush_at_shutdown'])
+        //{
+        //    $this->flush();
+        //}
 
         if ($this->workerId === 0)
         {
@@ -1229,6 +1229,10 @@ class MainWorker
             {
                 debug('Worker#' . $this->workerId . " flush {$count} jobs, use time: {$useTime}s" . ($this->flushData->delayCount > 0 ? ", delay jobs: {$this->flushData->delayCount}." : '.'));
             }
+
+            $timeKey = date('Ymd,H:i');
+            $key     = "counter.flush.time." . date('Ymd');
+            $this->flushData->counterFlush[$key][$timeKey]  += 1000000 * $useTime;
 
             # 推送管理数据
             $this->flushData->flushManagerData($this->redis);

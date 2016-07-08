@@ -94,19 +94,19 @@ for ($i = 0; $i < 1440; $i++)
     $pushTime[$k] = 0;
   }
 }
-$timeKey       = date('Ymd');
+$dayKey         = date('Ymd');
 $totalTotalAll = 0;
 
 if ($this->worker->isSSDB)
 {
-  $keys = $this->worker->ssdb->hlist("counter.total.$timeKey", "counter.total.$timeKey.z", 9999);
+  $keys = $this->worker->ssdb->hlist("counter.total.$dayKey", "counter.total.$dayKey.z", 9999);
 }
 else
 {
   $keys = [];
   foreach ($this->worker->series as $k => $v)
   {
-     $keys[] = "counter.total.$timeKey.$k";
+     $keys[] = "counter.total.$dayKey.$k";
   }
 }
 
@@ -126,13 +126,14 @@ if ($keys)foreach ($keys as $k)
   {
     $useTime[$k1] += $v1 / 1000;
   }
-
-  $tmp = $this->worker->redis->hGetAll('counter.pushtime.'. substr($k, $keyLen)) ?: [];
-  foreach ($tmp as $k1 => $v1)
-  {
-    $pushTime[$k1] += $v1 / 1000;
-  }
 }
+
+$tmp = $this->worker->redis->hGetAll("counter.flush.time.$dayKey") ?: [];
+foreach ($tmp as $k1 => $v1)
+{
+  $pushTime[$k1] += $v1 / 1000;
+}
+
 foreach ($useTime as & $item)
 {
   $item = number_format($item, 3, '.', '');
