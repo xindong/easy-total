@@ -153,8 +153,7 @@ class TaskData
             }
 
             # 设置投递时间
-            # 因为在worker进程已经对数据做过延迟投递处理, 所以这边只需要延迟1分钟就可以了
-            $job->taskTime = TaskWorker::$timed + 60;
+            $job->taskTime = TaskWorker::$timed + 560;
         }
     }
 

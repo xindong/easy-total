@@ -26,16 +26,9 @@ class FlushData
     /**
      * 任务列表
      *
-     * @var ArrayIterator
-     */
-    public $jobs;
-
-    /**
-     * 任务推送列表
-     *
      * @var array
      */
-    public $jobsTaskQueue = [];
+    public $jobs = [];
 
     /**
      * 项目列表
@@ -59,7 +52,6 @@ class FlushData
 
     public function __construct()
     {
-        $this->jobs = new ArrayIterator();
     }
 
     /**
@@ -77,7 +69,7 @@ class FlushData
      * @param $uniqueId
      * @return DataJob
      */
-    public function setBackup($taskId, $uniqueId, $timeGroup)
+    public function setBackup($taskId, $uniqueId)
     {
         if (isset(self::$DataJobs[$uniqueId]))
         {
@@ -85,15 +77,15 @@ class FlushData
             return;
         }
 
-        if (!isset($this->jobs->$uniqueId))
+        if (!isset($this->jobs[$taskId][$uniqueId]))
         {
-            self::$DataJobs[$uniqueId] = [$taskId, $timeGroup, -1];
+            self::$DataJobs[$uniqueId] = [$taskId, -1];
         }
         else
         {
             # 将对象克隆出来
             $obj = clone $this->jobs->$uniqueId;
-            self::$DataJobs[$uniqueId] = [$taskId, $timeGroup, $obj];
+            self::$DataJobs[$uniqueId] = [$taskId, $obj];
         }
     }
 
@@ -104,16 +96,14 @@ class FlushData
     {
         foreach (self::$DataJobs as $uniqueId => $item)
         {
-            list($taskId, $timeGroup, $obj) = $item;
+            list($taskId, $obj) = $item;
             if ($obj === -1)
             {
-                unset($this->jobs->$uniqueId);
-                unset($this->jobsTaskQueue[$taskId][$timeGroup][$uniqueId]);
+                unset($this->jobs[$taskId][$uniqueId]);
             }
             else
             {
-                $this->jobs->$uniqueId = $obj;
-                $this->jobsTaskQueue[$taskId][$timeGroup][$uniqueId] = $obj;
+                $this->jobs[$taskId][$uniqueId] = $obj;
             }
         }
 
@@ -140,22 +130,21 @@ class FlushData
             $rs = $this->flushByTask();
         }
 
-        # 更新没有发送数量
         $this->delayCount = 0;
-        foreach ($this->jobsTaskQueue as $taskId => $value)
+        foreach ($this->jobs as $taskId => $value)
         {
-            foreach ($value as $timeGroup => $item)
+            foreach ($value as $uniqueId => $job)
             {
-                foreach ($item as $uniqueId => $job)
+                /**
+                 * @var $job DataJob
+                 */
+                if ($time < $job->taskTime)
                 {
-                    if ($time < $job->taskTime)
-                    {
-                        # 没有到投递时间
-                        break;
-                    }
-
-                    $this->delayCount++;
+                    # 没有到投递时间
+                    break;
                 }
+
+                $this->delayCount++;
             }
         }
 
@@ -181,10 +170,9 @@ class FlushData
                 unset(self::$shmKeys[$uniqueId]);
             }
         }
-        if (!$this->jobsTaskQueue)return 0;
 
         # 所有任务ID列表
-        $taskIds = array_keys($this->jobsTaskQueue);
+        $taskIds = array_keys($this->jobs);
 
         while($i < 10)
         {
@@ -206,38 +194,31 @@ class FlushData
                 $str  = '';
                 $j    = 0;
                 $all  = true;
-                $item = $this->jobsTaskQueue[$taskId];
-                $tmpK = array_keys($item);
-                # 打乱数组, 这样就不会每次必定从第一个时间分组读数据了（有2个时间分组, 分别是 60 和 600）
-                shuffle($tmpK);
 
-                foreach ($tmpK as $timeGroup)
+                foreach ($this->jobs[$taskId] as $uniqueId => $job)
                 {
-                    foreach ($item[$timeGroup] as $uniqueId => $job)
+                    /**
+                     * @var $job DataJob
+                     */
+                    if ($time < $job->taskTime)
                     {
-                        /**
-                         * @var $job DataJob
-                         */
-                        if ($time < $job->taskTime)
-                        {
-                            # 没有到投递时间
-                            break;
-                        }
+                        # 没有到投递时间
+                        break;
+                    }
 
-                        $j++;
-                        $tmp    = msgpack_pack($job) . "\r\n";
-                        $len   += strlen($tmp);
-                        $str   .= $tmp;
-                        $keys[] = [$timeGroup, $uniqueId];
+                    $j++;
+                    $tmp    = msgpack_pack($job) . "\1\r\n";
+                    $len   += strlen($tmp);
+                    $str   .= $tmp;
+                    $keys[] = $uniqueId;
 
-                        unset($tmp);
+                    unset($tmp);
 
-                        if ($len > 10240000)
-                        {
-                            # 每10兆发1次
-                            $all = false;
-                            break 2;
-                        }
+                    if ($len > 10240000)
+                    {
+                        # 每10M发1次
+                        $all = false;
+                        break;
                     }
                 }
 
@@ -264,9 +245,7 @@ class FlushData
 
                     foreach ($keys as $key)
                     {
-                        list ($timeGroup, $uniqueId) = $key;
-                        unset($this->jobs->$uniqueId);
-                        unset($this->jobsTaskQueue[$taskId][$timeGroup][$uniqueId]);
+                        unset($this->jobs[$taskId][$key]);
                     }
 
                     # 通知任务进程处理
@@ -306,61 +285,51 @@ class FlushData
      */
     protected function flushByTask()
     {
-        if (!$this->jobsTaskQueue)return 0;
-
         $time    = microtime(1);
         $i       = 0;
         $count   = 0;
         # 所有任务ID列表
-        $taskIds = array_keys($this->jobsTaskQueue);
+        $taskIds = array_keys($this->jobs);
 
         while($i < 100)
         {
             if (microtime(1) - $time > 3)break;
 
-            foreach ($taskIds as $k => $taskId)
+            foreach ($taskIds as $taskId)
             {
-                $j    = 0;
-                $all  = true;
-                $tmpK = array_keys($this->jobsTaskQueue[$taskId]);
+                $j   = 0;
+                $all = true;
 
-                # 打乱数组, 这样就不会每次必定从第一个时间分组读数据了（有2个时间分组, 分别是 60 和 600）
-                shuffle($tmpK);
-
-                foreach ($tmpK as $timeGroup)
+                foreach ($this->jobs[$taskId] as $uniqueId => $job)
                 {
-                    foreach ($this->jobsTaskQueue[$taskId][$timeGroup] as $uniqueId => $job)
+                    /**
+                     * @var $job DataJob
+                     */
+                    if ($time < $job->taskTime)
                     {
-                        /**
-                         * @var $job DataJob
-                         */
-                        if ($time < $job->taskTime)
-                        {
-                            # 没有到投递时间
-                            break;
-                        }
+                        # 没有到投递时间
+                        break;
+                    }
 
-                        if (EtServer::$server->task($job, $taskId))
-                        {
-                            # 投递成功移除对象
-                            unset($this->jobs->$uniqueId);
-                            unset($this->jobsTaskQueue[$taskId][$timeGroup][$uniqueId]);
-                            $count++;
-                        }
-                        else
-                        {
-                            # 发送失败可能是缓冲区塞满了
-                            $all = false;
-                            warn("send task fail, task id: {$taskId}");
-                            break 2;
-                        }
+                    if (EtServer::$server->task($job, $taskId))
+                    {
+                        # 投递成功移除对象
+                        unset($this->jobs[$taskId][$uniqueId]);
+                        $count++;
+                    }
+                    else
+                    {
+                        # 发送失败可能是缓冲区塞满了
+                        $all = false;
+                        warn("send task fail, task id: {$taskId}");
+                        break;
+                    }
 
-                        $j++;
-                        if ($j === 100)
-                        {
-                            $all = false;
-                            break;
-                        }
+                    $j++;
+                    if ($j === 100)
+                    {
+                        $all = false;
+                        break;
                     }
                 }
 

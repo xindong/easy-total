@@ -967,11 +967,11 @@ class MainWorker
             $uniqueId = "$key,$timeOptKey,$app,$timeKey,$groupValue";
 
             # 设置到备份里
-            $this->flushData->setBackup($taskId, $uniqueId, $timeOpt[2]);
+            $this->flushData->setBackup($taskId, $uniqueId);
 
-            if (isset($this->flushData->jobs->$uniqueId))
+            if (isset($this->flushData->jobs[$taskId][$uniqueId]))
             {
-                $dataJob = $this->flushData->jobs->$uniqueId;
+                $dataJob = $this->flushData->jobs[$taskId][$uniqueId];
             }
             else
             {
@@ -983,10 +983,9 @@ class MainWorker
                 $dataJob->timeKey     = $timeKey;
                 $dataJob->time        = $time;
                 $dataJob->app         = $app;
-                $dataJob->taskTime    = self::$timed + $timeOpt[2];
+                $dataJob->taskTime    = self::$timed + 60;
 
-                $this->flushData->jobs->$uniqueId = $dataJob;
-                $this->flushData->jobsTaskQueue[$taskId][$timeOpt[1]][$uniqueId] = $dataJob;
+                $this->flushData->jobs[$taskId][$uniqueId] = $dataJob;
             }
 
             $dataJob->setData($item, $fun, $option['allField']);
@@ -1024,6 +1023,7 @@ class MainWorker
     {
         if (is_file($this->dumpFile))
         {
+            $count = 0;
             foreach (explode("\r\n", file_get_contents($this->dumpFile)) as $item)
             {
                 if (!$item)continue;
@@ -1032,12 +1032,11 @@ class MainWorker
 
                 if ($job && $job instanceof DataJob)
                 {
-                    $limit    = DataJob::getDelayTime([$job->timeOpLimit, $job->timeOpType]);
                     $taskId   = $job->taskId();
                     $uniqueId = $job->uniqueId;
 
-                    $this->flushData->jobs->$uniqueId                                = $job;
-                    $this->flushData->jobsTaskQueue[$taskId][$limit][$job->uniqueId] = $job;
+                    $this->flushData->jobs[$taskId][$uniqueId] = $job;
+                    $count++;
                 }
                 else
                 {
@@ -1047,7 +1046,7 @@ class MainWorker
 
             unlink($this->dumpFile);
 
-            info("worker($this->workerId) load ". (count($this->flushData->jobs)) ." job(s) from file {$this->dumpFile}.");
+            info("worker($this->workerId) load {$count} job(s) from file {$this->dumpFile}.");
         }
     }
 
@@ -1061,7 +1060,10 @@ class MainWorker
             # 有数据
             foreach ($this->flushData->jobs as $item)
             {
-                file_put_contents($this->dumpFile, msgpack_pack($item) . "\r\n", FILE_APPEND);
+                foreach ($item as $job)
+                {
+                    file_put_contents($this->dumpFile, msgpack_pack($job) . "\r\n", FILE_APPEND);
+                }
             }
         }
     }
