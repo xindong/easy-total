@@ -555,7 +555,7 @@ class TaskData
         {
             if (time() - $this->doTime['debug.ack'] >= 3)
             {
-                debug("Task#$this->taskId get ack response success $success, fail: $fail, use time: " . (microtime(1) - $time) . "s");
+                debug("Task#$this->taskId get ack response success $success". ($fail ? ", fail: $fail" : '') .", use time: " . (microtime(1) - $time) . "s");
 
                 $success                   = 0;
                 $fail                      = 0;
