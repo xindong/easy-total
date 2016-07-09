@@ -960,11 +960,10 @@ class MainWorker
                 $id      = $groupValue ? "{$timeKey}_{$groupValue}" : $timeKey;
             }
 
-            # 任务ID
-            $taskId   = DataJob::getTaskId($key, $timeOptKey, $app);
-
             # 数据的唯一key, Exp: abcde123af32,1d,hsqj,2016001,123_abc
             $uniqueId = "$key,$timeOptKey,$app,$timeKey,$groupValue";
+            # 任务ID
+            $taskId   = DataJob::getTaskId($uniqueId);
 
             # 设置到备份里
             $this->flushData->setBackup($taskId, $uniqueId);

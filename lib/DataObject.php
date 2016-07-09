@@ -345,7 +345,7 @@ class DataJob
      */
     public function taskId()
     {
-        return self::getTaskId($this->seriesKey, $this->timeOpType === '-' ? '-' : $this->timeOpLimit.$this->timeOpType, $this->app);
+        return self::getTaskId($this->uniqueId);
     }
 
 
@@ -359,22 +359,11 @@ class DataJob
      * @param $app
      * @return int
      */
-    public static function getTaskId($seriesKey, $timeOptKey, $app)
+    public static function getTaskId($uniqueId)
     {
-        $taskKey      = "$seriesKey,$timeOptKey,$app";
-        static $cache = [];
-        if (isset($cache[$taskKey]))return $cache[$taskKey];
-
         $taskNum = EtServer::$server->setting['task_worker_num'] - 1;
 
-        if (count($cache) > 200)
-        {
-            $cache = array_slice($cache, -20, null, true);
-        }
-
-        $cache[$taskKey] = (crc32(md5($taskKey)) % ($taskNum - 1)) + 1;
-
-        return $cache[$taskKey];
+        return (crc32($uniqueId) % $taskNum) + 1;
     }
 
     /**
