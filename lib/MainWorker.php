@@ -317,12 +317,12 @@ class MainWorker
 
 
         # 进程定时重启, 避免数据没清理占用较大内存的情况
-        swoole_timer_tick(mt_rand(1000 * 3600 * 2, 1000 * 3600 * 3), function()
-        {
-            info('now restart worker#'. $this->workerId);
-            $this->shutdown();
-            exit;
-        });
+        //swoole_timer_tick(mt_rand(1000 * 3600 * 2, 1000 * 3600 * 3), function()
+        //{
+        //    info('now restart worker#'. $this->workerId);
+        //    $this->shutdown();
+        //    exit;
+        //});
 
         # 只有需要第一个进程处理
         if ($this->workerId == 0)
@@ -1003,14 +1003,14 @@ class MainWorker
         //    $this->flush();
         //}
 
-        if ($this->workerId === 0)
-        {
-            # 由于 swoole 的退出机制不好, 所以这里直接全部投递一个结束的任务让任务主动关闭
-            for ($i = 0; $i < $this->server->setting['task_worker_num']; $i++)
-            {
-                $this->server->task('exit', $i);
-            }
-        }
+        //if ($this->workerId === 0)
+        //{
+        //    # 由于 swoole 的退出机制不好, 所以这里直接全部投递一个结束的任务让任务主动关闭
+        //    for ($i = 0; $i < $this->server->setting['task_worker_num']; $i++)
+        //    {
+        //        $this->server->task('exit', $i);
+        //    }
+        //}
 
         $this->dumpData();
     }
