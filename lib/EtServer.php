@@ -572,7 +572,7 @@ class EtServer
                 info("current server task worker memory limit is: ". ini_get('memory_limit'));
             }
 
-            self::setProcessName("php ". implode(' ', $argv) ." [task]");
+            self::setProcessName("php ". implode(' ', $argv) ." [task#{$taskId}]");
 
             require (__DIR__ .'/TaskWorker.php');
 
@@ -591,7 +591,7 @@ class EtServer
                 info("current server worker memory limit is: ". ini_get('memory_limit'));
             }
 
-            self::setProcessName("php ". implode(' ', $argv) ." [worker]");
+            self::setProcessName("php ". implode(' ', $argv) ." [worker#{$workerId}]");
 
             require (__DIR__ .'/Manager.php');
             require (__DIR__ .'/MainWorker.php');
