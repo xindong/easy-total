@@ -125,35 +125,49 @@ class TaskData
         }
     }
 
+    /**
+     * 添加数据
+     *
+     * @param DataJob $job
+     */
     public function push(DataJob $job)
     {
-        $uniqueId = $job->uniqueId;
+        $uniqueId  = $job->uniqueId;
+        $seriesKey = $job->seriesKey;
 
-        if (isset(self::$jobs[$uniqueId]))
+        if (!isset(self::$jobs[$seriesKey]))
+        {
+            self::$jobs[$seriesKey] = new ArrayObject();
+        }
+
+        # 当前对象列表
+        $jobs = self::$jobs[$seriesKey];
+
+        if (isset($jobs[$uniqueId]))
         {
             # 合并任务
-            self::$jobs[$uniqueId]->merge($job);
+            $jobs[$uniqueId]->merge($job);
         }
         else
         {
             if (isset(self::$jobsCache[$uniqueId]))
             {
-                self::$jobs[$uniqueId] = self::$jobsCache[$uniqueId];
+                $jobs[$uniqueId] = self::$jobsCache[$uniqueId];
                 
                 # 将 $job 合并到当前缓存对象里
-                self::$jobs[$uniqueId]->merge($job);
+                $jobs[$uniqueId]->merge($job);
 
                 # 重新赋值
-                $job = self::$jobs[$uniqueId];
+                $job = $jobs[$uniqueId];
             }
             else
             {
                 # 加入列表
-                self::$jobs[$uniqueId] = $job;
+                $jobs[$uniqueId] = $job;
             }
 
             # 设置投递时间
-            $job->taskTime = TaskWorker::$timed + 560;
+            $job->taskTime = TaskWorker::$timed + self::getDelayTime($job);
         }
     }
 
@@ -172,8 +186,29 @@ class TaskData
     {
         $success = 0;
         $fail    = 0;
+        $count   = 0;
+        $time    = microtime(1);
 
-        foreach (self::$jobs as $job)
+        foreach (self::$jobs as $jobs)
+        {
+            $this->exportByList($jobs, $success, $fail);
+
+            $count += count($jobs);
+        }
+        $useTime = microtime(1) - $time;
+
+        if (IS_DEBUG)
+        {
+            if ($success || $fail)
+            {
+                debug("Task#$this->taskId export data: $success" . ($fail ? ", fail: $fail." : '.') . "use time: $useTime, now jobs count: $count.");
+            }
+        }
+    }
+
+    protected function exportByList(& $jobs, & $success, & $fail)
+    {
+        foreach ($jobs as $job)
         {
             /**
              * @var DataJob $job
@@ -215,7 +250,7 @@ class TaskData
                 self::$jobsCache[$job->uniqueId] = $job;
 
                 # 从当前任务中移除
-                unset(self::$jobs[$job->uniqueId]);
+                unset($jobs[$job->uniqueId]);
                 $success++;
             }
             else
@@ -226,14 +261,6 @@ class TaskData
             if ($success % 1000 === 0)
             {
                 $this->updateStatus();
-            }
-        }
-
-        if (IS_DEBUG)
-        {
-            if ($success || $fail)
-            {
-                debug("Task#$this->taskId jobs count: " . count(self::$jobs) . ", success: $success".($fail ? ", fail: $fail." : '.'));
             }
         }
     }
@@ -634,6 +661,22 @@ class TaskData
     }
 
     /**
+     * 获取任务数
+     *
+     * @return int
+     */
+    public static function getJobCount()
+    {
+        $count = 0;
+        foreach (self::$jobs as $jobs)
+        {
+            $count += count($jobs);
+        }
+
+        return $count;
+    }
+
+    /**
      * 将数据发送到Fluent上
      *
      * 返回数字则表示投递成功了n个
@@ -764,6 +807,40 @@ class TaskData
 
         # 表示全部发送完毕
         return true;
+    }
+
+
+    /**
+     * 获取任务延时处理的时间规则
+     *
+     * @param $set
+     * @return int
+     */
+    protected static function getDelayTime(DataJob $job)
+    {
+        if (true === $job->timeOpType)return 60;
+
+        switch ($job->timeOpType)
+        {
+            case 'M':      // 分钟
+            case 'i':      // 分钟
+                if ($job->timeOpLimit < 10)
+                {
+                    return 60;
+                }
+                else
+                {
+                    return 600;
+                }
+
+            case 's':      // 秒
+            case '-':      // 不分组
+                return 60;
+
+            default:
+                # 其它的保存间隔为10分钟
+                return 600;
+        }
     }
 
     /**

@@ -378,39 +378,6 @@ class DataJob
     }
 
     /**
-     * 获取任务延时处理的时间规则
-     *
-     * @param $set
-     * @return int
-     */
-    public static function getDelayTime($set)
-    {
-        if (true === $set)return 60;
-
-        switch ($set[1])
-        {
-            case 'M':      // 分钟
-            case 'i':      // 分钟
-                if ($set[0] < 10)
-                {
-                    return 60;
-                }
-                else
-                {
-                    return 600;
-                }
-
-            case 's':      // 秒
-            case '-':      // 不分组
-                return 60;
-
-            default:
-                # 其它的保存间隔为10分钟
-                return 600;
-        }
-    }
-
-    /**
      * 统计数据
      *
      * @param $total

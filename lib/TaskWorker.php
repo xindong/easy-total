@@ -161,18 +161,18 @@ class TaskWorker
             $this->updateStatus(true);
 
             # 如果启动超过1小时
-            if ($type === 'job' && self::$timed - $this->startTime > 3600)
-            {
-                if (mt_rand(1, 200) === 1)
-                {
-                    # 重启进程避免数据溢出、未清理数据占用超大内存
-                    $this->shutdown();
-
-                    info('now restart task worker#'. $this->taskId);
-
-                    exit(0);
-                }
-            }
+            //if ($type === 'job' && self::$timed - $this->startTime > 3600)
+            //{
+            //    if (mt_rand(1, 200) === 1)
+            //    {
+            //        # 重启进程避免数据溢出、未清理数据占用超大内存
+            //        $this->shutdown();
+            //
+            //        info('now restart task worker#'. $this->taskId);
+            //
+            //        exit(0);
+            //    }
+            //}
         }
         catch (Exception $e)
         {
@@ -327,10 +327,13 @@ class TaskWorker
         info("Task#$this->taskId is dumping file.");
 
         $time = microtime(1);
-        if (TaskData::$jobs)foreach (TaskData::$jobs as $job)
+        if (TaskData::$jobs)foreach (TaskData::$jobs as $jobs)
         {
             # 写入到临时数据里, 下次启动时载入
-            file_put_contents(self::$dumpFile, 'jobs,'. msgpack_pack($job) ."\r\n", FILE_APPEND);
+            foreach ($jobs as $job)
+            {
+                file_put_contents(self::$dumpFile, 'jobs,' . msgpack_pack($job) . "\r\n", FILE_APPEND);
+            }
         }
 
         if (TaskData::$list)foreach (TaskData::$list as $tag => $list)
@@ -338,7 +341,7 @@ class TaskWorker
             file_put_contents(self::$dumpFile, $tag .','. msgpack_pack($list) ."\r\n", FILE_APPEND);
         }
 
-        info("Task#$this->taskId dump job: ". count(TaskData::$jobs) .". list: ". count(TaskData::$list) .", use time:". (microtime(1) - $time) ."s.");
+        info("Task#$this->taskId dump job: ". TaskData::getJobCount() .". list: ". count(TaskData::$list) .", use time:". (microtime(1) - $time) ."s.");
     }
 
     /**
@@ -370,13 +373,20 @@ class TaskWorker
                     {
                         if (is_object($tmp) && $tmp instanceof DataJob)
                         {
-                            if (isset(TaskData::$jobs[$tmp->uniqueId]))
+                            $seriesKey = $tmp->seriesKey;
+                            $uniqueId  = $tmp->uniqueId;
+                            if (isset(TaskData::$jobs[$seriesKey][$uniqueId]))
                             {
-                                TaskData::$jobs[$tmp->uniqueId]->merge($tmp);
+                                TaskData::$jobs[$seriesKey][$uniqueId]->merge($tmp);
                             }
                             else
                             {
-                                TaskData::$jobs[$tmp->uniqueId] = $tmp;
+                                if (!isset(TaskData::$jobs[$seriesKey]))
+                                {
+                                    TaskData::$jobs[$seriesKey] = new ArrayObject();
+                                }
+
+                                TaskData::$jobs[$seriesKey][$uniqueId] = $tmp;
                             }
                         }
                     }
@@ -390,7 +400,7 @@ class TaskWorker
                 }
             }
 
-            info("Task#$this->taskId load ". count(TaskData::$jobs) . ' jobs, ' .count(TaskData::$list). ' list from dump file.');
+            info("Task#$this->taskId load ". TaskData::getJobCount() ." jobs, " .count(TaskData::$list). ' list from dump file.');
 
             unlink(self::$dumpFile);
         }
@@ -669,7 +679,7 @@ class TaskWorker
             }
             $this->doTime['updateMemory'] = time();
 
-            info("Task". str_pad('#'.$this->taskId, 4, ' ', STR_PAD_LEFT) ." total jobs: ". count(TaskData::$jobs) .", memory: ". number_format($memoryUse/1024/1024, 2) ."MB.");
+            info("Task". str_pad('#'.$this->taskId, 4, ' ', STR_PAD_LEFT) ." total jobs: ". TaskData::getJobCount() .", memory: ". number_format($memoryUse/1024/1024, 2) ."MB.");
         }
     }
 

@@ -198,7 +198,7 @@ class SQL
                 {
                     if ($item === 'none')
                     {
-                        $groupTimeSet['-'] = [0, '-', 60];
+                        $groupTimeSet['-'] = [0, '-'];
                     }
                     elseif (preg_match('#^(\d+)([a-z]+)$#i', $item, $m))
                     {
@@ -251,9 +251,6 @@ class SQL
                             $m[1] >= 1 ? (int)$m[1] : ($m[2] == 's' ? 30 : 1),
                             $m[2],
                         ];
-
-                        # 任务延时处理时间
-                        $set[2] = DataJob::getDelayTime($set);
 
                         $groupTimeSet[$set[0].$set[1]] = $set;
                     }
