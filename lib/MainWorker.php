@@ -78,6 +78,13 @@ class MainWorker
     public $ssdb;
 
     /**
+     * 当前进程启动时间
+     *
+     * @var int
+     */
+    protected $startTime;
+
+    /**
      * 是否暂停接受数据
      *
      * @var bool
@@ -157,8 +164,8 @@ class MainWorker
             chr(146).chr(206).chr(87) => 1,
         ];
 
-        self::$timed = time();
-
+        self::$timed      = time();
+        $this->startTime  = time();
         self::$serverName = EtServer::$config['server']['host'].':'. EtServer::$config['server']['port'];
 
     }
@@ -249,6 +256,15 @@ class MainWorker
                 try
                 {
                     $this->flush();
+
+                    if (self::$timed - $this->startTime > 3600)
+                    {
+                        if (!$this->flushData->jobs && mt_rand(1, 100) === 1)
+                        {
+                            # 重启服务器
+                            exit();
+                        }
+                    }
                 }
                 catch (Exception $e)
                 {
@@ -997,20 +1013,6 @@ class MainWorker
      */
     public function shutdown()
     {
-        //if (EtServer::$config['server']['flush_at_shutdown'])
-        //{
-        //    $this->flush();
-        //}
-
-        //if ($this->workerId === 0)
-        //{
-        //    # 由于 swoole 的退出机制不好, 所以这里直接全部投递一个结束的任务让任务主动关闭
-        //    for ($i = 0; $i < $this->server->setting['task_worker_num']; $i++)
-        //    {
-        //        $this->server->task('exit', $i);
-        //    }
-        //}
-
         $this->dumpData();
     }
 

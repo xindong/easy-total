@@ -78,18 +78,15 @@ class TaskWorker
         $this->startTime  = time();
         self::$serverName = EtServer::$config['server']['host'] . ':' . EtServer::$config['server']['port'];
 
-        if ($taskId > 0)
-        {
-            $serverHash     = substr(md5(EtServer::$configFile), 16, 8);
-            self::$dumpFile = EtServer::$config['server']['dump_path'] . 'easy-total-task-dump-' . $serverHash . '-' . $taskId . '.txt';
+        $serverHash     = substr(md5(EtServer::$configFile), 16, 8);
+        self::$dumpFile = EtServer::$config['server']['dump_path'] . 'easy-total-task-dump-' . $serverHash . '-' . $taskId . '.txt';
 
-            TaskData::$dataConfig   = EtServer::$config['data'];
-            TaskData::$redisConfig  = EtServer::$config['redis'];
-            TaskData::$outputConfig = EtServer::$config['output'];
-            $this->taskData         = new TaskData($this->taskId);
+        TaskData::$dataConfig   = EtServer::$config['data'];
+        TaskData::$redisConfig  = EtServer::$config['redis'];
+        TaskData::$outputConfig = EtServer::$config['output'];
+        $this->taskData         = new TaskData($this->taskId);
 
-            $this->loadDumpData();
-        }
+        $this->loadDumpData();
     }
 
     public function init()
@@ -161,18 +158,18 @@ class TaskWorker
             $this->updateStatus(true);
 
             # 如果启动超过1小时
-            //if ($type === 'job' && self::$timed - $this->startTime > 3600)
-            //{
-            //    if (mt_rand(1, 200) === 1)
-            //    {
-            //        # 重启进程避免数据溢出、未清理数据占用超大内存
-            //        $this->shutdown();
-            //
-            //        info('now restart task worker#'. $this->taskId);
-            //
-            //        exit(0);
-            //    }
-            //}
+            if ($type === 'job' && self::$timed - $this->startTime > 3600)
+            {
+                if (mt_rand(1, 200) === 1)
+                {
+                    # 重启进程避免数据溢出、未清理数据占用超大内存
+                    $this->shutdown();
+
+                    info("Task#$this->taskId now restart.");
+
+                    exit(0);
+                }
+            }
         }
         catch (Exception $e)
         {
