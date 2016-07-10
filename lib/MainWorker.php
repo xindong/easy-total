@@ -78,6 +78,13 @@ class MainWorker
     public $ssdb;
 
     /**
+     * 当前进程启动时间
+     *
+     * @var int
+     */
+    protected $startTime;
+
+    /**
      * 是否暂停接受数据
      *
      * @var bool
@@ -146,7 +153,7 @@ class MainWorker
         require_once __DIR__ .'/FlushData.php';
 
         $this->server    = $server;
-        $this->workerId  = $id;
+        $this->workerId  = FlushData::$workerId = $id;
         $this->dumpFile  = EtServer::$config['server']['dump_path'] .'total-dump-'. substr(md5(EtServer::$configFile), 16, 8) . '-'. $id .'.txt';
         $this->flushData = new FlushData();
 
@@ -157,8 +164,8 @@ class MainWorker
             chr(146).chr(206).chr(87) => 1,
         ];
 
-        self::$timed = time();
-
+        self::$timed      = time();
+        $this->startTime  = time();
         self::$serverName = EtServer::$config['server']['host'].':'. EtServer::$config['server']['port'];
 
     }
@@ -249,6 +256,16 @@ class MainWorker
                 try
                 {
                     $this->flush();
+
+                    if (self::$timed - $this->startTime > 3600)
+                    {
+                        if (!$this->flushData->jobs && mt_rand(1, 100) === 1)
+                        {
+                            # 重启服务器
+                            info("Worker#$this->workerId now restart.");
+                            exit();
+                        }
+                    }
                 }
                 catch (Exception $e)
                 {
@@ -317,12 +334,12 @@ class MainWorker
 
 
         # 进程定时重启, 避免数据没清理占用较大内存的情况
-        swoole_timer_tick(mt_rand(1000 * 3600 * 2, 1000 * 3600 * 3), function()
-        {
-            info('now restart worker#'. $this->workerId);
-            $this->shutdown();
-            exit;
-        });
+        //swoole_timer_tick(mt_rand(1000 * 3600 * 2, 1000 * 3600 * 3), function()
+        //{
+        //    info('now restart worker#'. $this->workerId);
+        //    $this->shutdown();
+        //    exit;
+        //});
 
         # 只有需要第一个进程处理
         if ($this->workerId == 0)
@@ -450,14 +467,16 @@ class MainWorker
 
                 goto jsonFormat;
             }
-            elseif ($this->bufferLen[$fromId] > 10000000)
+            elseif ($this->bufferLen[$fromId] > 50000000)
             {
-                # 超过10MB
+                # 超过50MB
                 unset($this->buffer[$fromId]);
                 unset($this->bufferTime[$fromId]);
                 unset($this->bufferLen[$fromId]);
 
                 $server->close($fd);
+
+                warn("pack data is too long: ". $this->bufferLen[$fromId] .'byte. now close client.');
             }
 
             return true;
@@ -944,12 +963,11 @@ class MainWorker
         {
             # Exp: $groupTimeKey = 1M
 
-            if ($timeOptKey === 'none')
+            if ($timeOptKey === '-')
             {
                 # 不分组
                 $timeKey = 0;
                 $id      = $groupValue ?: (isset($item['_id']) && $item['_id'] ? $item['_id'] : md5(json_decode($item, JSON_UNESCAPED_UNICODE)));
-                # $timeOpt = [0, 'none'];
             }
             else
             {
@@ -959,24 +977,31 @@ class MainWorker
                 $id      = $groupValue ? "{$timeKey}_{$groupValue}" : $timeKey;
             }
 
-            # 任务分片的key
-            $taskKey  = md5("$key,$timeOptKey,$app");
-
             # 数据的唯一key, Exp: abcde123af32,1d,hsqj,2016001,123_abc
             $uniqueId = "$key,$timeOptKey,$app,$timeKey,$groupValue";
+            # 任务ID
+            $taskId   = DataJob::getTaskId($uniqueId);
 
             # 设置到备份里
-            $this->flushData->setBackup($taskKey, $uniqueId);
+            $this->flushData->setBackup($taskId, $uniqueId);
 
-            # 获取任务对象
-            $dataJob              = $this->flushData->getJob($taskKey, $uniqueId);
-            $dataJob->dataId      = $id;
-            $dataJob->timeOpLimit = $timeOpt[0];
-            $dataJob->timeOpType  = $timeOpt[1];
-            $dataJob->timeKey     = $timeKey;
-            $dataJob->time        = $time;
-            $dataJob->app         = $app;
-            $dataJob->seriesKey   = $key;
+            if (isset($this->flushData->jobs[$taskId][$uniqueId]))
+            {
+                $dataJob = $this->flushData->jobs[$taskId][$uniqueId];
+            }
+            else
+            {
+                $dataJob = new DataJob($uniqueId);
+                $dataJob->seriesKey   = $key;
+                $dataJob->dataId      = $id;
+                $dataJob->timeOpLimit = $timeOpt[0];
+                $dataJob->timeOpType  = $timeOpt[1];
+                $dataJob->timeKey     = $timeKey;
+                $dataJob->time        = $time;
+                $dataJob->app         = $app;
+
+                $this->flushData->jobs[$taskId][$uniqueId] = $dataJob;
+            }
 
             $dataJob->setData($item, $fun, $option['allField']);
         }
@@ -989,20 +1014,6 @@ class MainWorker
      */
     public function shutdown()
     {
-        if (EtServer::$config['server']['flush_at_shutdown'])
-        {
-            $this->flush();
-        }
-
-        if ($this->workerId === 0)
-        {
-            # 由于 swoole 的退出机制不好, 所以这里直接全部投递一个结束的任务让任务主动关闭
-            for ($i = 0; $i < $this->server->setting['task_worker_num']; $i++)
-            {
-                $this->server->task('exit', $i);
-            }
-        }
-
         $this->dumpData();
     }
 
@@ -1013,15 +1024,24 @@ class MainWorker
     {
         if (is_file($this->dumpFile))
         {
-            foreach (explode("\r\n", trim(file_get_contents($this->dumpFile))) as $item)
+            $count = 0;
+            foreach (explode("\r\n", file_get_contents($this->dumpFile)) as $item)
             {
-                /**
-                 * @var DataJob $job
-                 */
-                $job = @unserialize($item);
-                if ($job && is_object($job))
+                if (!$item)continue;
+
+                $job = @msgpack_unpack($item);
+
+                if ($job && $job instanceof DataJob)
                 {
-                    $this->flushData->jobs[$job->uniqueId] = $job;
+                    $taskId   = $job->taskId();
+                    $uniqueId = $job->uniqueId;
+
+                    $this->flushData->jobs[$taskId][$uniqueId] = $job;
+                    $count++;
+                }
+                else
+                {
+                    warn("load data error: ". $item);
                 }
                 else
                 {
@@ -1031,7 +1051,7 @@ class MainWorker
 
             unlink($this->dumpFile);
 
-            info("worker($this->workerId) load ". count($this->flushData->jobs) ." job(s) from file {$this->dumpFile}.");
+            info("worker($this->workerId) load {$count} job(s) from file {$this->dumpFile}.");
         }
     }
 
@@ -1045,11 +1065,13 @@ class MainWorker
             # 有数据
             foreach ($this->flushData->jobs as $item)
             {
-                file_put_contents($this->dumpFile, serialize($item) . "\r\n", FILE_APPEND);
+                foreach ($item as $job)
+                {
+                    file_put_contents($this->dumpFile, msgpack_pack($job) . "\r\n", FILE_APPEND);
+                }
             }
         }
     }
-
 
     /**
      * 更新相关设置
@@ -1203,58 +1225,50 @@ class MainWorker
      */
     protected function flush()
     {
-        if (!$this->redis)return;
-
-        if ($this->flushData->jobs)
+        try
         {
-            try
+            $time    = microtime(1);
+            $count   = $this->flushData->flush();
+            $useTime = microtime(1) - $time;
+
+            if (IS_DEBUG && ($count || $this->flushData->delayCount))
             {
-                $time = microtime(1);
-                $this->flushData->flush($this->redis);
-                $useTime = microtime(1) - $time;
+                debug('Worker#' . $this->workerId . " flush {$count} jobs, use time: {$useTime}s" . ($this->flushData->delayCount > 0 ? ", delay jobs: {$this->flushData->delayCount}." : '.'));
+            }
 
-                # 读取总数
-                $count = 0;
-                foreach ($this->flushData->jobs as $taskKey => $tmp)
+            $timeKey = date('H:i');
+            $key     = "counter.flush.time." . date('Ymd');
+            $this->flushData->counterFlush[$key][$timeKey]  += 1000000 * $useTime;
+
+            # 推送管理数据
+            $this->flushData->flushManagerData($this->redis);
+
+            if ($this->flushData->delayCount > 30000)
+            {
+                if (!$this->pause)
                 {
-                    $count += count($tmp);
-                }
+                    # 超过30000个任务没投递, 开启自动暂停
+                    $this->autoPause = true;
+                    $this->pause();
 
-                debug('Worker#'. $this->workerId ." now jobs: $count, flush time: {$useTime}s");
-
-                if ($count > 30000 || $useTime > 5)
-                {
-                    if (!$this->pause)
-                    {
-                        # 超过10000个任务或者投递时间超过了2秒, 开启自动暂停
-                        $this->autoPause = true;
-                        $this->pause();
-
-                        warn('Worker#' . $this->workerId . " is busy. jobs: $count, task time: $useTime, now pause accept new data.");
-                    }
-                }
-                elseif ($this->pause && $this->autoPause && $count < 20000)
-                {
-                    # 关闭自动暂停
-                    goto closeAutoPause;
+                    warn('Worker#' . $this->workerId . " is busy. delay jobs: {$this->flushData->delayCount}, now pause accept new data.");
                 }
             }
-            catch (Exception $e)
+            elseif ($this->pause && $this->autoPause && $this->flushData->delayCount < 20000)
             {
-                warn($e->getMessage());
+                # 关闭自动暂停
+                $this->autoPause  = false;
+                $this->stopPause();
 
-                # 如果有错误则检查下
-                $this->checkRedis();
+                info('Worker#'. $this->workerId .' re-accept new data.');
             }
         }
-        elseif ($this->pause && $this->autoPause)
+        catch (Exception $e)
         {
-            # 关闭自动暂停
-            closeAutoPause:
-            $this->autoPause  = false;
-            $this->stopPause();
+            warn($e->getMessage());
 
-            info('Worker#'. $this->workerId .' re-accept new data.');
+            # 如果有错误则检查下
+            $this->checkRedis();
         }
     }
 

@@ -141,7 +141,7 @@ class DataJob
         }
 
         $this->_serialized = json_encode($array, JSON_UNESCAPED_UNICODE);
-        return ['total', 'data', '_serialized'];
+        return ['_serialized', 'data', 'total'];
     }
 
     public function __wakeup()
@@ -251,7 +251,10 @@ class DataJob
         }
 
         # 合并统计数据
-        $this->mergeTotal($job->total);
+        if ($job->total)
+        {
+            $this->mergeTotal($job->total);
+        }
 
         $this->dataId = $job->dataId;
         $this->time   = $job->time;
@@ -333,6 +336,34 @@ class DataJob
         {
             $this->total->all = true;
         }
+    }
+
+    /**
+     * 获取当前任务的投递ID
+     *
+     * @return int
+     */
+    public function taskId()
+    {
+        return self::getTaskId($this->uniqueId);
+    }
+
+
+    /**
+     * 根据任务key获取taskId
+     *
+     * 不分配id = 0的任务
+     *
+     * @param $seriesKey
+     * @param $timeOptKey
+     * @param $app
+     * @return int
+     */
+    public static function getTaskId($uniqueId)
+    {
+        $taskNum = EtServer::$server->setting['task_worker_num'] - 1;
+
+        return (crc32($uniqueId) % $taskNum) + 1;
     }
 
     /**

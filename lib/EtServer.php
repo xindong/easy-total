@@ -266,7 +266,7 @@ class EtServer
     {
         if (!defined('SWOOLE_VERSION'))
         {
-            warn("必须安装swoole插件,see http://www.swoole.com/");
+            warn("必须安装swoole插件, see http://www.swoole.com/");
             exit;
         }
 
@@ -275,6 +275,8 @@ class EtServer
             warn("swoole插件必须>=1.8版本");
             exit;
         }
+
+
 
         if (!$configFile)
         {
@@ -294,6 +296,15 @@ class EtServer
         if (!$config)
         {
             warn("config error");
+            exit;
+        }
+
+        # 是否使用共享内存模式
+        define('SHMOP_MODE', $config['server']['shmop_mode'] ? true : false);
+
+        if (SHMOP_MODE && !function_exists('shmop_open'))
+        {
+            warn("你开启了共享内存模式, 但没有安装shmop扩展, see http://cn.php.net/manual/zh/book.shmop.php");
             exit;
         }
 
@@ -332,8 +343,7 @@ class EtServer
         $end       = "\x1b[39m";
         info("{$lightBlue}======= Swoole Config ========\n". json_encode($config['conf'], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE). "{$end}");
 
-        self::$config        = $config;
-
+        self::$config   = $config;
         # 初始化计数器
         self::$counter  = new swoole_atomic();
         self::$counterX = new swoole_atomic();
@@ -562,7 +572,7 @@ class EtServer
                 info("current server task worker memory limit is: ". ini_get('memory_limit'));
             }
 
-            self::setProcessName("php ". implode(' ', $argv) ." [task]");
+            self::setProcessName("php ". implode(' ', $argv) ." [task#{$taskId}]");
 
             require (__DIR__ .'/TaskWorker.php');
 
@@ -581,7 +591,7 @@ class EtServer
                 info("current server worker memory limit is: ". ini_get('memory_limit'));
             }
 
-            self::setProcessName("php ". implode(' ', $argv) ." [worker]");
+            self::setProcessName("php ". implode(' ', $argv) ." [worker#{$workerId}]");
 
             require (__DIR__ .'/Manager.php');
             require (__DIR__ .'/MainWorker.php');
@@ -780,7 +790,6 @@ class EtServer
             EtServer::$config['server']['dump_path'] = '/tmp/';
         }
 
-        # 强制设置成2
         $config['fluent']['dispatch_mode'] = 2;
 
         if (!$config['conf']['task_tmpdir'])

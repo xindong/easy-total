@@ -703,7 +703,6 @@ class Manager
         ];
 
         # 设置查询的映射
-        $seriesOption['queries'] = [];
         foreach($queries as $k => $v)
         {
             if ($v['seriesKey'] == $seriesKey)

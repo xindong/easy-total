@@ -10,41 +10,55 @@
 class FlushData
 {
     /**
+     * 已经到了推送的时间但是没有推送的任务数
+     *
+     * @var int
+     */
+    public $delayCount = 0;
+
+    /**
      * 计数器
      *
      * @var array
      */
-    public $counter;
+    public $counter = [];
 
     /**
      * 任务列表
      *
      * @var array
      */
-    public $jobs;
+    public $jobs = [];
 
     /**
      * 项目列表
      *
      * @var array
      */
-    public $apps;
+    public $apps = [];
 
     /**
      * 项目的计数器
      *
      * @var array
      */
-    public $counterApp;
+    public $counterApp = [];
+
+    /**
+     * 推送统计计数器
+     *
+     * @var array
+     */
+    public $counterFlush = [];
+
+    public static $workerId = 0;
 
     protected static $DataJobs = [];
 
+    protected static $shmKeys = [];
+
     public function __construct()
     {
-        $this->jobs       = [];
-        $this->counter    = [];
-        $this->apps       = [];
-        $this->counterApp = [];
     }
 
     /**
@@ -58,11 +72,11 @@ class FlushData
     /**
      * 将一个任务对象设置备份, 以便在失败时恢复
      *
-     * @param $taskKey
+     * @param $taskId
      * @param $uniqueId
      * @return DataJob
      */
-    public function setBackup($taskKey, $uniqueId)
+    public function setBackup($taskId, $uniqueId)
     {
         if (isset(self::$DataJobs[$uniqueId]))
         {
@@ -70,33 +84,16 @@ class FlushData
             return;
         }
 
-        if (!isset($this->jobs[$taskKey][$uniqueId]))
+        if (!isset($this->jobs[$taskId][$uniqueId]))
         {
-            self::$DataJobs[$uniqueId] = [$taskKey, -1];
+            self::$DataJobs[$uniqueId] = [$taskId, -1];
         }
         else
         {
             # 将对象克隆出来
-            $obj = clone $this->jobs[$taskKey][$uniqueId];
-            self::$DataJobs[$uniqueId] = [$taskKey, $obj];
+            $obj = clone $this->jobs[$taskId][$uniqueId];
+            self::$DataJobs[$uniqueId] = [$taskId, $obj];
         }
-    }
-
-    /**
-     * 获取一个任务对象
-     *
-     * @param $taskKey
-     * @param $uniqueId
-     * @return DataJob
-     */
-    public function getJob($taskKey, $uniqueId)
-    {
-        if (!isset($this->jobs[$taskKey][$uniqueId]))
-        {
-            $this->jobs[$taskKey][$uniqueId] = new DataJob($uniqueId);
-        }
-
-        return $this->jobs[$taskKey][$uniqueId];
     }
 
     /**
@@ -106,14 +103,14 @@ class FlushData
     {
         foreach (self::$DataJobs as $uniqueId => $item)
         {
-            list($taskKey, $obj) = $item;
+            list($taskId, $obj) = $item;
             if ($obj === -1)
             {
-                unset($this->jobs[$taskKey][$uniqueId]);
+                unset($this->jobs[$taskId][$uniqueId]);
             }
             else
             {
-                $this->jobs[$taskKey][$uniqueId] = $obj;
+                $this->jobs[$taskId][$uniqueId] = $obj;
             }
         }
 
@@ -121,60 +118,243 @@ class FlushData
         $this->commit();
     }
 
-    public function flush($redis)
+    /**
+     * 推送数据给task进程
+     *
+     * @return int
+     */
+    public function flush()
     {
-        /**
-         * @var Redis $redis
-         */
-
         # 投递任务处理任务数据
-        if ($this->jobs)
+        if (SHMOP_MODE)
         {
-            $i    = 0;
-            $time = microtime(1);
-            while($i < 500)
+            $rs = $this->flushByShm();
+        }
+        else
+        {
+            $rs = $this->flushByTask();
+        }
+
+        $this->delayCount = 0;
+        foreach ($this->jobs as $taskId => $value)
+        {
+            $this->delayCount += count($value);
+        }
+
+        return $rs;
+    }
+
+    /**
+     * 通过共享内存方式投递数据
+     *
+     * @return int
+     */
+    protected function flushByShm()
+    {
+        $count = 0;
+        $i     = 0;
+        $time  = microtime(1);
+
+        # 之前投递失败的任务
+        if (self::$shmKeys)foreach (self::$shmKeys as $uniqueId => $job)
+        {
+            if (EtServer::$server->task("shm|$uniqueId", $job))
             {
-                if (microtime(1) - $time > 3)break;
-
-                foreach ($this->jobs as $taskKey => $value)
-                {
-                    # 投递数据, 每次执行不超过3秒钟
-
-                    $taskId = self::getTaskId($taskKey);
-                    $j      = 0;
-                    foreach ($value as $k => $v)
-                    {
-                        if (EtServer::$server->task($v, $taskId))
-                        {
-                            # 投递成功移除对象
-                            unset($this->jobs[$taskKey][$k]);
-                        }
-                        else
-                        {
-                            # 发送失败可能是缓冲区塞满了, 此时不应该再发送信息了
-                            break;
-                        }
-
-                        $j++;
-                        if ($j === 100)
-                        {
-                            break;
-                        }
-                    }
-
-                    if (!$this->jobs[$taskKey])
-                    {
-                        unset($this->jobs[$taskKey]);
-                    }
-                }
-
-                if (!$this->jobs)break;
-
-                $i++;
+                unset(self::$shmKeys[$uniqueId]);
             }
         }
 
+        # 所有任务ID列表
+        $taskIds = array_keys($this->jobs);
+
+        while($i < 10)
+        {
+            if (microtime(1) - $time > 3)break;
+
+            foreach ($taskIds as $k => $taskId)
+            {
+                $shmKey = ($taskId * 100000) + (self::$workerId * 100) + $i;
+
+                if ($shmId = shmop_open($shmKey, 'a', 0664, 0))
+                {
+                    # 还存在, 则表明任务进程还没有读取完毕
+                    shmop_close($shmId);
+                    continue;
+                }
+
+                $len  = 8;
+                $keys = [];
+                $str  = '';
+                $j    = 0;
+                $all  = true;
+
+                foreach ($this->jobs[$taskId] as $uniqueId => $job)
+                {
+                    /**
+                     * @var $job DataJob
+                     */
+                    $j++;
+                    $tmp    = msgpack_pack($job) . "\1\r\n";
+                    $len   += strlen($tmp);
+                    $str   .= $tmp;
+                    $keys[] = $uniqueId;
+
+                    unset($tmp);
+
+                    if ($len > 10240000)
+                    {
+                        # 每10M发1次
+                        $all = false;
+                        break;
+                    }
+                }
+
+                if ($j === 0)
+                {
+                    # 没有可读取的任务了
+                    unset($taskIds[$k]);
+                    continue;
+                }
+
+                # 获取一块内存
+                $shmId = @shmop_open($shmKey, 'n', 0664, $len);
+                if (false === $shmId)
+                {
+                    # 没创建成功, 可能共享内存已经用完
+                    return $count;
+                }
+
+                # 前8位留给了记录成功的位置
+                if (shmop_write($shmId, $str, 8))
+                {
+                    $count += $j;
+
+                    foreach ($keys as $key)
+                    {
+                        unset($this->jobs[$taskId][$key]);
+                    }
+
+                    # 通知任务进程处理
+                    if (!EtServer::$server->task("shm|$shmKey", $taskId))
+                    {
+                        # 没有投递成功则记录下, 下次再通知
+                        self::$shmKeys[$shmKey] = $taskId;
+                    }
+
+                    if ($all)
+                    {
+                        # 移除列表
+                        unset($taskIds[$k]);
+                    }
+                }
+                else
+                {
+                    warn("shm write fail, data length: $len, shm id: $shmKey");
+                }
+
+                unset($str);
+            }
+
+            if (!$taskIds)break;
+
+            $taskIds = array_values($taskIds);
+
+            $i++;
+        }
+
+        return $count;
+    }
+
+    /**
+     * 通过任务投递方式投递数据
+     *
+     * @return int
+     */
+    protected function flushByTask()
+    {
+        if (!$this->jobs)return 0;
+
+        $time    = microtime(1);
+        $i       = 0;
+        $count   = 0;
+        # 所有任务ID列表
+        $taskIds = array_keys($this->jobs);
+
+        flush:
+
+        foreach ($taskIds as $k => $taskId)
+        {
+            $all    = true;
+            $j      = 0;
+            $taskId = $taskIds[$k];
+            $ids    = [];
+
+            foreach ($this->jobs[$taskId] as $uniqueId => $job)
+            {
+                $ids[] = $uniqueId;
+
+                /**
+                 * @var $job DataJob
+                 */
+                $j++;
+                if ($j === 100)
+                {
+                    $all = false;
+                    break;
+                }
+            }
+
+            foreach ($ids as $uniqueId)
+            {
+                if (EtServer::$server->task($this->jobs[$taskId][$uniqueId], $taskId))
+                {
+                    # 投递成功移除对象
+                    unset($this->jobs[$taskId][$uniqueId]);
+                    $count++;
+                }
+                else
+                {
+                    # 发送失败可能是缓冲区塞满了
+                    $all = false;
+                    warn("send task fail, task id: {$taskId}");
+                    break;
+                }
+            }
+
+            if ($all)
+            {
+                unset($taskIds[$k]);
+            }
+        }
+        $taskIds = array_values($taskIds);
+
+        if (microtime(1) - $time > 3)
+        {
+            return $count;
+        }
+
+        $i++;
+
+        if ($taskIds && $i < 100)
+        {
+            goto flush;
+        }
+
+        return $count;
+    }
+
+    /**
+     * 推送管理用的数据
+     *
+     * @param $redis
+     */
+    public function flushManagerData($redis)
+    {
         if (!$redis)return;
+
+        /**
+         * @var Redis $redis
+         */
 
         # 更新APP相关数据
         if ($this->apps)
@@ -266,30 +446,17 @@ class FlushData
                 unset($this->counterApp[$app]);
             }
         }
-    }
 
-    /**
-     * 根据任务key获取taskId
-     *
-     * 不分配id = 0的任务
-     *
-     * @param $taskKey
-     * @return int
-     */
-    public static function getTaskId($taskKey)
-    {
-        static $cache = [];
-        if (isset($cache[$taskKey]))return $cache[$taskKey];
-
-        $taskNum = EtServer::$server->setting['task_worker_num'] - 1;
-
-        if (count($cache) > 200)
+        # 推送统计
+        if ($this->counterFlush)
         {
-            $cache = array_slice($cache, -20, null, true);
+            foreach ($this->counterFlush as $timeKey => $value)
+            {
+                foreach ($value as $k2 => $v)
+                {
+                    $redis->hIncrBy($timeKey, $k2, $v);
+                }
+            }
         }
-
-        $cache[$taskKey] = (crc32($taskKey) % ($taskNum - 1)) + 1;
-
-        return $cache[$taskKey];
     }
 }

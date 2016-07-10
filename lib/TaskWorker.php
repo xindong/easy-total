@@ -78,7 +78,7 @@ class TaskWorker
         $this->startTime  = time();
         self::$serverName = EtServer::$config['server']['host'] . ':' . EtServer::$config['server']['port'];
 
-        if ($taskId > 0)
+        if ($this->taskId > 0)
         {
             $serverHash     = substr(md5(EtServer::$configFile), 16, 8);
             self::$dumpFile = EtServer::$config['server']['dump_path'] . 'easy-total-task-dump-' . $serverHash . '-' . $taskId . '.txt';
@@ -87,15 +87,14 @@ class TaskWorker
             TaskData::$redisConfig  = EtServer::$config['redis'];
             TaskData::$outputConfig = EtServer::$config['output'];
             $this->taskData         = new TaskData($this->taskId);
+
+            $this->loadDumpData();
         }
     }
 
     public function init()
     {
-        if ($this->taskId > 0)
-        {
-            $this->loadDumpData();
-        }
+
     }
 
     /**
@@ -118,7 +117,7 @@ class TaskWorker
             }
             else
             {
-                $data = explode('|', $data);
+                $data = explode('|', $data, 2);
                 $type = $data[0];
             }
 
@@ -136,6 +135,11 @@ class TaskWorker
                 case 'job':
                     # 每3秒会被调用1次
                     $this->taskData->run();
+                    break;
+
+                case 'shm':
+                    # 收到一个内存投递的请求
+                    $this->loadDataByShmId($data[1]);
                     break;
 
                 case 'clean':
@@ -164,7 +168,7 @@ class TaskWorker
                     # 重启进程避免数据溢出、未清理数据占用超大内存
                     $this->shutdown();
 
-                    info('now restart task worker#'. $this->taskId);
+                    info("Task#$this->taskId now restart.");
 
                     exit(0);
                 }
@@ -173,6 +177,110 @@ class TaskWorker
         catch (Exception $e)
         {
             warn($e->getMessage());
+        }
+    }
+
+    /**
+     * 通过共享内存来读取数据
+     *
+     * @param $shmKey
+     */
+    protected function loadDataByShmId($shmKey)
+    {
+        $shmId = @shmop_open($shmKey, 'w', 0664, 0);
+
+        if ($shmId)
+        {
+            # 读取记录的成功的位置
+            $pos = rtrim(@shmop_read($shmId, 0, 8), "\0");
+            if ($pos)
+            {
+                $pos = unpack('J', $pos);
+                if ($pos)
+                {
+                    if (is_array($pos))
+                    {
+                        $pos = $pos[1];
+                    }
+
+                    if ($pos < 8)$pos = 8;
+                }
+                else
+                {
+                    $pos = 8;
+                }
+            }
+            else
+            {
+                $pos = 8;
+            }
+
+            $rs    = '';
+            $str   = '';
+            $size  = shmop_size($shmId);
+            $limit = 4096;
+
+            if ($limit + $pos >= $size)
+            {
+                # 如果超过内存大小则缩小读取量
+                $limit = $size - $pos;
+            }
+
+            # 读取共享内存数据
+            if ($limit > 0)while ($rs = @shmop_read($shmId, $pos, $limit))
+            {
+                $data = rtrim($rs, "\0");
+                $pos += $limit;
+                $tmp  = $str . $data;
+
+                if (false !== strpos($tmp, "\1\r\n"))
+                {
+                    $arr = explode("\1\r\n", $tmp);
+                    foreach ($arr as $item)
+                    {
+                        if ($item === '')continue;
+
+                        # 解开数据
+                        $dataJob = @msgpack_unpack($item);
+                        if ($dataJob && $dataJob instanceof DataJob)
+                        {
+                            # 合并任务
+                            $this->taskData->push($dataJob);
+
+                            # 写入当前成功的位置
+                            @shmop_write($shmId, pack('J', $pos), 0);
+                        }
+                        else
+                        {
+                            # 记录到 $str 里继续读取
+                            $str = $item;
+                        }
+                    }
+                }
+                else
+                {
+                    $str .= $data;
+                }
+
+                if ($pos + $limit > $size)
+                {
+                    $limit = $size - $pos;
+
+                    # 已经到结尾了
+                    if ($limit <= 0)break;
+                }
+            }
+
+            if ($rs !== false)
+            {
+                # 移除数据
+                shmop_delete($shmId);
+                shmop_close($shmId);
+            }
+        }
+        else
+        {
+            warn("can not open shm, shm key is : $shmKey");
         }
     }
 
@@ -219,18 +327,21 @@ class TaskWorker
         info("Task#$this->taskId is dumping file.");
 
         $time = microtime(1);
-        if (TaskData::$jobs)foreach (TaskData::$jobs as $job)
+        if (TaskData::$jobs)foreach (TaskData::$jobs as $jobs)
         {
             # 写入到临时数据里, 下次启动时载入
-            file_put_contents(self::$dumpFile, 'jobs,'. serialize($job) ."\r\n", FILE_APPEND);
+            foreach ($jobs as $job)
+            {
+                file_put_contents(self::$dumpFile, 'jobs,' . msgpack_pack($job) . "\r\n", FILE_APPEND);
+            }
         }
 
         if (TaskData::$list)foreach (TaskData::$list as $tag => $list)
         {
-            file_put_contents(self::$dumpFile, $tag .','. serialize($list) ."\r\n", FILE_APPEND);
+            file_put_contents(self::$dumpFile, $tag .','. msgpack_pack($list) ."\r\n", FILE_APPEND);
         }
 
-        info("Task#$this->taskId dump job: ". count(TaskData::$jobs) .". list: ". count(TaskData::$list) .", use time:". (microtime(1) - $time) ."s.");
+        info("Task#$this->taskId dump job: ". TaskData::getJobCount() .". list: ". count(TaskData::$list) .", use time:". (microtime(1) - $time) ."s.");
     }
 
     /**
@@ -245,48 +356,28 @@ class TaskWorker
                 if (!$item)continue;
 
                 list($type, $tmp) = explode(',', $item, 2);
-                $tmp  = @unserialize($tmp);
 
+                $tmp = @msgpack_unpack($tmp);
                 if ($tmp)
                 {
                     if ($type === 'jobs')
                     {
-                        /**
-                         * @var DataJob $tmp
-                         */
-                        if (isset(TaskData::$jobs[$tmp->uniqueId]))
+                        if (is_object($tmp) && $tmp instanceof DataJob)
                         {
-                            TaskData::$jobs[$tmp->uniqueId]->merge($tmp);
-                        }
-                        else
-                        {
-                            TaskData::$jobs[$tmp->uniqueId] = $tmp;
-
-                            switch ($tmp->timeOpType)
-                            {
-                                case 'M':      // 分钟
-                                case 'i':      // 分钟
-                                case 's':      // 秒
-                                case 'none':   // none
-                                    # 保存间隔1分钟
-                                    TaskData::$jobListByTaskTime1[$tmp->uniqueId] = $tmp;
-                                    break;
-
-                                default:
-                                    # 其它的保存间隔为10分钟
-                                    TaskData::$jobListByTaskTime2[$tmp->uniqueId] = $tmp;
-                                    break;
-                            }
+                            $this->taskData->push($tmp);
                         }
                     }
                     else
                     {
-                        TaskData::$list[$type] = $tmp;
+                        if (is_array($tmp))
+                        {
+                            TaskData::$list[$type] = $tmp;
+                        }
                     }
                 }
             }
 
-            info("Task#$this->taskId load ". count(TaskData::$jobs) . ' jobs, ' .count(TaskData::$list). ' list from dump file.');
+            info("Task#$this->taskId load ". TaskData::getJobCount() ." jobs, " .count(TaskData::$list). ' list from dump file.');
 
             unlink(self::$dumpFile);
         }
@@ -312,7 +403,6 @@ class TaskWorker
         for ($i = 0; $i <= 20; $i++)
         {
             $k1     = date('Ymd', $time);
-            $keys[] = "counter.pushtime.$k1.$key";
             $keys[] = "counter.total.$k1.$key";
             $keys[] = "counter.time.$k1.$key";
             $time  -= 86400;
@@ -482,12 +572,12 @@ class TaskWorker
 
         # 清理每天的统计数据, 只保留10天内的
         $time = time();
-        $k1   = date('Y-m-d', $time - 86400 * 12);
-        $k2   = date('Y-m-d', $time - 86400 * 11);
+        $k1   = date('Ymd', $time - 86400 * 12);
+        $k2   = date('Ymd', $time - 86400 * 11);
 
         if ($ssdb)
         {
-            foreach (['total', 'time', 'pushtime'] as $item)
+            foreach (['total', 'time'] as $item)
             {
                 foreach (['counter', 'counterApp'] as $k0)
                 {
@@ -503,12 +593,12 @@ class TaskWorker
                 }
             }
 
-            $ssdb->hclear("counter.allpushtime.$k1");
-            $ssdb->hclear("counter.allpushtime.$k2");
+            $ssdb->hclear("counter.flush.time.$k1");
+            $ssdb->hclear("counter.flush.time.$k2");
         }
         else
         {
-            foreach (['total', 'time', 'pushtime'] as $item)
+            foreach (['total', 'time'] as $item)
             {
                 foreach (['counter', 'counterApp'] as $k0)
                 {
@@ -532,8 +622,8 @@ class TaskWorker
                 }
             }
 
-            $redis->del("counter.allpushtime.$k1");
-            $redis->del("counter.allpushtime.$k2");
+            $redis->del("counter.flush.time.$k1");
+            $redis->del("counter.flush.time.$k2");
         }
 
         $redis->close();
@@ -566,7 +656,7 @@ class TaskWorker
             }
             $this->doTime['updateMemory'] = time();
 
-            info("Task". str_pad('#'.$this->taskId, 4, ' ', STR_PAD_LEFT) ." total jobs: ". count(TaskData::$jobs) .", memory: ". number_format($memoryUse/1024/1024, 2) ."MB.");
+            info("Task". str_pad('#'.$this->taskId, 4, ' ', STR_PAD_LEFT) ." total jobs: ". TaskData::getJobCount() .", memory: ". number_format($memoryUse/1024/1024, 2) ."MB.");
         }
     }
 

@@ -198,7 +198,7 @@ class SQL
                 {
                     if ($item === 'none')
                     {
-                        $groupTimeSet['none'] = true;
+                        $groupTimeSet['-'] = [0, '-'];
                     }
                     elseif (preg_match('#^(\d+)([a-z]+)$#i', $item, $m))
                     {
@@ -251,6 +251,7 @@ class SQL
                             $m[1] >= 1 ? (int)$m[1] : ($m[2] == 's' ? 30 : 1),
                             $m[2],
                         ];
+
                         $groupTimeSet[$set[0].$set[1]] = $set;
                     }
                     else
@@ -260,7 +261,7 @@ class SQL
                 }
             }
             # 设定时间分组
-            $option['groupTime'] = $groupTimeSet ?: ['1i' => [1, 'i']];
+            $option['groupTime'] = $groupTimeSet ?: ['1i' => [1, 'i', 60]];
 
             # 根据时间分组设置输出表设置
             $saveAsArr = explode(',', str_replace(' ', '', $saveAs));
