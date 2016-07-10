@@ -364,7 +364,7 @@ class TaskWorker
                     {
                         if (is_object($tmp) && $tmp instanceof DataJob)
                         {
-                            $this->taskData->push($tmp);
+                            $this->taskData->push($tmp, true);
                         }
                     }
                     else

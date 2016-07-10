@@ -123,8 +123,9 @@ class TaskData
      * 添加数据
      *
      * @param DataJob $job
+     * @param bool $reload
      */
-    public function push(DataJob $job)
+    public function push(DataJob $job, $reload = false)
     {
         $uniqueId  = $job->uniqueId;
         $seriesKey = $job->seriesKey;
@@ -158,7 +159,7 @@ class TaskData
                 unset(self::$jobsCache[$uniqueId]);
             }
 
-            if (!$job->taskTime)
+            if (false === $reload)
             {
                 # 设置投递时间
                 $job->taskTime = TaskWorker::$timed + self::getDelayTime($job);
