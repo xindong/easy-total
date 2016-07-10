@@ -256,16 +256,6 @@ class MainWorker
                 try
                 {
                     $this->flush();
-
-                    if (self::$timed - $this->startTime > 3600)
-                    {
-                        if (!$this->flushData->jobs && mt_rand(1, 100) === 1)
-                        {
-                            # 重启服务器
-                            info("Worker#$this->workerId now restart.");
-                            exit();
-                        }
-                    }
                 }
                 catch (Exception $e)
                 {
