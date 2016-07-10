@@ -886,9 +886,13 @@ class TaskData
             case '-':      // 不分组
                 return 60;
 
-            default:
-                # 其它的保存间隔为10分钟
+            case 'h':      // 小时
                 return 600;
+
+            case 'd':      // 按天
+            default:
+                # 其它的间隔为30分钟
+                return 3600;
         }
     }
 
