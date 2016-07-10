@@ -110,27 +110,22 @@ class TaskData
     {
         $this->runTime = microtime(1);
 
+        $this->cleanCache();
+
         # 任务数据处理
         $this->export();
 
         # 导出数据
         $this->output();
-
-        if ($count = count(self::$jobsCache) > 50000)
-        {
-            # 如果数据太多则清理下
-            self::$jobsCache = array_slice(self::$jobsCache, -5000, null, true);
-
-            debug("Task#$this->taskId clean jobs cache, count: $count");
-        }
     }
 
     /**
      * 添加数据
      *
      * @param DataJob $job
+     * @param bool $reload
      */
-    public function push(DataJob $job)
+    public function push(DataJob $job, $reload = false)
     {
         $uniqueId  = $job->uniqueId;
         $seriesKey = $job->seriesKey;
@@ -152,21 +147,19 @@ class TaskData
         {
             if (isset(self::$jobsCache[$uniqueId]))
             {
-                $jobs[$uniqueId] = self::$jobsCache[$uniqueId];
+                # 合并对象
+                self::$jobsCache[$uniqueId]->merge($job);
 
-                # 将 $job 合并到当前缓存对象里
-                $jobs[$uniqueId]->merge($job);
+                # 重新赋值到 $job 里
+                $job = self::$jobsCache[$uniqueId];
 
-                # 重新赋值
-                $job = $jobs[$uniqueId];
+                # 从缓存列表中移除
+                unset(self::$jobsCache[$uniqueId]);
             }
-            else
-            {
-                # 加入列表
-                $jobs[$uniqueId] = $job;
-            }
+            
+            $jobs[$uniqueId] = $job;
 
-            if (!$job->taskTime)
+            if (false === $reload)
             {
                 # 设置投递时间
                 $job->taskTime = TaskWorker::$timed + self::getDelayTime($job);
@@ -251,6 +244,7 @@ class TaskData
             if ($this->exportToListByJob($job))
             {
                 # 移到任务缓存数组里
+                $job->cachedTime                 = $this->runTime;
                 self::$jobsCache[$job->uniqueId] = $job;
 
                 # 从当前任务中移除
@@ -527,6 +521,57 @@ class TaskData
             if (IS_DEBUG)
             {
                 echo $e->getTraceAsString();
+            }
+        }
+    }
+
+    /**
+     * 清理缓存
+     */
+    protected function cleanCache()
+    {
+        static $runTime = 0;
+
+        # 每5分钟清理一次
+        if ($this->runTime - $runTime < 300)return;
+
+        # 更新执行时间
+        $runTime = $this->runTime;
+
+        # 获取所有需要清理的ID
+        $ids = [];
+        $mem = memory_get_usage();
+
+        foreach (self::$jobsCache as $id => $job)
+        {
+            /**
+             * @var DataJob $job
+             */
+            if ($this->runTime - $job->cachedTime > 600)
+            {
+                $ids[] = $id;
+            }
+            else
+            {
+                # 后面的都是最新的了
+                break;
+            }
+        }
+
+        if ($ids)
+        {
+            foreach ($ids as $id)
+            {
+                unset(self::$jobsCache[$id]);
+            }
+
+            if (IS_DEBUG)
+            {
+                $count = count($ids);
+                unset($ids);
+
+                $mem = memory_get_usage() - $mem;
+                debug("Task#$this->taskId clean jobs cache count: $count. release memory: $mem");
             }
         }
     }
