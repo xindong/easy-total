@@ -790,8 +790,7 @@ class EtServer
             EtServer::$config['server']['dump_path'] = '/tmp/';
         }
 
-        # 随机分配
-        $config['fluent']['dispatch_mode'] = 3;
+        $config['fluent']['dispatch_mode'] = 2;
 
         if (!$config['conf']['task_tmpdir'])
         {
