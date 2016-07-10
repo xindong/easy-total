@@ -262,6 +262,7 @@ class MainWorker
                         if (!$this->flushData->jobs && mt_rand(1, 100) === 1)
                         {
                             # 重启服务器
+                            info("Worker#$this->workerId now restart.");
                             exit();
                         }
                     }
