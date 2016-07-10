@@ -515,7 +515,7 @@ class MainWorker
 
         if (!$arr || !is_array($arr))
         {
-            debug('error data: ' . $data);
+            warn("Wroker#$this->workerId load error data: " . $data);
 
             # 把客户端关闭了
             $server->close($fd);
@@ -551,7 +551,7 @@ class MainWorker
 
         if (IS_DEBUG)
         {
-            debug("worker: $this->workerId, tag: $tag, data length: " . strlen($data));
+            debug("Worker#$this->workerId tag: $tag, data length: " . strlen($data));
         }
 
         # example: xd.game.hsqj.consume : $app = hsqj, $table = consume
