@@ -145,8 +145,6 @@ class TaskData
         }
         else
         {
-            $jobs[$uniqueId] = $job;
-
             if (isset(self::$jobsCache[$uniqueId]))
             {
                 # 合并对象
@@ -158,6 +156,8 @@ class TaskData
                 # 从缓存列表中移除
                 unset(self::$jobsCache[$uniqueId]);
             }
+            
+            $jobs[$uniqueId] = $job;
 
             if (false === $reload)
             {
