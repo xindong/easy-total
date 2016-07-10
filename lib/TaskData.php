@@ -137,11 +137,11 @@ class TaskData
 
         if (!isset(self::$jobs[$seriesKey]))
         {
-            self::$jobs[$seriesKey] = new ArrayObject();
+            self::$jobs[$seriesKey] = [];
         }
 
         # 当前对象列表
-        $jobs = self::$jobs[$seriesKey];
+        $jobs = & self::$jobs[$seriesKey];
 
         if (isset($jobs[$uniqueId]))
         {
@@ -166,8 +166,11 @@ class TaskData
                 $jobs[$uniqueId] = $job;
             }
 
-            # 设置投递时间
-            $job->taskTime = TaskWorker::$timed + self::getDelayTime($job);
+            if (!$job->taskTime)
+            {
+                # 设置投递时间
+                $job->taskTime = TaskWorker::$timed + self::getDelayTime($job);
+            }
         }
     }
 
@@ -189,12 +192,13 @@ class TaskData
         $count   = 0;
         $time    = microtime(1);
 
-        foreach (self::$jobs as $jobs)
+        foreach (self::$jobs as & $jobs)
         {
             $this->exportByList($jobs, $success, $fail);
 
             $count += count($jobs);
         }
+
         $useTime = microtime(1) - $time;
 
         if (IS_DEBUG)

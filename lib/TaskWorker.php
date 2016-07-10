@@ -78,15 +78,18 @@ class TaskWorker
         $this->startTime  = time();
         self::$serverName = EtServer::$config['server']['host'] . ':' . EtServer::$config['server']['port'];
 
-        $serverHash     = substr(md5(EtServer::$configFile), 16, 8);
-        self::$dumpFile = EtServer::$config['server']['dump_path'] . 'easy-total-task-dump-' . $serverHash . '-' . $taskId . '.txt';
+        if ($this->taskId > 0)
+        {
+            $serverHash     = substr(md5(EtServer::$configFile), 16, 8);
+            self::$dumpFile = EtServer::$config['server']['dump_path'] . 'easy-total-task-dump-' . $serverHash . '-' . $taskId . '.txt';
 
-        TaskData::$dataConfig   = EtServer::$config['data'];
-        TaskData::$redisConfig  = EtServer::$config['redis'];
-        TaskData::$outputConfig = EtServer::$config['output'];
-        $this->taskData         = new TaskData($this->taskId);
+            TaskData::$dataConfig   = EtServer::$config['data'];
+            TaskData::$redisConfig  = EtServer::$config['redis'];
+            TaskData::$outputConfig = EtServer::$config['output'];
+            $this->taskData         = new TaskData($this->taskId);
 
-        $this->loadDumpData();
+            $this->loadDumpData();
+        }
     }
 
     public function init()
@@ -354,37 +357,14 @@ class TaskWorker
 
                 list($type, $tmp) = explode(',', $item, 2);
 
-                if ($tmp[0] === 'O' || $tmp[0] === 'a')
-                {
-                    # 兼容旧的数据
-                    $tmp = @unserialize($tmp);
-                }
-                else
-                {
-                    $tmp = @msgpack_unpack($tmp);
-                }
-
+                $tmp = @msgpack_unpack($tmp);
                 if ($tmp)
                 {
                     if ($type === 'jobs')
                     {
                         if (is_object($tmp) && $tmp instanceof DataJob)
                         {
-                            $seriesKey = $tmp->seriesKey;
-                            $uniqueId  = $tmp->uniqueId;
-                            if (isset(TaskData::$jobs[$seriesKey][$uniqueId]))
-                            {
-                                TaskData::$jobs[$seriesKey][$uniqueId]->merge($tmp);
-                            }
-                            else
-                            {
-                                if (!isset(TaskData::$jobs[$seriesKey]))
-                                {
-                                    TaskData::$jobs[$seriesKey] = new ArrayObject();
-                                }
-
-                                TaskData::$jobs[$seriesKey][$uniqueId] = $tmp;
-                            }
+                            $this->taskData->push($tmp);
                         }
                     }
                     else
