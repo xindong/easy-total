@@ -161,9 +161,9 @@ class TaskWorker
             $this->updateStatus(true);
 
             # 如果启动超过1小时
-            if ($type === 'job' && self::$timed - $this->startTime > 3600)
+            if ($type === 'job' && self::$timed - $this->startTime > 10000)
             {
-                if (mt_rand(1, 200) === 1)
+                if (mt_rand(1, 300) === 1)
                 {
                     # 重启进程避免数据溢出、未清理数据占用超大内存
                     $this->shutdown();
