@@ -230,14 +230,11 @@ class TaskData
                 $job->mergeTotal($oldJob);
             }
 
-            if ($job->dist)
+            # 保存统计数据
+            if (!$this->saveJob($job))
             {
-                # 有唯一序列数据, 保存唯一数据
-                if (!$this->saveJob($job))
-                {
-                    # 保存失败, 处理下一个
-                    continue;
-                }
+                # 保存失败, 处理下一个
+                continue;
             }
 
             # 导出到列表
@@ -570,8 +567,8 @@ class TaskData
                 $count = count($ids);
                 unset($ids);
 
-                $mem = memory_get_usage() - $mem;
-                debug("Task#$this->taskId clean jobs cache count: $count. release memory: $mem");
+                $mem = ($mem - memory_get_usage()) / 1024 / 1024;
+                debug("Task#$this->taskId clean jobs cache count: $count. release memory: {$mem}MB");
             }
         }
     }
