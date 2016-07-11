@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Config>
+    <ServerList>
+        <info tag="test.tag1" ip="172.26.24.121" port="9100"/>
+        <info tag="test.tag2" ip="172.26.24.121" port="9101"/>
+        <info tag="test.tag3" ip="172.26.24.121" port="9100"/>
+        <info tag="test.tag4" ip="172.26.24.121" port="9101"/>
+        <info tag="test.tag5" ip="172.26.24.121" port="9100"/>
+        <info tag="test.tag6" ip="172.26.24.121" port="9101"/>
+        <info tag="test.tag7" ip="172.26.24.121" port="9100"/>
+        <info tag="test.tag8" ip="172.26.24.121" port="9101"/>
+        <info tag="test.tag9" ip="172.26.24.121" port="9100"/>
+        <info tag="test.tag10" ip="172.26.24.121" port="9101"/>
+        <info tag="test.tag11" ip="172.26.24.121" port="9100"/>
+        <info tag="test.tag12" ip="172.26.24.121" port="9101"/>
+        <info tag="test.tag13" ip="172.26.24.121" port="9100"/>
+        <info tag="test.tag14" ip="172.26.24.121" port="9101"/>
+        <info tag="test.tag15" ip="172.26.24.121" port="9100"/>
+        <info tag="test.tag16" ip="172.26.24.121" port="9101"/>
+        <info tag="test.tag17" ip="172.26.24.121" port="9100"/>
+        <info tag="test.tag18" ip="172.26.24.121" port="9101"/>
+        <info tag="test.tag19" ip="172.26.24.121" port="9100"/>
+        <info tag="test.tag20" ip="172.26.24.121" port="9101"/>
+        <info tag="test.tag21" ip="172.26.24.121" port="9100"/>
+        <info tag="test.tag22" ip="172.26.24.121" port="9101"/>
+        <info tag="test.tag23" ip="172.26.24.121" port="9100"/>
+        <info tag="test.tag24" ip="172.26.24.121" port="9101"/>
+        <info tag="test.tag25" ip="172.26.24.121" port="9100"/>
+        <info tag="test.tag26" ip="172.26.24.121" port="9101"/>
+        <info tag="test.tag27" ip="172.26.24.121" port="9100"/>
+        <info tag="test.tag28" ip="172.26.24.121" port="9101"/>
+        <info tag="test.tag29" ip="172.26.24.121" port="9100"/>
+        <info tag="test.tag30" ip="172.26.24.121" port="9101"/>
+        <info tag="test.tag31" ip="172.26.24.121" port="9100"/>
+        <info tag="test.tag32" ip="172.26.24.121" port="9101"/>
+        <info tag="test.root.data.account.log" ip="172.26.24.121" port="9100"/>
+        <info tag="test.root.data.changeflag.log" ip="172.26.24.121" port="9101"/>
+        <info tag="test.root.data.chat.log" ip="172.26.24.121" port="9100"/>
+        <info tag="test.root.data.complete.log" ip="172.26.24.121" port="9101"/>
+        <info tag="test.root.data.event.log" ip="172.26.24.121" port="9100"/>
+	</ServerList>
+</Config>

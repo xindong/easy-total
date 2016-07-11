@@ -1,0 +1,64 @@
+#!/bin/sh
+
+while read line
+do
+    title=$(echo $line|awk '{print $1}')
+    if [ -z $title ];then
+        continue
+    fi
+    if [ $title != "<info" ]; then
+        continue
+    fi
+
+    type=$(echo $line | grep "type")
+    if [ -z "${type}" ]; then
+        echo "server config error,need type:" ${line}
+        ./stop
+        exit
+    fi
+    type=$(echo $line | sed -e "s/^.*type=\"//" | sed -e "s/\".*$//")
+
+    name=$(echo $line | grep "name")
+    if [ -z "${name}" ]; then
+        echo "server config error,need name:" ${line}
+        ./stop
+        exit
+    fi
+    name=$(echo $line | sed -e "s/^.*name=\"//" | sed -e "s/\".*$//")
+
+    port=$(echo $line | grep "port")
+    if [ -z "${port}" ]; then
+        echo "server config error,need port:" ${line}
+        ./stop
+        exit
+    fi
+    port=$(echo $line | sed -e "s/^.*port=\"//" | sed -e "s/\".*$//")
+
+    ip=$(echo $line | grep "ip")
+    if [ -z "${ip}" ]; then
+        echo "server config error,need ip:" ${line}
+        ./stop
+        exit
+    fi
+    ip=$(echo $line | sed -e "s/^.*ip=\"//" | sed -e "s/\".*$//")
+
+    config_file=$(echo $line | grep "config_file")
+    if [ -n "${config_file}" ]; then
+       config_file=$(echo $line | sed -e "s/^.*config_file=\"//" | sed -e "s/\".*$//")
+    fi
+
+    if [ -z "${type}" ] || [ -z "${name}" ] || [ -z "${port}" ];then
+        echo "server config error,type:" ${type} " name:" ${name} " port:" ${port} 
+        ./stop
+        exit
+    fi
+
+    #echo $title $type $name $config_file $port
+
+    if [ -z "${config_file}" ];then
+        echo "${type}/${type} -d -n ${name} -p ${port}" | bash
+    else
+        echo "${type}/${type} -d -n ${name} -c ${config_file} -p ${port}" | bash
+    fi
+done < ServerConfig.xml
+

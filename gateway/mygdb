@@ -1,0 +1,7 @@
+#!/bin/sh
+if [ $# -lt 1 ]; then
+        echo usage: mygdb servername
+        exit 1
+fi
+pid=`ps x|grep "$1"|grep -v "grep"|awk '{print $1}'`
+gdb -p $pid

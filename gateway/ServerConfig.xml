@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<Config>
+    <Server>
+        <info type="LogGate" name="LogGate1" ip="172.26.24.121" port="11510"/>
+        <info type="LogGate" name="LogGate2" ip="172.26.24.121" port="11511"/>
+	</Server>
+</Config>
