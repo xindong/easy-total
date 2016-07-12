@@ -332,6 +332,14 @@ class TaskWorker
             # 写入到临时数据里, 下次启动时载入
             foreach ($jobs as $job)
             {
+                /**
+                 * @var DataJob $job
+                 */
+                if ($job->total->all)
+                {
+                    # 尝试将数据保存到统计汇总里
+                    $this->taskData->saveJob($job);
+                }
                 file_put_contents(self::$dumpFile, 'jobs,' . msgpack_pack($job) . "\r\n", FILE_APPEND);
             }
         }
@@ -349,9 +357,39 @@ class TaskWorker
      */
     protected function loadDumpData()
     {
-        if (self::$dumpFile && is_file(self::$dumpFile))
+        if (self::$dumpFile)
         {
-            foreach (explode("\r\n", file_get_contents(self::$dumpFile)) as $item)
+            $this->loadDumpDataFromFile(self::$dumpFile);
+            info("Task#$this->taskId load " . TaskData::getJobCount() . " jobs, " . count(TaskData::$list) . ' list from dump file.');
+        }
+
+        # 只需要在第一个任务进程执行
+        if ($this->taskId === 1)
+        {
+            # 如果调小过 task worker num, 需要把之前的 dump 的数据重新 load 回来
+            $files = preg_replace('#-'. $this->taskId .'.txt$#', '-*.txt', self::$dumpFile);
+
+            # 所有任务数减1则为最大任务数的序号
+            $maxIndex = $this->server->setting['task_worker_num'] - 1;
+            foreach (glob($files) as $file)
+            {
+                if (preg_match('#\-(\d+)\.txt$#', $file, $m))
+                {
+                    if ($m[1] > $maxIndex)
+                    {
+                        # 序号大于最大序号
+                        $this->loadDumpDataFromFile($file);
+                    }
+                }
+            }
+        }
+    }
+
+    protected function loadDumpDataFromFile($file)
+    {
+        if (is_file($file))
+        {
+            foreach (explode("\r\n", file_get_contents($file)) as $item)
             {
                 if (!$item)continue;
 
@@ -377,9 +415,7 @@ class TaskWorker
                 }
             }
 
-            info("Task#$this->taskId load ". TaskData::getJobCount() ." jobs, " .count(TaskData::$list). ' list from dump file.');
-
-            unlink(self::$dumpFile);
+            unlink($file);
         }
     }
 

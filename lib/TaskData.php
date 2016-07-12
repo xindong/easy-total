@@ -266,7 +266,7 @@ class TaskData
      * @param $uniqueId
      * @return bool
      */
-    protected function saveJob(DataJob $job)
+    public function saveJob(DataJob $job)
     {
         foreach ($job->dist as $field => $v)
         {

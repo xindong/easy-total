@@ -1032,10 +1032,51 @@ class MainWorker
      */
     protected function loadDumpData()
     {
-        if (is_file($this->dumpFile))
+        $count = $this->loadDumpDataFromFile($this->dumpFile);
+        if ($count)
+        {
+            info("worker($this->workerId) load {$count} job(s) from file {$this->dumpFile}.");
+        }
+
+        # 只需要第一个进程执行
+        if ($this->workerId === 0)
+        {
+            # 如果调小过 task worker num, 需要把之前的 dump 的数据重新 load 回来
+            $files = preg_replace('#-'. $this->workerId .'.txt$#', '-*.txt', $this->dumpFile);
+
+            # 所有任务数减1则为最大任务数的序号
+            $maxIndex = $this->server->setting['worker_num'] - 1;
+            foreach (glob($files) as $file)
+            {
+                if (preg_match('#\-(\d+)\.txt$#', $file, $m))
+                {
+                    if ($m[1] > $maxIndex)
+                    {
+                        # 序号大于最大序号
+                        $count = $this->loadDumpDataFromFile($file);
+
+                        if ($count)
+                        {
+                            info("worker($this->workerId) load {$count} job(s) from file {$file}.");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * 加载数据
+     *
+     * @param $file
+     * @return bool|int
+     */
+    protected function loadDumpDataFromFile($file)
+    {
+        if (is_file($file))
         {
             $count = 0;
-            foreach (explode("\r\n", file_get_contents($this->dumpFile)) as $item)
+            foreach (explode("\r\n", file_get_contents($file)) as $item)
             {
                 if (!$item)continue;
 
@@ -1055,9 +1096,13 @@ class MainWorker
                 }
             }
 
-            unlink($this->dumpFile);
+            unlink($file);
 
-            info("worker($this->workerId) load {$count} job(s) from file {$this->dumpFile}.");
+            return $count;
+        }
+        else
+        {
+            return false;
         }
     }
 
