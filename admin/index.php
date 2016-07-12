@@ -124,7 +124,7 @@ if ($keys)foreach ($keys as $k)
   $tmp = $this->worker->redis->hGetAll('counter.time.'. substr($k, $keyLen)) ?: [];
   foreach ($tmp as $k1 => $v1)
   {
-    $useTime[$k1] += $v1 / 1000;
+    $useTime[$k1] += $v1 / 1000000;
   }
 }
 
@@ -387,7 +387,19 @@ unset($item);
             color: Highcharts.getOptions().colors[0]
           }
         }
-
+      }, {
+          labels: {
+              style: {
+                  color: Highcharts.getOptions().colors[2]
+              }
+          },
+          title: {
+              text: null,
+              style: {
+                  color: Highcharts.getOptions().colors[2]
+              }
+          },
+          opposite: true
       }, {
         labels: {
           style: {
@@ -395,7 +407,7 @@ unset($item);
           }
         },
         title: {
-          text: '处理耗时',
+          text: '耗时',
           style: {
             color: Highcharts.getOptions().colors[1]
           }
@@ -428,10 +440,10 @@ unset($item);
         name: '处理数据耗时',
         type: 'spline',
         data: <?php echo json_encode(array_values($useTime), JSON_NUMERIC_CHECK);?>,
-        yAxis: 1,
+        yAxis: 2,
         dashStyle: 'shortdot',
         tooltip: {
-          valueSuffix: ' 毫秒'
+          valueSuffix: ' 秒'
         },
         marker: {
           enabled: false
