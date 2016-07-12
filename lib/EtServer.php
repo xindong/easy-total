@@ -325,7 +325,7 @@ class EtServer
             ini_set('swoole.unixsock_buffer_size', $config['server']['unixsock_buffer_size']);
         }
 
-        if ($logPath)
+        if ($logPath && !$config['conf']['log_file'])
         {
             $config['conf']['log_file'] = $logPath;
         }
