@@ -471,7 +471,7 @@ class MainWorker
 
             return true;
         }
-        elseif (isset($this->buffer[$fd]) && $this->buffer[$fd])
+        elseif (isset($this->bufferLen[$fd]) && $this->bufferLen[$fd])
         {
             # 拼接 buffer
             $data = $this->buffer[$fd] . $data;
