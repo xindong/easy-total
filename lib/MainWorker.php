@@ -515,7 +515,7 @@ class MainWorker
 
         if (!$arr || !is_array($arr))
         {
-            warn("Wroker#$this->workerId load error data: " . $data);
+            warn("Worker#$this->workerId load error data: " . $data);
 
             # 把客户端关闭了
             $server->close($fd);
