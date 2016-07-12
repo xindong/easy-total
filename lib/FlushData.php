@@ -458,7 +458,7 @@ class FlushData
                 }
             }
             # 清空
-            $this->counterApp = [];
+            $this->counterFlush = [];
         }
     }
 }
