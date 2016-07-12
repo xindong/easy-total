@@ -1042,7 +1042,7 @@ class MainWorker
         if ($this->workerId === 0)
         {
             # 如果调小过 task worker num, 需要把之前的 dump 的数据重新 load 回来
-            $files = preg_replace('#-'. $this->workerId .'.txt$#', '-*.txt', $this->dumpFile);
+            $files = preg_replace('#\-'. $this->workerId .'\.txt$#', '-*.txt', $this->dumpFile);
 
             # 所有任务数减1则为最大任务数的序号
             $maxIndex = $this->server->setting['worker_num'] - 1;
