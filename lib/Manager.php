@@ -128,7 +128,16 @@ class Manager
 
         ob_start();
         include __DIR__ .'/../admin/_header.php';
-        $rs = include $file;
+        if (!$this->worker->redis)
+        {
+            echo '<div style="padding:0 15px;"><div class="alert alert-danger" role="alert">redis服务器没有启动</div></div>';
+            $rs = null;
+        }
+        else
+        {
+            $rs = include $file;
+        }
+
         if ($rs !== 'noFooter')
         {
             include __DIR__ . '/../admin/_footer.php';

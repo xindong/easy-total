@@ -1053,10 +1053,6 @@ class MainWorker
                 {
                     warn("load data error: ". $item);
                 }
-                else
-                {
-                    warn("load data error: ". $item);
-                }
             }
 
             unlink($this->dumpFile);
