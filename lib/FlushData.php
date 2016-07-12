@@ -456,6 +456,7 @@ class FlushData
                 {
                     $redis->hIncrBy($timeKey, $k2, $v);
                 }
+                unset($this->counterApp[$timeKey]);
             }
         }
     }
