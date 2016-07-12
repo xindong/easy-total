@@ -403,20 +403,6 @@ unset($item);
         },
         opposite: true
 
-      }, {
-        labels: {
-          format: '{value}ms',
-          style: {
-            color: Highcharts.getOptions().colors[2]
-          }
-        },
-        title: {
-          text: '推送合并耗时',
-          style: {
-            color: Highcharts.getOptions().colors[2]
-          }
-        },
-        opposite: true
       }],
       tooltip: {
         shared: true
@@ -456,7 +442,7 @@ unset($item);
         name: '推送合并耗时',
         type: 'spline',
         data: <?php echo json_encode(array_values($pushTime), JSON_NUMERIC_CHECK);?>,
-        yAxis: 2,
+        yAxis: 1,
         dashStyle: 'shortdot',
         tooltip: {
           valueSuffix: 'ms'
