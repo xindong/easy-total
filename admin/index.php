@@ -431,7 +431,7 @@ unset($item);
         yAxis: 1,
         dashStyle: 'shortdot',
         tooltip: {
-          valueSuffix: 'ms'
+          valueSuffix: ' 毫秒'
         },
         marker: {
           enabled: false
@@ -443,7 +443,7 @@ unset($item);
         yAxis: 1,
         dashStyle: 'shortdot',
         tooltip: {
-          valueSuffix: 's'
+          valueSuffix: ' 秒'
         },
         marker: {
           enabled: false

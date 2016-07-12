@@ -1233,18 +1233,21 @@ class MainWorker
     {
         try
         {
-            $time    = microtime(1);
-            $count   = $this->flushData->flush();
-            $useTime = microtime(1) - $time;
-
-            if (IS_DEBUG && ($count || $this->flushData->delayCount))
+            if ($this->flushData->jobs)
             {
-                debug('Worker#' . $this->workerId . " flush {$count} jobs, use time: {$useTime}s" . ($this->flushData->delayCount > 0 ? ", delay jobs: {$this->flushData->delayCount}." : '.'));
-            }
+                $time    = microtime(1);
+                $count   = $this->flushData->flush();
+                $useTime = microtime(1) - $time;
 
-            $timeKey = date('H:i');
-            $key     = "counter.flush.time." . date('Ymd');
-            $this->flushData->counterFlush[$key][$timeKey]  += 1000000 * $useTime;
+                if (IS_DEBUG && ($count || $this->flushData->delayCount))
+                {
+                    debug('Worker#' . $this->workerId . " flush {$count} jobs, use time: {$useTime}s" . ($this->flushData->delayCount > 0 ? ", delay jobs: {$this->flushData->delayCount}." : '.'));
+                }
+
+                $timeKey = date('H:i');
+                $key     = "counter.flush.time." . date('Ymd');
+                $this->flushData->counterFlush[$key][$timeKey] += 1000000 * $useTime;
+            }
 
             # 推送管理数据
             $this->flushData->flushManagerData($this->redis);
