@@ -1,0 +1,44 @@
+#!/bin/sh
+
+TMP=$IFS
+IFS='
+'
+killLogGateTime=60
+
+getServerPids="ps -u $LOGNAME | grep LogGate | grep -v grep | grep -v vim"
+
+for var in $(echo $getServerPids | bash)
+do
+#pid=echo $var |cut -c1-5
+	pid=$(echo $var |awk '{ printf "%s ", $1}')
+	pname=$(echo $var |awk '{ printf "%s ", $4}')
+
+	if kill -2 $pid
+	then 
+		echo "stop $pname"
+	else
+		echo "can't stop $pname"
+	fi
+done
+
+sTime=`date +%s`
+cont=$(echo $getServerPids | bash | wc -l)
+while [ $cont -gt 0 ]
+do
+	now=`date +%s`
+	lTime=`expr $now - $sTime`
+	echo "LastTime:$lTime, ServerNum:$cont"
+
+	if [[ $lTime -gt $killLogGateTime ]]; then
+		for var in $(echo $getServerPids | bash | grep LogGate)
+		do
+			pid=$(echo $var |awk '{ printf "%s ", $1}')
+			echo kill -9 $pid
+			kill -9 $pid
+		done
+	fi
+
+	sleep 1
+	cont=$(echo $getServerPids | bash | wc -l)
+done
+

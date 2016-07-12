@@ -1,0 +1,9 @@
+#!/bin/sh
+#grep --color -n "$1" */*.{h,cpp} -w
+#grep --color -n "$1" */*/*.{h,cpp} -w --exclude-dir=base/protobuf
+if [ $# != 1 ]; then
+    echo "USAGE: ./findexp addLevel"
+    exit 1;
+fi
+grep -w --color -n -r --exclude-dir=base/protobuf --exclude-dir=tools --include=*.{h,cpp,proto,lua} --exclude=*.{pb.h,pb.cc} "$1" *
+#grep --color -n "$1" Config/*.xml -w
