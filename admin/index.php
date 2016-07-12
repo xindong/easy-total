@@ -131,7 +131,7 @@ if ($keys)foreach ($keys as $k)
 $tmp = $this->worker->redis->hGetAll("counter.flush.time.$dayKey") ?: [];
 foreach ($tmp as $k1 => $v1)
 {
-  $pushTime[$k1] += $v1 / 1000000;
+  $pushTime[$k1] = floatval(number_format($v1 / 1000000, 3, '.', ''));
 }
 
 foreach ($useTime as & $item)
