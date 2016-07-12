@@ -124,14 +124,14 @@ if ($keys)foreach ($keys as $k)
   $tmp = $this->worker->redis->hGetAll('counter.time.'. substr($k, $keyLen)) ?: [];
   foreach ($tmp as $k1 => $v1)
   {
-    $useTime[$k1] += $v1 / 1000000;
+    $useTime[$k1] += $v1 / 1000;
   }
 }
 
 $tmp = $this->worker->redis->hGetAll("counter.flush.time.$dayKey") ?: [];
 foreach ($tmp as $k1 => $v1)
 {
-  $pushTime[$k1] = floatval(number_format($v1 / 1000000, 3, '.', ''));
+  $pushTime[$k1] = $v1 / 1000;
 }
 
 foreach ($useTime as & $item)
@@ -388,21 +388,9 @@ unset($item);
           }
         }
       }, {
-          labels: {
-              style: {
-                  color: Highcharts.getOptions().colors[2]
-              }
-          },
-          title: {
-              text: null,
-              style: {
-                  color: Highcharts.getOptions().colors[2]
-              }
-          },
-          opposite: true
-      }, {
         labels: {
           style: {
+            format: '{value} ms',
             color: Highcharts.getOptions().colors[1]
           }
         },
@@ -440,10 +428,10 @@ unset($item);
         name: '处理数据耗时',
         type: 'spline',
         data: <?php echo json_encode(array_values($useTime), JSON_NUMERIC_CHECK);?>,
-        yAxis: 2,
+        yAxis: 1,
         dashStyle: 'shortdot',
         tooltip: {
-          valueSuffix: ' 秒'
+          valueSuffix: ' 毫秒'
         },
         marker: {
           enabled: false
@@ -455,7 +443,7 @@ unset($item);
         yAxis: 1,
         dashStyle: 'shortdot',
         tooltip: {
-          valueSuffix: ' 秒'
+          valueSuffix: ' 毫秒'
         },
         marker: {
           enabled: false
