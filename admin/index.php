@@ -395,7 +395,7 @@ unset($item);
           }
         },
         title: {
-          text: '耗时',
+          text: '耗时（毫秒）',
           style: {
             color: Highcharts.getOptions().colors[1]
           }
