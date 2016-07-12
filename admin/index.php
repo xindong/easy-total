@@ -131,7 +131,7 @@ if ($keys)foreach ($keys as $k)
 $tmp = $this->worker->redis->hGetAll("counter.flush.time.$dayKey") ?: [];
 foreach ($tmp as $k1 => $v1)
 {
-  $pushTime[$k1] += $v1 / 1000;
+  $pushTime[$k1] += $v1 / 1000000;
 }
 
 foreach ($useTime as & $item)
@@ -390,7 +390,6 @@ unset($item);
 
       }, {
         labels: {
-          format: '{value}ms',
           style: {
             color: Highcharts.getOptions().colors[1]
           }
@@ -402,7 +401,6 @@ unset($item);
           }
         },
         opposite: true
-
       }],
       tooltip: {
         shared: true
@@ -445,7 +443,7 @@ unset($item);
         yAxis: 1,
         dashStyle: 'shortdot',
         tooltip: {
-          valueSuffix: 'ms'
+          valueSuffix: 's'
         },
         marker: {
           enabled: false
