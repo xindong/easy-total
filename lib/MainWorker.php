@@ -415,11 +415,11 @@ class MainWorker
             # 没有连接上redis, 或者是还存在没处理完的数据
             # 关闭连接, 不接受任何数据
 
-            if (isset($this->buffer[$fromId]))
+            if (isset($this->buffer[$fd]))
             {
-                unset($this->buffer[$fromId]);
-                unset($this->bufferTime[$fromId]);
-                unset($this->bufferLen[$fromId]);
+                unset($this->buffer[$fd]);
+                unset($this->bufferTime[$fd]);
+                unset($this->bufferLen[$fd]);
             }
 
             # 如果立即关闭的话, 推送数据的程序会立即重新连接上重新推送数据
@@ -431,16 +431,16 @@ class MainWorker
 
         if (substr($data, -3) !== "==\n")
         {
-            $this->buffer[$fromId]    .= $data;
-            $this->bufferTime[$fromId] = self::$timed;
-            $this->bufferLen[$fromId] += strlen($data);
+            $this->buffer[$fd]    .= $data;
+            $this->bufferTime[$fd] = self::$timed;
+            $this->bufferLen[$fd] += strlen($data);
 
             # 支持json格式
             $arr = null;
-            if ($this->buffer[$fromId][0] === '[')
+            if ($this->buffer[$fd][0] === '[')
             {
                 # 尝试完整数据包
-                $arr = @json_decode($this->buffer[$fromId], true);
+                $arr = @json_decode($this->buffer[$fd], true);
             }
             elseif ($data[0] === '[')
             {
@@ -451,34 +451,34 @@ class MainWorker
             if ($arr)
             {
                 # 能够解析出json, 直接跳转到处理json的地方
-                unset($this->buffer[$fromId]);
-                unset($this->bufferTime[$fromId]);
-                unset($this->bufferLen[$fromId]);
+                unset($this->buffer[$fd]);
+                unset($this->bufferTime[$fd]);
+                unset($this->bufferLen[$fd]);
 
                 goto jsonFormat;
             }
-            elseif ($this->bufferLen[$fromId] > 50000000)
+            elseif ($this->bufferLen[$fd] > 50000000)
             {
                 # 超过50MB
-                unset($this->buffer[$fromId]);
-                unset($this->bufferTime[$fromId]);
-                unset($this->bufferLen[$fromId]);
+                unset($this->buffer[$fd]);
+                unset($this->bufferTime[$fd]);
+                unset($this->bufferLen[$fd]);
 
                 $server->close($fd);
 
-                warn("pack data is too long: ". $this->bufferLen[$fromId] .'byte. now close client.');
+                warn("pack data is too long: ". $this->bufferLen[$fd] .'byte. now close client.');
             }
 
             return true;
         }
-        elseif (isset($this->buffer[$fromId]) && $this->buffer[$fromId])
+        elseif (isset($this->buffer[$fd]) && $this->buffer[$fd])
         {
             # 拼接 buffer
-            $data = $this->buffer[$fromId] . $data;
+            $data = $this->buffer[$fd] . $data;
 
-            unset($this->buffer[$fromId]);
-            unset($this->bufferTime[$fromId]);
-            unset($this->bufferLen[$fromId]);
+            unset($this->buffer[$fd]);
+            unset($this->bufferTime[$fd]);
+            unset($this->bufferLen[$fd]);
 
             debug("accept data length ". strlen($data));
         }
@@ -740,6 +740,26 @@ class MainWorker
         }
 
         return true;
+    }
+
+    public function onConnect(swoole_server $server, $fd, $fromId)
+    {
+        if (isset($this->buffer[$fd]))
+        {
+            unset($this->buffer[$fd]);
+            unset($this->bufferTime[$fd]);
+            unset($this->bufferLen[$fd]);
+        }
+    }
+
+    public function onClose(swoole_server $server, $fd, $fromId)
+    {
+        if (isset($this->buffer[$fd]))
+        {
+            unset($this->buffer[$fd]);
+            unset($this->bufferTime[$fd]);
+            unset($this->bufferLen[$fd]);
+        }
     }
 
     /**

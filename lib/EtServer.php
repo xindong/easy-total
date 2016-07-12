@@ -406,9 +406,19 @@ class EtServer
         ];
         $this->serverPort->set($config);
 
+        $this->serverPort->on('connect', function (swoole_server $server, $fd, $fromId)
+        {
+            $this->worker->onConnect($server, $fd, $fromId);
+        });
+
         $this->serverPort->on('receive', function(swoole_server $server, $fd, $fromId, $data)
         {
-            return $this->worker->onReceive($server, $fd, $fromId, $data);
+            $this->worker->onReceive($server, $fd, $fromId, $data);
+        });
+
+        $this->serverPort->on('close', function (swoole_server $server, $fd, $fromId)
+        {
+            $this->worker->onClose($server, $fd, $fromId);
         });
 
         $this->bind();
