@@ -306,7 +306,7 @@ class FlushData
 
             foreach ($ids as $uniqueId)
             {
-                if (false === EtServer::$server->task($this->jobs[$taskId][$uniqueId], $taskId))
+                if (false !== EtServer::$server->task($this->jobs[$taskId][$uniqueId], $taskId))
                 {
                     # 投递成功移除对象
                     unset($this->jobs[$taskId][$uniqueId]);
