@@ -614,6 +614,108 @@ class Manager
                     $data['message'] = $e->getMessage();
                 }
                 break;
+            case 'data':
+                # 获取指定统计的实时统计数据
+                # 分组时间超过10分钟的数据每10分钟才会导出一次数据, 如果业务有需求当前实时的统计数据, 可以通过这个接口获取到
+                # EXP: http://127.0.0.1:8000/api/data?key=fa76f679d916c270&app=test&type=1h&group=groupValue1,groupValue2
+                try
+                {
+                    $queryKey = $this->request->get['key'];
+                    if (!$queryKey)
+                    {
+                        throw new Exception('missing parameter key');
+                    }
+
+                    $app = $this->request->get['app'];
+                    if (!$app)
+                    {
+                        $app = 'default';
+                    }
+
+                    $queryOption = $this->worker->redis->hGet('queries', $queryKey);
+                    if (!$queryOption)
+                    {
+                        throw new Exception('can not found query: '. $queryKey);
+                    }
+                    $queryOption = unserialize($queryOption);
+                    if (!$queryOption)
+                    {
+                        throw new Exception("query $queryKey data unserialize error");
+                    }
+
+                    $groupValue = $this->request->get['group'];
+                    if ($groupValue)
+                    {
+                        $groupValue = str_replace(',', '_', $groupValue);
+                        if (strlen($groupValue) > 60 || preg_match('#[^a-z0-9_\-]+#i', $groupValue))
+                        {
+                            # 分组拼接后 key 太长
+                            # 有特殊字符
+                            $groupValue = 'hash-' . md5($groupValue);
+                        }
+                    }
+                    else
+                    {
+                        $groupValue = '';
+                    }
+
+                    if ($this->request->get['type'])
+                    {
+                        $timeOpt = $queryOption['groupTime'][$this->request->get['type']];
+                        if (!$timeOpt)
+                        {
+                            throw new Exception('can not found group time: '. $this->request->get['type']);
+                        }
+
+                        $timeOptKey = $this->request->get['type'];
+                    }
+                    else
+                    {
+                        $timeOptKey = key($queryOption['groupTime']);
+                        $timeOpt    = current($queryOption['groupTime']);
+                    }
+
+                    $time = time();
+                    if ($timeOptKey === '-')
+                    {
+                        # 不分组
+                        $timeKey = 0;
+                    }
+                    else
+                    {
+                        # 获取时间key, Exp: 20160610123
+                        $timeKey = getTimeKey($time, $timeOpt[0], $timeOpt[1]);
+                    }
+
+                    # 算出唯一ID
+                    $uniqueId = "{$queryOption['seriesKey']},$timeOptKey,$app,$timeKey,$groupValue";
+
+                    # 获取任务ID
+                    $taskId   = DataJob::getTaskId($uniqueId);
+
+                    # 返回成功会是一个数组, 如果当前进程没有数据则返回 null, 如果读取失败则返回 false
+                    $rs = $this->server->taskwait("total|$queryKey|$uniqueId", 2, $taskId);
+
+                    if (false === $rs)
+                    {
+                        throw new Exception('get total data error');
+                    }
+                    elseif (-1 === $rs)
+                    {
+                        $rs = null;
+                    }
+
+                    $data['status'] = 'ok';
+                    $data['data']   = $rs;
+                }
+                catch (Exception $e)
+                {
+                    $data['status']  = 'error';
+                    $data['message'] = $e->getMessage();
+                }
+
+                break;
+
             default:
                 $data['status']  = 'error';
                 $data['message'] = 'unknown action: ' . $uri;

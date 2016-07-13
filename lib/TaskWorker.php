@@ -147,6 +147,11 @@ class TaskWorker
                     $this->clean();
                     break;
 
+                case 'total':
+                    # 获取指定任务实时统计数据
+                    list($queryKey, $uniqueId) = explode('|', $data[1], 3);
+
+                    return $this->taskData->getRealTimeData($uniqueId, $queryKey);
                 case 'exit':
                     # 得到进程通知结束
                     $this->shutdown();
@@ -178,6 +183,8 @@ class TaskWorker
         {
             warn($e->getMessage());
         }
+
+        return null;
     }
 
     /**

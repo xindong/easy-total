@@ -203,6 +203,65 @@ class TaskData
         }
     }
 
+    /**
+     * 获取指定任务ID的实时统计数据
+     *
+     * @param $uniqueId
+     * @param $queryKey
+     * @return array|false|null
+     */
+    public function getRealTimeData($uniqueId, $queryKey)
+    {
+        list($seriesKey) = explode(',', $uniqueId, 2);
+
+        if (isset(self::$jobs[$seriesKey][$uniqueId]))
+        {
+            # 在当前数据中获取
+            $job = self::$jobs[$seriesKey][$uniqueId];
+        }
+        elseif (isset(self::$jobsCache[$uniqueId]))
+        {
+            # 在缓存中获取
+            $job = self::$jobsCache[$uniqueId];
+        }
+        else
+        {
+            # 没有数据
+            return -1;
+        }
+
+        /**
+         * @var DataJob $job
+         */
+        if (!$job->total->all)
+        {
+            # 需要加载数据
+            $oldJob = $this->driver->getTotal($uniqueId);
+            if (!$oldJob)
+            {
+                return false;
+            }
+
+            # 合并统计
+            $job->mergeTotal($oldJob);
+        }
+
+        if ($job->dist)
+        {
+            # 有唯一序列数
+            $this->saveJob($job);
+        }
+
+        # 渠道查询配置
+        $queryOption = self::getQueryOption($queryKey);
+        if (!$queryOption)
+        {
+            return false;
+        }
+
+        return self::getDataByJob($queryOption, $job);
+    }
+
     protected function exportByList(& $jobs, & $success, & $fail)
     {
         foreach ($jobs as $job)
@@ -342,21 +401,7 @@ class TaskData
         {
             foreach ($queries[$timeOptKey] as $queryKey)
             {
-                if (!isset(self::$queries[$queryKey]))
-                {
-                    if (!isset($redis))
-                    {
-                        $redis = self::getRedis();
-                        if (false === $redis)
-                        {
-                            return false;
-                        }
-                    }
-
-                    self::$queries = array_map('unserialize', $redis->hGetAll('queries'));
-                }
-
-                $queryOption = self::$queries[$queryKey];
+                $queryOption = self::getQueryOption($queryKey);
                 if (!$queryOption)
                 {
                     # 没有对应的查询
@@ -369,75 +414,9 @@ class TaskData
                     continue;
                 }
 
-                # 生成数据
-                $data = [
-                    '_id'    => $job->dataId,
-                    '_group' => $job->timeKey,
-                ];
-
-                if ($queryOption['allField'])
+                $data = self::getDataByJob($queryOption, $job);
+                if (false === $data)
                 {
-                    $data += $job->data;
-                }
-
-                # 排除字段
-                if (isset($queryOption['function']['exclude']))
-                {
-                    # 示例: select *, exclude(test), exclude(abc) from ...
-                    foreach ($queryOption['function']['exclude'] as $field => $t)
-                    {
-                        unset($data[$field]);
-                    }
-                }
-
-                try
-                {
-                    foreach ($queryOption['fields'] as $as => $saveOpt)
-                    {
-                        $field = $saveOpt['field'];
-                        $type  = $saveOpt['type'];
-                        switch ($type)
-                        {
-                            case 'count':
-                            case 'sum':
-                            case 'min':
-                            case 'max':
-                            case 'dist':
-                                $data[$as] = $job->total->$type[$field];
-                                break;
-
-                            case 'first':
-                            case 'last':
-                                $data[$as] = $job->total->$type[$field][0];
-                                break;
-
-                            case 'avg':
-                                # 平均数
-                                $sum   = $job->total->sum[$field];
-                                $count = $job->total->count['*'];
-                                if ($count > 0)
-                                {
-                                    $data[$as] = $sum / $count;
-                                }
-                                else
-                                {
-                                    $data[$as] = 0;
-                                }
-                                break;
-
-                            case 'value':
-                                if (isset($item[$field]))
-                                {
-                                    # 没设置的不需要赋值
-                                    $data[$as] = $item[$field];
-                                }
-                                break;
-                        }
-                    }
-                }
-                catch (Exception $e)
-                {
-                    warn($e->getMessage());
                     continue;
                 }
 
@@ -887,6 +866,121 @@ class TaskData
                 # 其它的保存间隔为10分钟
                 return 600;
         }
+    }
+
+
+    /**
+     * 根据任务获取导出的数据
+     *
+     * @param         $queryOption
+     * @param DataJob $job
+     * @return array|bool
+     */
+    protected static function getDataByJob($queryOption, DataJob $job)
+    {
+        # 生成数据
+        $data = [
+            '_id'    => $job->dataId,
+            '_group' => $job->timeKey,
+        ];
+
+        if ($queryOption['allField'])
+        {
+            $data += $job->data;
+        }
+
+        # 排除字段
+        if (isset($queryOption['function']['exclude']))
+        {
+            # 示例: select *, exclude(test), exclude(abc) from ...
+            foreach ($queryOption['function']['exclude'] as $field => $t)
+            {
+                unset($data[$field]);
+            }
+        }
+
+        try
+        {
+            foreach ($queryOption['fields'] as $as => $saveOpt)
+            {
+                $field = $saveOpt['field'];
+                $type  = $saveOpt['type'];
+                switch ($type)
+                {
+                    case 'count':
+                    case 'sum':
+                    case 'min':
+                    case 'max':
+                    case 'dist':
+                        $data[$as] = $job->total->$type[$field];
+                        break;
+
+                    case 'first':
+                    case 'last':
+                        $data[$as] = $job->total->$type[$field][0];
+                        break;
+
+                    case 'avg':
+                        # 平均数
+                        $sum   = $job->total->sum[$field];
+                        $count = $job->total->count['*'];
+                        if ($count > 0)
+                        {
+                            $data[$as] = $sum / $count;
+                        }
+                        else
+                        {
+                            $data[$as] = 0;
+                        }
+                        break;
+
+                    case 'value':
+                        if (isset($item[$field]))
+                        {
+                            # 没设置的不需要赋值
+                            $data[$as] = $item[$field];
+                        }
+                        break;
+                }
+            }
+        }
+        catch (Exception $e)
+        {
+            warn($e->getMessage());
+            return false;
+        }
+
+        return $data;
+    }
+
+    /**
+     * 获取查询的参数
+     *
+     * @param $queryKey
+     * @return array|false
+     */
+    protected static function getQueryOption($queryKey)
+    {
+        if (!self::$queries)
+        {
+            if (!isset($redis))
+            {
+                $redis = self::getRedis();
+                if (false === $redis)
+                {
+                    return false;
+                }
+            }
+
+            self::$queries = array_map('unserialize', $redis->hGetAll('queries'));
+        }
+
+        if (!isset(self::$queries[$queryKey]))
+        {
+            return false;
+        }
+
+        return self::$queries[$queryKey];
     }
 
     /**
