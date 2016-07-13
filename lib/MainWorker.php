@@ -121,7 +121,12 @@ class MainWorker
      */
     protected $bufferTime = [];
 
-    protected $bufferLen = [];
+    /**
+     * 数据包是否JSON格式
+     *
+     * @var array
+     */
+    protected $bufferIsJSON = [];
 
     /**
      * 需要延时关闭的
@@ -158,12 +163,7 @@ class MainWorker
         $this->flushData = new FlushData();
 
         # 包数据的key
-        self::$packKey  = [
-            chr(146).chr(206).chr(85) => 1,
-            chr(146).chr(206).chr(86) => 1,
-            chr(146).chr(206).chr(87) => 1,
-        ];
-
+        self::$packKey    = chr(146).chr(206);
         self::$timed      = time();
         $this->startTime  = time();
         self::$serverName = EtServer::$config['server']['host'].':'. EtServer::$config['server']['port'];
@@ -279,7 +279,7 @@ class MainWorker
                     {
                         try
                         {
-                            $this->server->close($fd);
+                            $this->closeConnect($fd);
                         }
                         catch (Exception $e){}
                     }
@@ -303,16 +303,14 @@ class MainWorker
                 if ($this->buffer)
                 {
                     self::$timed = time();
-                    foreach ($this->buffer as $k => $v)
+                    foreach ($this->buffer as $fd)
                     {
-                        if (self::$timed - $this->bufferTime[$k] > 300)
+                        if (self::$timed - $this->bufferTime[$fd] > 300)
                         {
                             # 超过5分钟没有更新数据, 则移除
-                            info('clear expired data length: '. $this->bufferLen[$k]);
+                            info('clear expired data length: '. strlen($this->buffer[$fd]));
 
-                            unset($this->buffer[$k]);
-                            unset($this->bufferTime[$k]);
-                            unset($this->bufferLen[$k]);
+                            $this->clearBuffer($fd);
                         }
                     }
                 }
@@ -417,9 +415,7 @@ class MainWorker
 
             if (isset($this->buffer[$fd]))
             {
-                unset($this->buffer[$fd]);
-                unset($this->bufferTime[$fd]);
-                unset($this->bufferLen[$fd]);
+                $this->clearBuffer($fd);
             }
 
             # 如果立即关闭的话, 推送数据的程序会立即重新连接上重新推送数据
@@ -429,130 +425,142 @@ class MainWorker
             return false;
         }
 
-        if (substr($data, -3) !== "==\n")
+        if (!isset($this->buffer[$fd]))
         {
-            $this->buffer[$fd]    .= $data;
+            # 包头
+            switch (ord($data[0]))
+            {
+                case 0x5b;      # json 格式的 [ 字符
+                    $this->bufferIsJSON[$fd] = true;
+                    break;
+
+                case 0x92:      # MsgPack 的3数组
+                case 0x93:      # MsgPack 的4数组
+                    $this->bufferIsJSON[$fd] = false;
+                    break;
+
+                default:
+                    warn("accept unknown data length: ". strlen($data). ', head ascii is: '. ord($data[0]));
+                    return true;
+            }
+
+            $this->buffer[$fd]     = $data;
             $this->bufferTime[$fd] = self::$timed;
-            $this->bufferLen[$fd] += strlen($data);
-
-            # 支持json格式
-            $arr = null;
-            if ($this->buffer[$fd][0] === '[')
-            {
-                # 尝试完整数据包
-                $arr = @json_decode($this->buffer[$fd], true);
-            }
-            elseif ($data[0] === '[')
-            {
-                # 尝试当前的数据
-                $arr = @json_decode($data, true);
-            }
-
-            if ($arr)
-            {
-                # 能够解析出json, 直接跳转到处理json的地方
-                unset($this->buffer[$fd]);
-                unset($this->bufferTime[$fd]);
-                unset($this->bufferLen[$fd]);
-
-                goto jsonFormat;
-            }
-            elseif ($this->bufferLen[$fd] > 50000000)
-            {
-                # 超过50MB
-                unset($this->buffer[$fd]);
-                unset($this->bufferTime[$fd]);
-                unset($this->bufferLen[$fd]);
-
-                $server->close($fd);
-
-                warn("pack data is too long: ". $this->bufferLen[$fd] .'byte. now close client.');
-            }
-
-            return true;
-        }
-        elseif (isset($this->bufferLen[$fd]) && $this->bufferLen[$fd])
-        {
-            # 拼接 buffer
-            $data = $this->buffer[$fd] . $data;
-
-            unset($this->buffer[$fd]);
-            unset($this->bufferTime[$fd]);
-            unset($this->bufferLen[$fd]);
-
-            debug("accept data length ". strlen($data));
-        }
-
-        if ($data[0] === '[')
-        {
-            # 解析数据
-            $arr = @json_decode(rtrim($data, "/=\n\r "), true);
-
-            jsonFormat:
-            $msgPack           = false;
-            $delayParseRecords = false;
         }
         else
         {
-            # msgPack方式解析
-            $msgPack           = true;
-            $arr               = @msgpack_unpack($data);
-            $delayParseRecords = false;
+            $this->buffer[$fd]    .= $data;
+            $this->bufferTime[$fd] = self::$timed;
+        }
 
-            if (!is_array($arr))
-            {
-                debug("close client {$fd}.");
-                $server->close($fd);
-                return false;
-            }
-
-            if ($arr && is_array($arr) && !is_array($arr[1]))
-            {
-                # 标记成需要再解析数据, 暂时不解析
-                $delayParseRecords = true;
-            }
+        # 解开数据
+        if ($this->bufferIsJSON[$fd])
+        {
+            $arr       = $this->unpackByJson($fd);
+            $isMsgPack = false;
+        }
+        else
+        {
+            $arr       = $this->unpackByMsgPack($fd);
+            $isMsgPack = true;
         }
 
         if (!$arr || !is_array($arr))
         {
-            warn("Worker#$this->workerId load error data: " . $data);
+            if (($len = strlen(($this->buffer[$fd]))) > 52428800)
+            {
+                # 超过50MB
+                $this->clearBuffer($fd);
 
-            # 把客户端关闭了
-            $server->close($fd);
-            return false;
+                warn("pack data is too long: {$len}byte. now close client.");
+
+                # 关闭连接
+                $this->closeConnect($fd);
+
+                return false;
+            }
+
+            return true;
         }
 
-        $tag = $arr[0];
-        if (!$tag)
+        # 处理数据
+        $this->execute($fd, $fromId, $arr, $isMsgPack);
+
+        if (!isset($this->buffer[$fd]))return true;
+
+        # 处理粘包的数据
+        while(true)
         {
-            debug('data not found tag: ' . $data);
+            # 删除上一个引用地址
+            unset($arr);
+
+            if ($this->bufferIsJSON[$fd])
+            {
+                $arr       = $this->unpackByJson($fd);
+                $isMsgPack = false;
+            }
+            else
+            {
+                $arr       = $this->unpackByMsgPack($fd);
+                $isMsgPack = true;
+            }
+
+            if (!$arr || !is_array($arr))
+            {
+                break;
+            }
+
+            # 处理数据
+            $this->execute($fd, $fromId, $arr, $isMsgPack);
+
+            if (!isset($this->buffer[$fd]))
+            {
+                break;
+            }
+        }
+        unset($arr);
+
+        return true;
+    }
+
+    /**
+     * 处理数据
+     *
+     * @param $fd
+     * @param $fromId
+     * @param $arr
+     * @param $isMsgPack
+     * @return bool
+     */
+    protected function execute($fd, $fromId, & $arr, $isMsgPack)
+    {
+        $tag = $arr[0];
+        if (!$tag || !is_string($tag))
+        {
+            warn('error data, not found tag');
 
             # 把客户端关闭了
-            $server->close($fd);
+            $this->closeConnect($fd);
             return false;
         }
 
         # 查看连接信息
-        $info = $server->connection_info($fd, $fromId);
+        $info = $this->server->connection_info($fd, $fromId);
         if (false === $info)
         {
             # 连接已经关闭
-            warn("connection is closed. tag: {$tag}, data length: ". strlen($data));
+            warn("connection is closed. tag: {$tag}");
+            $this->clearBuffer($fd);
             return false;
         }
         elseif (self::$timed - $info['last_time'] > 30)
         {
             # 最后发送的时间距离现在已经超过 30 秒, 直接不处理, 避免 ack 确认超时的风险
-            $server->close($fd);
-            info("connection wait timeout: " . (self::$timed - $info['last_time']) ."s. tag: $tag, data length: ". strlen($data));
+            $this->closeConnect($fd);
+            info("connection wait timeout: " . (self::$timed - $info['last_time']) ."s. tag: $tag");
             return false;
         }
         unset($info);
-
-        if (IS_DEBUG)
-        {
-            debug("Worker#$this->workerId tag: $tag, data length: " . strlen($data));
-        }
 
         # example: xd.game.hsqj.consume : $app = hsqj, $table = consume
         # example: consume: $app = '', $table = consume
@@ -573,6 +581,9 @@ class MainWorker
             $haveTask = false;
         }
 
+        # 是否需要再解析（Fluentd 会把数据通过 buffer 字符串直接传过来）
+        $delayParseRecords = $isMsgPack && is_string($arr[1]);
+
         if ($delayParseRecords || is_array($arr[1]))
         {
             # 多条数据
@@ -588,7 +599,7 @@ class MainWorker
             $records = [[$arr[1], $arr[2]]];
         }
 
-        if ($option['chunk'])
+        if ($option && $option['chunk'])
         {
             $ackData = ['ack' => $option['chunk']];
             $isSend  = false;
@@ -598,7 +609,6 @@ class MainWorker
             $ackData = null;
             $isSend  = true;
         }
-
 
         if ($haveTask)
         {
@@ -684,7 +694,7 @@ class MainWorker
                     $this->flushData->restore();
 
                     # 关闭连接
-                    $server->close($fd);
+                    $this->closeConnect($fd);
 
                     # 检查连接
                     $this->checkRedis();
@@ -701,13 +711,13 @@ class MainWorker
         if ($ackData)
         {
             # ACK 确认
-            if ($msgPack)
+            if ($isMsgPack)
             {
-                $isSend = $server->send($fd, $tmp = msgpack_pack($ackData));
+                $isSend = $this->server->send($fd, $tmp = msgpack_pack($ackData));
             }
             else
             {
-                $isSend = $server->send($fd, $tmp = json_encode($ackData));
+                $isSend = $this->server->send($fd, $tmp = json_encode($ackData));
             }
 
             if (IS_DEBUG && !$isSend)
@@ -742,13 +752,92 @@ class MainWorker
         return true;
     }
 
+    protected function unpackByJson($fd)
+    {
+        # JSON 格式数据结尾
+        $arr = @json_decode($this->buffer[$fd], true);
+        if (!$arr)
+        {
+            # 处理粘包的可能
+            $len = strlen($this->buffer[$fd]);
+            $tmp = '';
+            for ($i = 0; $i < $len; $i++)
+            {
+                $tmp .= $this->buffer[$fd][$i];
+                if ($this->buffer[$fd][$i] === ']')
+                {
+                    $arr = @json_decode($tmp, true);
+                    if (is_array($arr) && $arr)
+                    {
+                        $this->buffer[$fd] = substr($this->buffer[$fd], $i + 1);
+
+                        return $arr;
+                    }
+                }
+            }
+
+            return false;
+        }
+        else
+        {
+            $this->clearBuffer($fd);
+
+            $countArr = count($arr);
+            if ($countArr < 3)
+            {
+                warn("unknown data, array count mush be 3 or 4, unpack data count is: $countArr");
+                $this->closeConnect($fd);
+
+                return false;
+            }
+
+            return $arr;
+        }
+    }
+
+    protected function unpackByMsgPack($fd)
+    {
+        $arr = @msgpack_unpack($this->buffer[$fd]);
+
+        if (!$arr || !is_array($arr))
+        {
+            return false;
+        }
+        else
+        {
+            if (count($arr) < 2)
+            {
+                return false;
+            }
+
+            $this->clearBuffer($fd);
+            return $arr;
+        }
+    }
+
+    /**
+     * 关闭连接
+     *
+     * @param $fd
+     */
+    protected function closeConnect($fd)
+    {
+        $this->clearBuffer($fd);
+        $this->server->close($fd);
+    }
+
+    protected function clearBuffer($fd)
+    {
+        unset($this->buffer[$fd]);
+        unset($this->bufferTime[$fd]);
+        unset($this->bufferIsJSON[$fd]);
+    }
+
     public function onConnect(swoole_server $server, $fd, $fromId)
     {
         if (isset($this->buffer[$fd]))
         {
-            unset($this->buffer[$fd]);
-            unset($this->bufferTime[$fd]);
-            unset($this->bufferLen[$fd]);
+            $this->clearBuffer($fd);
         }
     }
 
@@ -756,9 +845,7 @@ class MainWorker
     {
         if (isset($this->buffer[$fd]))
         {
-            unset($this->buffer[$fd]);
-            unset($this->bufferTime[$fd]);
-            unset($this->bufferLen[$fd]);
+            $this->clearBuffer($fd);
         }
     }
 
@@ -792,10 +879,10 @@ class MainWorker
 
     protected function pause()
     {
-        $this->pause      = true;
-        $this->buffer     = [];
-        $this->bufferLen  = [];
-        $this->bufferTime = [];
+        $this->pause        = true;
+        $this->buffer       = [];
+        $this->bufferIsJSON = [];
+        $this->bufferTime   = [];
     }
 
     protected function stopPause()
@@ -807,7 +894,7 @@ class MainWorker
             {
                 try
                 {
-                    $this->server->close($fd);
+                    $this->closeConnect($fd);
                 }
                 catch(Exception $e){}
             }
@@ -824,33 +911,26 @@ class MainWorker
 
     protected function parseRecords(& $recordsData)
     {
-        if (!is_array($recordsData))
+        if (is_string($recordsData))
         {
             # 解析里面的数据
             $tmpArr = [];
-            $tmp    = $recordsData[0];
-            $length = strlen($recordsData);
+            $arr    = explode(self::$packKey, $recordsData);
+            $len    = count($arr);
+            $str    = self::$packKey;
 
-            for ($i = 1; $i < $length; $i++)
+            for ($i = 1; $i < $len; $i++)
             {
-                $isEnd = $length == $i + 1;
-                if ($isEnd || isset(self::$packKey[substr($recordsData, $i, 3)]))
+                $str .= $arr[$i];
+
+                $tmpRecord = @msgpack_unpack($str);
+                if (false !== $tmpRecord && is_array($tmpRecord))
                 {
-                    if ($isEnd)
-                    {
-                        $tmp .= $recordsData[$i];
-                    }
+                    $tmpArr[] = $tmpRecord;
 
-                    $tmpRecord = @msgpack_unpack($tmp);
-                    if (false !== $tmpRecord)
-                    {
-                        $tmpArr[] = $tmpRecord;
-
-                        # 重置临时字符串
-                        $tmp = '';
-                    }
+                    # 重置临时字符串
+                    $str = self::$packKey;
                 }
-                $tmp .= $recordsData[$i];
             }
 
             $recordsData = $tmpArr;
