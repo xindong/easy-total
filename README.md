@@ -62,7 +62,7 @@ ip          | 唯一IP数
 
 ### CentOS 里安装方法
 
-php推荐使用 REMI 源，[http://mirror.innosol.asia/remi/](hhttp://mirror.innosol.asia/remi/)，
+php推荐使用 REMI 源，[http://mirror.innosol.asia/remi/](http://mirror.innosol.asia/remi/)，
 
 CentOS 7 安装：
 ```
