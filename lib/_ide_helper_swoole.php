@@ -961,7 +961,7 @@ class swoole_server
      *
      * @param mixed $data
      * @param int $dst_worker_id
-     * @return bool
+     * @return bool|int
      */
     public function task($data, $dst_worker_id = -1) {
     }

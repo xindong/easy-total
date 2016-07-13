@@ -158,7 +158,7 @@ class FlushData
         # 之前投递失败的任务
         if (self::$shmKeys)foreach (self::$shmKeys as $uniqueId => $job)
         {
-            if (EtServer::$server->task("shm|$uniqueId", $job))
+            if (false !== EtServer::$server->task("shm|$uniqueId", $job))
             {
                 unset(self::$shmKeys[$uniqueId]);
             }
@@ -235,7 +235,7 @@ class FlushData
                     }
 
                     # 通知任务进程处理
-                    if (!EtServer::$server->task("shm|$shmKey", $taskId))
+                    if (false === EtServer::$server->task("shm|$shmKey", $taskId))
                     {
                         # 没有投递成功则记录下, 下次再通知
                         self::$shmKeys[$shmKey] = $taskId;
@@ -306,7 +306,7 @@ class FlushData
 
             foreach ($ids as $uniqueId)
             {
-                if (EtServer::$server->task($this->jobs[$taskId][$uniqueId], $taskId))
+                if (false === EtServer::$server->task($this->jobs[$taskId][$uniqueId], $taskId))
                 {
                     # 投递成功移除对象
                     unset($this->jobs[$taskId][$uniqueId]);
