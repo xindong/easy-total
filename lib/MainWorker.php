@@ -675,7 +675,7 @@ class MainWorker
                         {
                             # 处理数据
                             $time = isset($record[1]['time']) && $record[1]['time'] > 0 ? $record[1]['time'] : $record[0];
-                            if (date('Y') != 2016 && !is_file('/tmp/easy-total_error_date'))
+                            if (date('Y', $time) != 2016 && !is_file('/tmp/easy-total_error_date'))
                             {
                                 file_put_contents('/tmp/easy-total_error_date_josn', json_encode($record, JSON_UNESCAPED_UNICODE));
                                 file_put_contents('/tmp/easy-total_error_date', self::$lastData);
