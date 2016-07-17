@@ -152,6 +152,8 @@ class MainWorker
     public static $timed;
 
     public static $serverName;
+
+    protected static $lastData;
     
     public function __construct(swoole_server $server, $id)
     {
@@ -673,6 +675,11 @@ class MainWorker
                         {
                             # 处理数据
                             $time = isset($record[1]['time']) && $record[1]['time'] > 0 ? $record[1]['time'] : $record[0];
+                            if (date('Y') != 2016 && !is_file('/tmp/easy-total_error_date'))
+                            {
+                                file_put_contents('/tmp/easy-total_error_date_josn', json_encode($record, JSON_UNESCAPED_UNICODE));
+                                file_put_contents('/tmp/easy-total_error_date', self::$lastData);
+                            }
 
                             $this->doJob($job, $app, $time, $record[1]);
                         }
@@ -811,6 +818,7 @@ class MainWorker
                 return false;
             }
 
+            self::$lastData = $this->buffer[$fd];
             $this->clearBuffer($fd);
             return $arr;
         }
