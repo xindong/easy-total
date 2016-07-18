@@ -153,8 +153,6 @@ class MainWorker
 
     public static $serverName;
 
-    protected static $lastData;
-    
     public function __construct(swoole_server $server, $id)
     {
         require_once __DIR__ .'/FlushData.php';
@@ -675,11 +673,6 @@ class MainWorker
                         {
                             # 处理数据
                             $time = isset($record[1]['time']) && $record[1]['time'] > 0 ? $record[1]['time'] : $record[0];
-                            if (date('Y', $time) != 2016 && !is_file('/tmp/easy-total_error_date'))
-                            {
-                                file_put_contents('/tmp/easy-total_error_date_josn', json_encode($record, JSON_UNESCAPED_UNICODE));
-                                file_put_contents('/tmp/easy-total_error_date', self::$lastData);
-                            }
 
                             $this->doJob($job, $app, $time, $record[1]);
                         }
@@ -818,7 +811,6 @@ class MainWorker
                 return false;
             }
 
-            self::$lastData = $this->buffer[$fd];
             $this->clearBuffer($fd);
             return $arr;
         }
@@ -926,19 +918,21 @@ class MainWorker
             $tmpArr = [];
             $arr    = explode(self::$packKey, $recordsData);
             $len    = count($arr);
-            $str    = self::$packKey;
+            $str    = '';
 
             for ($i = 1; $i < $len; $i++)
             {
-                $str .= $arr[$i];
+                $str .= self::$packKey . $arr[$i];
 
                 $tmpRecord = @msgpack_unpack($str);
                 if (false !== $tmpRecord && is_array($tmpRecord))
                 {
+                    $recordsData = '';
+
                     $tmpArr[] = $tmpRecord;
 
                     # 重置临时字符串
-                    $str = self::$packKey;
+                    $str = '';
                 }
             }
 
