@@ -446,7 +446,7 @@ class EtServer
         $port = self::$config['manager']['port'] ?: 9200;
         $host = self::$config['manager']['host'] ?: '127.0.0.1';
         #self::$server = new swoole_websocket_server($host, $port);
-        self::$server = new swoole_http_server($host, $port, SWOOLE_BASE);
+        self::$server = new swoole_http_server($host, $port);
         self::$server->set(self::$config['conf']);
     }
 
@@ -799,6 +799,8 @@ class EtServer
         {
             EtServer::$config['server']['dump_path'] = '/tmp/';
         }
+
+        $config['fluent']['dispatch_mode'] = 2;
 
         if (!$config['conf']['task_tmpdir'])
         {
