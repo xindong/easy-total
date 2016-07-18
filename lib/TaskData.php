@@ -761,19 +761,13 @@ class TaskData
             {
                 $len += strlen($item);
                 $str .= $item . ',';
-
-                if (!is_string($item))
-                {
-                    echo "error data type: ";
-                    var_dump($item);
-                }
             }
 
             if ($len > $limitLen || $count === $num)
             {
                 # 每 3M 分开一次推送, 避免一次发送的数据包太大
                 $ack    = uniqid('f');
-                $buffer = '["' . $tag . '",[' . substr($str, 0, -1) . '],{"chunk":"' . $ack . '"}]' . "\r\n";
+                $buffer = '["' . $tag . '",[' . substr($str, 0, -1) . '],{"chunk":"' . $ack . '"}]' . "\n";
                 $len    = strlen($buffer);
                 $rs     = @fwrite($socket, $buffer, $len);
 
@@ -862,9 +856,13 @@ class TaskData
             case '-':      // 不分组
                 return 60;
 
-            default:
-                # 其它的保存间隔为10分钟
+            case 'h':      // 小时
                 return 600;
+
+            case 'd':      // 按天
+            default:
+                # 其它的间隔为30分钟
+                return 3600;
         }
     }
 
