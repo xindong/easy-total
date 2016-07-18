@@ -927,8 +927,6 @@ class MainWorker
                 $tmpRecord = @msgpack_unpack($str);
                 if (false !== $tmpRecord && is_array($tmpRecord))
                 {
-                    $recordsData = '';
-
                     $tmpArr[] = $tmpRecord;
 
                     # 重置临时字符串
