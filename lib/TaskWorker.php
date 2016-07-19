@@ -70,6 +70,13 @@ class TaskWorker
      */
     protected static $dumpFile;
 
+    /**
+     * 当重新临时重启时dump的目录（一般为内存目录）
+     *
+     * @var string
+     */
+    protected static $reloadDumpFile;
+
     public function __construct(swoole_server $server, $taskId, $workerId)
     {
         $this->server     = $server;
@@ -80,9 +87,9 @@ class TaskWorker
 
         if ($this->taskId > 0)
         {
-            $serverHash     = substr(md5(EtServer::$configFile), 16, 8);
-            self::$dumpFile = EtServer::$config['server']['dump_path'] . 'easy-total-task-dump-' . $serverHash . '-' . $taskId . '.txt';
-
+            $serverHash             = substr(md5(EtServer::$configFile), 16, 8);
+            self::$dumpFile         = EtServer::$config['server']['dump_path'] . 'easy-total-task-dump-' . $serverHash . '-' . $taskId . '.txt';
+            self::$reloadDumpFile   = EtServer::$config['conf']['task_tmpdir'] . 'easy-total-task-dump-' . $serverHash . '-' . $taskId . '.txt';
             TaskData::$dataConfig   = EtServer::$config['data'];
             TaskData::$redisConfig  = EtServer::$config['redis'];
             TaskData::$outputConfig = EtServer::$config['output'];
@@ -171,7 +178,7 @@ class TaskWorker
                 if (mt_rand(1, 300) === 1)
                 {
                     # 重启进程避免数据溢出、未清理数据占用超大内存
-                    $this->shutdown();
+                    $this->dumpData(true);
 
                     info("Task#$this->taskId now restart.");
 
@@ -326,10 +333,20 @@ class TaskWorker
 
     /**
      * 在程序退出时保存数据
+     *
+     * @param bool $isReload 是否重新加载方式
      */
-    public function dumpData()
+    public function dumpData($isReloadMod = false)
     {
-        if (!self::$dumpFile)return;
+        if ($isReloadMod)
+        {
+            $file = self::$reloadDumpFile;
+        }
+        else
+        {
+            $file = self::$dumpFile;
+        }
+        if (!$file)return;
 
         info("Task#$this->taskId is dumping file.");
 
@@ -347,13 +364,13 @@ class TaskWorker
                     # 尝试将数据保存到统计汇总里
                     $this->taskData->saveJob($job);
                 }
-                file_put_contents(self::$dumpFile, 'jobs,' . msgpack_pack($job) . "\r\n", FILE_APPEND);
+                file_put_contents($file, 'jobs,' . msgpack_pack($job) . "\r\n", FILE_APPEND);
             }
         }
 
         if (TaskData::$list)foreach (TaskData::$list as $tag => $list)
         {
-            file_put_contents(self::$dumpFile, $tag .','. msgpack_pack($list) ."\r\n", FILE_APPEND);
+            file_put_contents($file, $tag .','. msgpack_pack($list) ."\r\n", FILE_APPEND);
         }
 
         info("Task#$this->taskId dump job: ". TaskData::getJobCount() .". list: ". count(TaskData::$list) .", use time:". (microtime(1) - $time) ."s.");
@@ -364,9 +381,20 @@ class TaskWorker
      */
     protected function loadDumpData()
     {
-        if (self::$dumpFile)
+        if (self::$dumpFile || self::$reloadDumpFile)
         {
-            $this->loadDumpDataFromFile(self::$dumpFile);
+            if (self::$dumpFile)
+            {
+                # 系统重启的dump路径
+                $this->loadDumpDataFromFile(self::$dumpFile);
+            }
+
+            if (self::$reloadDumpFile)
+            {
+                # 进程释放内存临时重启dump的路径
+                $this->loadDumpDataFromFile(self::$reloadDumpFile);
+            }
+
             info("Task#$this->taskId load " . TaskData::getJobCount() . " jobs, " . count(TaskData::$list) . ' list from dump file.');
         }
 
