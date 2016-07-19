@@ -9,7 +9,7 @@ $getConnect = function()
     try
     {
         $config = EtServer::$config['data'];
-        switch ($this->config['type'])
+        switch ($config['type'])
         {
             case 'mysql':
                 return null;
