@@ -94,13 +94,6 @@ class DataJob
     public $taskTime = 0;
 
     /**
-     * 当前任务在任务进程中缓存时间
-     *
-     * @var int
-     */
-    public $cachedTime = 0;
-
-    /**
      * 活跃时间
      *
      * @var int
