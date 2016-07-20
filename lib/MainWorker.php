@@ -1444,7 +1444,24 @@ class MainWorker
                 {
                     $rs    = false;
                     $isIn  = false;
-                    $value = $data[$item['field']];
+                    $value = null;
+
+                    if ($item['field'])
+                    {
+                        if (is_array($item['field']))
+                        {
+                            # 参数是字段数据
+                            foreach ($item['field'] as $k => $v)
+                            {
+                                $item['arg'][$k] = $data[$v];
+                            }
+                        }
+                        else
+                        {
+                            $value = $data[$item['field']];
+                        }
+                    }
+
                     if ($item['typeM'])
                     {
                         switch ($item['typeM'])
@@ -1506,7 +1523,7 @@ class MainWorker
                                 switch ($item['fun'])
                                 {
                                     case 'from_unixtime':
-                                        $value = @date($item['arg'], $value);
+                                        $value = @date($item['arg'][1], $value);
                                         break;
 
                                     case 'unix_timestamp':
@@ -1524,17 +1541,7 @@ class MainWorker
                                         break;
 
                                     default:
-                                        if (is_callable($item['fun']))
-                                        {
-                                            try
-                                            {
-                                                $value = @call_user_func($item['fun'], $value, $item['arg']);
-                                            }
-                                            catch (Exception $e)
-                                            {
-                                                $value = false;
-                                            }
-                                        }
+                                        $value = Func::callWhereFun($item['fun'], $item['arg']);
                                         break;
                                 }
                                 break;
@@ -1543,7 +1550,7 @@ class MainWorker
 
                     if (!$isIn)
                     {
-                        $rs = self::checkWhereEx($value, $item['value'], $item['type']);
+                        $rs = self::checkWhereEx($value, $item['fMode'] ? $data[$item['value']] : $item['value'], $item['type']);
                     }
                 }
 

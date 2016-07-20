@@ -569,6 +569,9 @@ class EtServer
     {
         global $argv;
 
+        # 加载自定义函数
+        Func::reload();
+
         # 实例化资源对象
         if ($server->taskworker)
         {

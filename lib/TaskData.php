@@ -929,10 +929,17 @@ class TaskData
                         break;
 
                     case 'value':
-                        if (isset($item[$field]))
+                        if (isset($job->data[$field]))
                         {
                             # 没设置的不需要赋值
-                            $data[$as] = $item[$field];
+                            $data[$as] = $job->data[$field];
+                        }
+                        break;
+
+                    default:
+                        if (isset($job->total->func[$type][$field]))
+                        {
+                            $data[$as] = Func::callSelectGetDataFun($type, $field, $job->total->func[$type][$field], $job);
                         }
                         break;
                 }

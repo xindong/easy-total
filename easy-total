@@ -41,6 +41,7 @@ $end       = "\x1b[39m";
 $error     = "{$red}✕{$end}";
 
 require __DIR__ . '/lib/DataObject.php';
+require __DIR__ . '/lib/Func.php';
 require __DIR__ . '/lib/EtServer.php';
 $server = new EtServer($options['c'], isset($options['d']), $options['l']);
 

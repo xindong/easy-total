@@ -9,15 +9,23 @@ class SQL
      */
     public static function parseSql($sql)
     {
-        $preg  = "#^select[ ]+(?<select>.+) ";
-        $preg .= "from (?:(?<app>[a-z0-9_]+)\.)?(?<table>[a-z0-9_]+)";
-        $preg .= "(?:[ ]+for[ ]+(?<for>[a-z0-9,]+))?";
-        $preg .= "(?: where (?<where>(?:(?! group[ ]+time | group[ ]+by | save[ ]+as ).)+))?";
-        $preg .= "(?: group[ ]+by[ ]+(?<groupBy>[a-z0-9_,\.]+))?";
-        $preg .= "(?: group[ ]+time[ ]+(?<groupTime>(?:(?! save[ ]+as).)+))?";
-        $preg .= "(?: save[ ]+as (?<saveAs>[a-z0-9_%,\.]+))?$#i";
+        # 单表join SELECT * FROM t1 LEFT JOIN t2 ON t2.a=t1.a
+        # 多表join SELECT * FROM t1 LEFT JOIN (t2, t3, t4) ON (t2.a=t1.a AND t3.b=t1.b AND t4.c=t1.c)
 
-        if (preg_match($preg, str_replace(["\r\n", "\r", "\n"], ' ', $sql), $m))
+        $tpl   = "[a-z0-9_'`\"]+";
+        $preg  = "#^select[ ]+(?<select>.+)[ ]+";
+        $preg .= "from (?:(?<app>$tpl)\.)?(?<table>$tpl)(?:[ ]+as[ ]+(?<tableAs>$tpl))?";
+        $preg .= "(?:[ ]+for[ ]+(?<for>[a-z0-9_,`'\"]+))?";
+        $preg .= "(?:[ ]+";
+        $preg .= "(?<leftJoin>left[ ]+)?join[ ]+(?<join>[a-z0-9,_` \)\(]+)";
+        $preg .= "[ ]+on (?<on>(?:(?! where| group[ ]+time | group[ ]+by | save[ ]+as ).)+)";
+        $preg .= ")?";
+        $preg .= "(?:[ ]+where (?<where>(?:(?! group[ ]+time | group[ ]+by | save[ ]+as ).)+))?";
+        $preg .= "(?:[ ]+group[ ]+by[ ]+(?<groupBy>[a-z0-9_\.,`]+))?";
+        $preg .= "(?:[ ]+group[ ]+time[ ]+(?<groupTime>(?:(?! save[ ]+as).)+))?";
+        $preg .= "(?:[ ]+save[ ]+as (?<saveAs>[a-z0-9_%,\.`]+))?$#i";
+
+        if (preg_match($preg, preg_replace('#[ ]*,[ ]+#', ',', str_replace(["\r\n", "\r", "\n"], ' ', $sql)), $m))
         {
             if (IS_DEBUG)
             {
@@ -25,13 +33,32 @@ class SQL
                 print_r($m);
             }
 
-            $table     = trim($m['table']);
-            $select    = trim($m['select']);
-            $for       = trim($m['for']);
-            $where     = trim($m['where']);
-            $groupBy   = trim($m['groupBy']);
-            $groupTime = trim($m['groupTime']);
-            $saveAs    = trim($m['saveAs']) ?: $table;
+            if (isset($m['join']) && $m['join'])
+            {
+                # join 模式
+                $joinOption = self::parseJoin($m);
+
+                if (false === $joinOption)
+                {
+                    warn("sql join option error: join = {$m['join']}, on = {$m['join']}");
+                    return false;
+                }
+            }
+            else
+            {
+                $joinOption = null;
+            }
+
+            $app        = self::deQuoteValue($m['app']);
+            $table      = self::deQuoteValue($m['table']);
+            $tableAs    = self::deQuoteValue($m['tableAs']) ?: $table;
+            $select     = trim($m['select']);
+            $for        = trim($m['for']);
+            $where      = trim($m['where']);
+            $groupBy    = trim($m['groupBy']);
+            $groupTime  = trim($m['groupTime']);
+            $saveAs     = self::deQuoteValue(str_replace('`', '', $m['saveAs'])) ?: $table;
+
             $option    = [
                 'key'        => substr(md5($sql .'_'. microtime(1)), 8, 16),    //任务的key
                 'name'       => "from {$table} to {$saveAs}",
@@ -42,132 +69,39 @@ class SQL
                 'seriesKey'  => null,    //序列的key, 生成好完整的option后再赋值
                 'sql'        => '',      //SQL语句
                 'table'      => $table,
+                'tableAs'    => $tableAs,
                 'for'        => [],
                 'saveAs'     => [],      //保存的设置
                 'start'      => 0,       //开启时间
                 'end'        => 0,       //结束时间
                 'allField'   => false,
                 'fields'     => [],      //导出的字段设置
-                'where'      => $where ? self::parseWhere($where) : [],    //where条件
+                'where'      => $where ? self::parseWhere($where, $joinOption) : [],    //where条件
                 'groupTime'  => [],      //时间分组设置
                 'groupBy'    => [],      //字段分组设置
                 'function'   => [],      //所有使用到的方法列表
             ];
 
-            if ($select === '*')
+            if ($joinOption)
             {
-                $option['allField'] = true;
-            }
-            else
-            {
-                $nextStep = '';
-                foreach (explode(',', $select) as $s)
-                {
-                    if ($nextStep)
-                    {
-                        if (preg_match('#[a-z0-9_]+\)(?:[ ]+as[ ]+[a-z0-9_]+)?#i', trim($s)))
-                        {
-                            $s = $nextStep .','. $s;
-                            $nextStep = '';
-                        }
-                        else
-                        {
-                            $nextStep .= ','. $s;
-                            continue;
-                        }
-                    }
-                    elseif (preg_match('#^[a-z0-9_ ]+[ ]*\([^)]+$#', $s, $m))
-                    {
-                        # 如果没有遇到封闭函数, 则可能是 select dist(a,b),c 这样被, 分开了
-                        $nextStep = $s;
-                        continue;
-                    }
-
-                    $s = trim($s);
-                    if ($s === '*')
-                    {
-                        $option['allField'] = true;
-                    }
-                    elseif (preg_match('#^(?<field>[a-z0-9_]+)(?:[ ]+as[ ]+(?<as>[a-z0-9_]+))?(?:[ ]+)?$#i', $s, $mSelect))
-                    {
-                        # 匹配 select abc, abc as def
-                        $field = trim($mSelect['field']);
-                        $as    = trim($mSelect['as'] ?: $field);
-
-                        $option['fields'][$as] = [
-                            'type' => 'value',
-                            'field' => $field,
-                        ];
-
-                        $option['function']['value'][$field] = true;
-                    }
-                    elseif (preg_match('#^(?<type>count|sum|max|min|avg|first|last|dist|exclude|listcount|list|value)[ ]*\((?<field>[a-z0-9_, \*"\'`]*)\)(?:[ ]+as[ ]+(?<as>[a-z0-9_]+))?$#i', $s, $mSelect))
-                    {
-                        # 匹配 select sum(abc), sum(abc) as def
-                        $field = trim($mSelect['field'], " \n\r,");
-                        $type  = strtolower(trim($mSelect['type']));
-                        $as    = str_replace(',', '_', trim($mSelect['as'] ?: ($field === '*' ? $type : "{$type}_{$field}")));
-
-
-                        if ($field === '*' && $type !== 'count')
-                        {
-                            # 只支持 count(*)
-                            continue;
-                        }
-
-                        if ($type === 'dist' && false !== strpos($field, ','))
-                        {
-                            # Dist支持多字段模式
-                            $fields = array_map('self::deQuoteValue', explode(',', $field));
-                            sort($fields);
-                            $field  = implode(',', $fields);
-                        }
-                        else
-                        {
-                            $fields = true;
-                        }
-
-                        $option['fields'][$as] = [
-                            'type'  => $type,
-                            'field' => $field,
-                        ];
-
-                        switch ($type)
-                        {
-                            case 'avg':
-                                $option['function']['sum'][$field]  = true;
-                                $option['function']['count']['*']   = true;
-                                break;
-
-                            case 'dist':
-                                $option['function']['dist'][$field] = $fields;
-                                break;
-
-                            case 'list':
-                            case 'listcount':
-                                $option['function']['dist'][$field] = true;
-                                break;
-
-                            case 'count':
-                                $option['fields'][$as] = [
-                                    'type'  => $type,
-                                    'field' => '*',
-                                ];
-                                $option['function']['count']['*'] = true;
-                                break;
-
-                            default:
-                                $option['function'][$type][$field] = true;
-                                break;
-                        }
-                    }
-                }
+                $option['join'] =& $joinOption;
             }
 
+            # 解析SELECT部分
+            if (!self::parseSelect($select, $option))
+            {
+                return false;
+            }
+
+            if ($app)
+            {
+                $option['for'][$app] = $app;
+            }
             if ($for)
             {
                 foreach (explode(',', $for) as $item)
                 {
+                    $item = self::deQuoteValue($item);
                     $option['for'][$item] = $item;
                 }
                 ksort($option['for']);
@@ -177,10 +111,27 @@ class SQL
             {
                 foreach(explode(',', $groupBy) as $item)
                 {
-                    $item = trim($item);
+                    if (strpos($item, '.'))
+                    {
+                        list($space, $tmpItem) = explode('.', $item, 2);
+
+                        $space = self::deQuoteValue($space);
+                        $item  = self::deQuoteValue($tmpItem);
+
+                        if (isset($joinOption['join'][$space]))
+                        {
+                            $joinOption['fields'][$joinOption['join'][$space]][] = $item;
+                            $item = $joinOption['join'][$space] . '.' . $item;
+                        }
+                    }
+                    else
+                    {
+                        $item = self::deQuoteValue($item);
+                    }
+
                     if ($item)
                     {
-                        $option['groupBy'][] = trim($item);
+                        $option['groupBy'][] = $item;
                     }
                 }
 
@@ -191,11 +142,23 @@ class SQL
                 }
             }
 
+            if ($joinOption)
+            {
+                # 对join中用到的字段去重并重新排序
+                foreach ($joinOption['fields'] as $k => &$v)
+                {
+                    $v = array_unique($v);
+                    sort($v);
+                }
+                unset($v);
+            }
+
             $groupTimeSet = [];
             if ($groupTime)
             {
                 foreach (explode(',', trim($groupTime)) as $item)
                 {
+                    $item = self::deQuoteValue($item);
                     if ($item === 'none')
                     {
                         $groupTimeSet['-'] = [0, '-'];
@@ -340,44 +303,130 @@ class SQL
             $select[] = '*';
         }
 
+        if (isset($option['join']) && $option['join'])
+        {
+            $joinMap = array_flip($option['join']['join']);
+        }
+        else
+        {
+            $joinMap = [];
+        }
+
         $saveOption = $option['fields'];
         foreach ($saveOption as $as => $opt)
         {
+            $field = $opt['field'];
+
+            if ($opt['type'] === 'dist' && strpos($field, ','))
+            {
+                # 多字段
+                $tmp2 = explode(',', $field);
+                foreach ($tmp2 as & $tt)
+                {
+                    if (strpos($tt, '.'))
+                    {
+                        $tmp = explode('.', $tt, 2);
+                        if (isset($joinMap[$tmp[0]]))
+                        {
+                            $tt = "`{$joinMap[$tmp[0]]}`.`{$tmp[1]}`";
+                        }
+                        else
+                        {
+                            $tt = "`{$tmp[1]}`";
+                        }
+                    }
+                    else
+                    {
+                        $tt = "`$tt`";
+                    }
+                }
+                unset($tt);
+
+                $field = implode(', ', $tmp2);
+            }
+            elseif (strpos($field, '.'))
+            {
+                $tmp = explode('.', $field, 2);
+                if (isset($joinMap[$tmp[0]]))
+                {
+                    $field = "`{$joinMap[$tmp[0]]}`.`{$tmp[1]}`";
+                }
+                else
+                {
+                    $field = "`{$tmp[1]}`";
+                }
+            }
+            elseif ($field !== '*')
+            {
+                $field = "`$field`";
+            }
+
             if ($opt['type'] === 'value')
             {
-                $tmp = $opt['field'];
+                $tmp = $field;
             }
             else
             {
-                $tmp = "{$opt['type']}({$opt['field']})";
+                $tmp = strtoupper($opt['type']) . "({$field})";
             }
 
             if ($opt['field'] !== $as)
             {
-                $tmp .= " as {$as}";
+                $tmp .= " AS `{$as}`";
             }
 
             $select[] = $tmp;
         }
 
-        $sql = 'select '. implode(',', $select) . " from {$option['table']}";
+        $sql = 'SELECT '. implode(', ', $select) . " FROM `{$option['table']}`";
+        if ($option['tableAs'] != $option['table'])
+        {
+            $sql .= " AS `{$option['tableAs']}`";
+        }
 
         if (isset($option['for']) && $option['for'])
         {
-            $sql .= " for ". implode(',', $option['for']);
+            $sql .= " FOR ". implode(',', array_map(function($v){return "`$v`";}, $option['for']));
+        }
+
+        if (isset($option['join']) && $option['join'])
+        {
+            $sql .= ' ' . $option['join']['$sql'];
         }
 
         if (isset($option['where']) && $option['where'])
         {
-            $sql .= " where {$option['where']['$sql']}";
+            $sql .= " WHERE {$option['where']['$sql']}";
         }
 
         if (isset($option['groupBy']) && $option['groupBy'])
         {
-            $sql .= " group by ". implode(',', $option['groupBy']);
+            $groupBy = $option['groupBy'];
+
+            foreach ($groupBy as & $item)
+            {
+                if (strpos($item, '.'))
+                {
+                    $tmp  = explode('.', $item, 2);
+                    if ($joinMap && isset($joinMap[$tmp[0]]))
+                    {
+                        $item = "`{$joinMap[$tmp[0]]}`.`{$tmp[1]}`";
+                    }
+                    else
+                    {
+                        $item = "`{$tmp[1]}`";
+                    }
+                }
+                else
+                {
+                    $item = "`{$item}`";
+                }
+            }
+
+            $sql .= " GROUP BY ". implode(', ', $groupBy);
         }
 
-        $sql .= " group time ". implode(',', array_keys($option['groupTime']));
+        $sql .= " GROUP TIME '". implode("', '", array_keys($option['groupTime'])) ."'";
 
         if ($option['save'][0] !== $option['table'] || count($option['save']) > 1)
         {
@@ -388,8 +437,9 @@ class SQL
                 {
                     $v = $v[0];
                 }
+                $v = "`$v`";
             }
-            $sql .= " save as ". implode(',', $saveAs);
+            $sql .= " SAVE AS ". implode(', ', $saveAs);
         }
 
         return $sql;
@@ -412,6 +462,304 @@ class SQL
         return $opt1;
     }
 
+    protected static function parseSelect($select, & $option)
+    {
+        if ($select === '*')
+        {
+            $option['allField'] = true;
+        }
+        else
+        {
+            $tpl        = "[a-z0-9_'`\"]+";
+            $nextStep   = '';
+            $joinOption =& $option['join'] ?: [];
+
+            foreach (explode(',', $select) as $s)
+            {
+                if ($nextStep)
+                {
+                    if (preg_match('#[a-z0-9\._\'`"]+\)(?:[ ]+as[ ]+'. $tpl .')?#i', trim($s)))
+                    {
+                        $s = $nextStep .','. $s;
+                        $nextStep = '';
+                    }
+                    else
+                    {
+                        $nextStep .= ','. $s;
+                        continue;
+                    }
+                }
+                elseif (preg_match('#^[a-z0-9\._\'"` ]+\([^\)]+$#i', $s, $m))
+                {
+                    # 如果没有遇到封闭函数, 则可能是 select dist(a,b),c 这样被, 分开了
+                    $nextStep = $s;
+                    continue;
+                }
+
+                $s = trim($s);
+
+                if ($s === '*')
+                {
+                    $option['allField'] = true;
+                }
+                elseif (preg_match("#^(?:(?<space>$tpl)\\.)?(?<field>$tpl)(?:[ ]+as[ ]+(?<as>$tpl))?(?:[ ]+)?$#i", $s, $mSelect))
+                {
+                    # 匹配 select abc, abc as def
+                    $field = self::deQuoteValue($mSelect['field']);
+                    $as    = self::deQuoteValue($mSelect['as'] ?: $field);
+
+                    # 处理 select a.abc 的情形
+                    if (isset($mSelect['space']))
+                    {
+                        $space = self::deQuoteValue($mSelect['space']);
+                        if ($space)
+                        {
+                            if (isset($joinOption['join'][$space]))
+                            {
+                                $joinOption['fields'][$joinOption['join'][$space]][] = $field;
+                                $field = "{$joinOption['join'][$space]}.$field";
+                            }
+                            elseif ($space !== $option['tableAs'])
+                            {
+                                warn("select error #1: $s, can not found table space $space");
+
+                                return false;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        $space = false;
+                    }
+
+                    $option['fields'][$as] = [
+                        'type'  => 'value',
+                        'field' => $field,
+                    ];
+
+                    if ($space)
+                    {
+                        $option['fields'][$as]['space'] = 'join';
+                    }
+
+                    $option['function']['value'][$field] = true;
+                }
+                elseif (preg_match("#^(?<type>[a-z0-9_]+)[ ]*\\((?<field>[a-z0-9_\\., \\*\"'`]+)\\)(?:[ ]+as[ ]+(?<as>$tpl))?$#i", $s, $mSelect))
+                {
+                    # count|sum|max|min|avg|first|last|dist|exclude|listcount|list|value
+                    # 匹配 select sum(abc), sum(abc) as def
+                    $field = trim($mSelect['field'], " ,");
+                    $type  = strtolower(trim($mSelect['type']));
+                    $as    = str_replace(',', '_', self::deQuoteValue($mSelect['as'] ?: ($field === '*' ? $type : "`{$type}_{$field}`")));
+
+                    if ($field === '*' && $type !== 'count')
+                    {
+                        # 只支持 count(*)
+                        continue;
+                    }
+
+                    $isJoinField = false;
+                    if ($type === 'dist' && false !== strpos($field, ','))
+                    {
+                        # Dist支持多字段模式
+                        $fields = explode(',', $field);
+                        foreach ($fields as & $item)
+                        {
+                            if (strpos($item, '.'))
+                            {
+                                list($space, $item) = explode('.', $item);
+
+                                $space = self::deQuoteValue($space);
+                                $item  = self::deQuoteValue($item);
+
+                                if (isset($joinOption['join'][$space]))
+                                {
+                                    $joinOption['fields'][$joinOption['join'][$space]][] = $item;
+                                    $item = "{$joinOption['join'][$space]}.$item";
+                                }
+                                elseif ($space !== $option['tableAs'])
+                                {
+                                    warn("select error #2: $field, can not found table space $space");
+                                    return false;
+                                }
+                            }
+                            else
+                            {
+                                $item = self::deQuoteValue($item);
+                            }
+                        }
+
+                        unset($item);
+                        sort($fields);
+                        $field  = implode(',', $fields);
+                    }
+                    else
+                    {
+                        $fields = true;
+
+                        if (preg_match("#^($tpl)\\.($tpl)$#i", $field, $m2))
+                        {
+                            $space = self::deQuoteValue($m2[1]);
+                            $field = self::deQuoteValue($m2[2]);
+
+                            if (isset($joinOption['join'][$space]))
+                            {
+                                $joinOption['fields'][$joinOption['join'][$space]][] = $field;
+                                $field       = $joinOption['join'][$space] . '.' . $field;
+                            }
+                            elseif ($space !== $option['tableAs'])
+                            {
+                                warn("select error #3: $field, can not found table space $m2[1]");
+                                return false;
+                            }
+                        }
+                        else
+                        {
+                            $field = self::deQuoteValue($field);
+                        }
+                    }
+
+                    $option['fields'][$as] = [
+                        'type'  => $type,
+                        'field' => $field,
+                    ];
+
+                    switch ($type)
+                    {
+                        case 'avg':
+                            $option['function']['sum'][$field]  = true;
+                            $option['function']['count']['*']   = true;
+                            break;
+
+                        case 'dist':
+                            $option['function']['dist'][$field] = $fields;
+                            break;
+
+                        case 'list':
+                        case 'listcount':
+                            $option['function']['dist'][$field] = true;
+                            break;
+
+                        case 'count':
+                            $option['fields'][$as] = [
+                                'type'  => $type,
+                                'field' => '*',
+                            ];
+                            $option['function']['count']['*'] = true;
+                            break;
+
+                        default:
+                            $option['function'][$type][$field] = true;
+                            break;
+                    }
+                }
+                else
+                {
+                    warn("select error #4, unknown select: $s");
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * 解析 JOIN ON 语句
+     *
+     * @param $m
+     * @return array|bool
+     */
+    protected static function parseJoin($m)
+    {
+        if (!isset($m['on']))return false;
+        $join = trim($m['join'], ' )(');
+        $on   = trim($m['on'], ' )(');
+
+        if (!$on)return false;
+
+        $tmpJoin = [];
+        foreach (explode(',', $join) as $item)
+        {
+            if (preg_match('#^([a-z0-9_`]+)[ ]+as[ ]+([a-z0-9_`]+)$#i', trim($item), $m1))
+            {
+                $f1 = self::deQuoteValue($m1[1]);
+                $f2 = self::deQuoteValue($m1[2]);
+            }
+            else
+            {
+                $f1 = self::deQuoteValue($item);
+                $f2 = $f1;
+            }
+
+            $tmpJoin[$f2] = $f1;
+        }
+        $join = $tmpJoin;
+        unset($tmpJoin);
+
+        $table   = self::deQuoteValue($m['table']);
+        $tableAs = null;
+        if (isset($m['tableAs']))
+        {
+            $tableAs = self::deQuoteValue($m['tableAs']);
+        }
+        if (!$tableAs)
+        {
+            $tableAs = $table;
+        }
+
+        $joinOption = [
+            'table'    => $table,
+            'tableAs'  => $tableAs,
+            'leftJoin' => isset($m['leftJoin']) && $m['leftJoin'] ? true : false,
+            'join'     => $join,
+            'on'       => [],
+            'fields'   => [],
+            '$sql'     => '',
+        ];
+        $onWhere = self::parseWhere($on, $joinOption, true);
+
+        # 拼接出SQL语句
+        $sql = ($joinOption['leftJoin'] ? 'LEFT ' : '') . 'JOIN ';
+        if (count($joinOption['join']) > 1)
+        {
+            $sql .= '(';
+            foreach ($joinOption['join'] as $k => $v)
+            {
+                $sql .= "`$v`" . ($k === $v ? '' : " AS `$k`") .", ";
+            }
+            $sql = substr($sql, 0, -2) . ")";
+        }
+        else
+        {
+            $k    = key($joinOption['join']);
+            $v    = current($joinOption['join']);
+            $sql .= "`$v`" . ($k === $v ? '' : " AS `$k`");
+        }
+
+        foreach ($onWhere['$item'] as $item)
+        {
+            $k = [$item['field'], $item['value']];
+            sort($k);
+            $joinOption['on'][] = $k;
+        }
+
+
+        if (count($onWhere['$item']) > 1)
+        {
+            $sql .= " ON ({$onWhere['$sql']})";
+        }
+        else
+        {
+            $sql .= " ON {$onWhere['$sql']}";
+        }
+
+        $joinOption['$sql'] = $sql;
+
+        return $joinOption;
+    }
+
+
     /**
      * 解析一个where字符串为一个多维结构数组
      *
@@ -420,39 +768,117 @@ class SQL
      *      ((a < 1 and b % 3 = 2 and (aa=1 or bb=2 or (cc=3 and dd=4))) or ccc = 3) and (aaaa=1 or bbbb=2)
      *
      * @param $where
+     * @param $joinOption
      * @return array
      */
-    protected static function parseWhere($where)
+    protected static function parseWhere($where, & $joinOption, $joinWhere = false)
     {
         $funHash = [];
 
-        $parseWhere = function($where) use (& $funHash)
+        $parseWhere = function($where) use (& $funHash, & $joinOption, $joinWhere)
         {
-            if (preg_match('#^(?<field>[a-z0-9_\'`"]+)(?:(?:[ ]+)?(?<typeM>%|>>|<<|mod|func|\-|\+|x|\*|/)(?:[ ]+)?(?<mValue>[0-9a-z]+))?(?:[ ]+)?(?<type>=|\!=|\<\>|\>|\<)(?:[ ]+)?(?<value>.*)$#i', $where , $mWhere))
+            if (preg_match('#^(?:(?<space>[a-z0-9_`]+)\.)?(?<field>[a-z0-9_`]+)(?:(?:[ ]+)?(?<typeM>%|>>|<<|mod|in|\-|\+|x|\*|/)(?:[ ]+)?(?<mValue>[0-9\.]+))?(?:[ ]+)?(?<type>=|\!=|\<\>|\>|\<)(?:[ ]+)?(?<value>.*)$#i', $where, $mWhere))
             {
-                $field  = self::deQuoteValue($mWhere['field']);
-                $type   = $mWhere['type'] === '<>' ? '!=' : $mWhere['type'];
-                $value  = self::deQuoteValue($mWhere['value']);
-                $typeM  = $mWhere['typeM'];
-                $mValue = $mWhere['mValue'];
+                $space       = self::deQuoteValue($mWhere['space']);
+                $field       = self::deQuoteValue($mWhere['field']);
+                $type        = $mWhere['type'] === '<>' ? '!=' : $mWhere['type'];
+                $typeM       = $mWhere['typeM'];
+                $mValue      = $mWhere['mValue'];
+                $valueString = trim($mWhere['value']);
 
-                if ($typeM === 'func')
+                if ($joinWhere || preg_match('#^`(.*)`$#', $mWhere['value']))
+                {
+                    # 字段 = 字段模式
+                    # where `field1` = `field2`
+                    $value = $mWhere['value'];
+                    $fMode = true;
+
+                    if (strpos($value, '.'))
+                    {
+                        $tmp         = array_map('self::deQuoteValue', explode('.', $value, 2));
+                        $valueString = "`{$tmp[0]}`.`{$tmp[1]}`";
+
+                        if ($tmp[0] === $joinOption['tableAs'])
+                        {
+                            $value = "{$joinOption['table']}.{$tmp[1]}";
+                        }
+                        elseif (isset($joinOption['join'][$tmp[0]]))
+                        {
+                            $tmpTable = $joinOption['join'][$tmp[0]];
+                            $value    = "$tmpTable.{$tmp[1]}";
+
+                            $joinOption['fields'][$tmpTable][] = $tmp[1];
+                        }
+                        else
+                        {
+                            $value = implode('.', $tmp);
+                        }
+                    }
+                    else
+                    {
+                        $value       = self::deQuoteValue($value);
+                        $valueString = "`{$value}`";
+                    }
+                }
+                else
+                {
+                    $value = self::deQuoteValue($mWhere['value']);
+                    $fMode = false;
+                }
+
+                if ($space === '__fun__')
                 {
                     # time_format(a, '%Y%m') = 201601
                     if (isset($funHash[$field]))
                     {
-                        $opt = $funHash[$field];
+                        $opt   = $funHash[$field];
                         $field = $opt['field'];
+                        $space = $opt['space'];
                     }
                     else
                     {
                         return false;
                     }
+                    $typeM = 'func';
+                }
+                elseif ($typeM === 'in')
+                {
+                    if (isset($funHash[$field]))
+                    {
+                        $opt   = $funHash[$field];
+                        $field = $opt['field'];
+                        $space = $opt['space'];
+                    }
+                    else
+                    {
+                        return false;
+                    }
+                    $typeM = 'func';
+                }
+
+                if ($space)
+                {
+                    $fieldString = "`$space`.`$field`";
+
+                    if ($space === $joinOption['tableAs'])
+                    {
+                        $field = "{$joinOption['table']}.{$field}";
+                    }
+                    elseif (isset($joinOption['join'][$space]))
+                    {
+                        $joinOption['fields'][$joinOption['join'][$space]][] = $field;
+                        $field = "{$joinOption['join'][$space]}.{$field}";
+                    }
+                }
+                else
+                {
+                    $fieldString = "`$field`";
                 }
 
                 $option = [
-                    '$sql'  => $field .($typeM ? " $typeM ". $mValue:'') . " $type " . $value,
+                    '$sql'  => $fieldString .($typeM ? " $typeM ". $mValue:'') . " $type " . $valueString,
                     'field' => $field,
+                    'fMode' => $fMode,
                     'type'  => $type,
                     'value' => $value,
                     'typeM' => $typeM,
@@ -461,20 +887,26 @@ class SQL
 
                 if ($typeM === 'func' && isset($opt))
                 {
-                    $option['arg']  = $opt['arg'];
-                    $option['fun']  = $opt['fun'];
+                    $option['arg'] = $opt['arg'];
+                    $option['fun'] = $opt['fun'];
+                    $arg           = $opt['argString'];
+
+                    if ($opt['fieldArg'])
+                    {
+                        $option['field'] = $opt['fieldArg'];
+                    }
 
                     if ($opt['fun'] === 'in')
                     {
-                        $option['$sql']  = "$field in(". implode(',', $opt['arg']) .")";
+                        $option['$sql']  = "$fieldString IN($arg)";
                     }
                     elseif ($opt['fun'] === 'not_in')
                     {
-                        $option['$sql'] = "$field not in(". implode(',', $opt['arg']) .")";
+                        $option['$sql'] = "$fieldString NOT IN($arg)";
                     }
                     else
                     {
-                        $option['$sql'] = "{$opt['fun']}($field" . ($opt['arg'] ? ', \'' . $opt['arg'] . "'" : '') . ") {$type} {$value}";
+                        $option['$sql'] = "{$opt['fun']}({$arg}) {$type} {$valueString}";
                     }
                 }
 
@@ -484,42 +916,100 @@ class SQL
             return false;
         };
 
+        $parseFun = function($space, $field, $arg, $fun) use (& $joinOption)
+        {
+            $space     = self::deQuoteValue($space);
+            $field     = self::deQuoteValue($field);
+            $fieldArg  = [];
+            $argString = [];
+
+            if ($space && $field && isset($joinOption['join'][$space]))
+            {
+                # 这个是被join的表的字段
+                $joinOption['fields'][$joinOption['join'][$space]][] = $field;
+            }
+
+            foreach ($arg as $i => & $tmp)
+            {
+                if (preg_match('#^`(.*)`$#', $tmp))
+                {
+                    # 字段模式
+                    if (strpos($tmp, '.'))
+                    {
+                        list($space2, $field2) = explode('.', $tmp, 2);
+
+                        $space2      = self::deQuoteValue($space2);
+                        $field2      = self::deQuoteValue($field2);
+                        $argString[] = "`$space2.$field2`";
+
+                        if (isset($joinOption['join'][$space2]))
+                        {
+                            $joinOption['fields'][$joinOption['join'][$space2]][] = $field2;
+                            $space2 = $joinOption['join'][$space2];
+                        }
+
+                        $tmp = "$space2.$field2";
+                    }
+                    else
+                    {
+                        $tmp          = self::deQuoteValue($tmp);
+                        $argString[]  = "`$tmp`";
+                    }
+
+                    $fieldArg[$i] = $tmp;
+                }
+                else
+                {
+                    $tmp = self::deQuoteValue($tmp);
+                    if (!is_numeric($tmp))
+                    {
+                        $argString[] = "'$tmp'";
+                    }
+                    else
+                    {
+                        $argString[] = $tmp;
+                    }
+                }
+            }
+            unset($tmp);
+            $argString = implode(', ', $argString);
+
+            return [
+                'fun'       => $fun,
+                'space'     => $space,
+                'field'     => $field,
+                'arg'       => $arg,
+                'argString' => $argString,
+                'fieldArg'  => $fieldArg,
+            ];
+        };
+
         $where = preg_replace('# and #i', ' && ', preg_replace('# or #i', ' || ', $where));
 
         # 解析in, not in
-        if (preg_match_all('#(?<field>[a-z0-9]+)[ ]+(?<notIn>not[ ]+)?in[ ]*\((?<arg>.+)\)#Ui', $where, $m))
+        if (preg_match_all('#(?:(?<space>[a-z0-9_`]+)\.)?(?<field>[a-z0-9`]+)[ ]+(?<notIn>not[ ]+)?in[ ]*\((?<arg>.+)\)#Ui', $where, $m))
         {
             foreach ($m[0] as $k => $v)
             {
                 $hash = md5($v);
-
-                $arg  = explode(',', $m['arg'][$k]);
-                $arg  = array_map('self::deQuoteValue', $arg);
+                $arg  = array_map('self::deQuoteValue', explode(',', $m['arg'][$k]));
                 $arg  = array_unique($arg);
                 sort($arg);
+                $funHash[$hash] = $parseFun($m['space'][$k], $m['field'][$k], $arg, $m['notIn'][$k] ? 'not_in' : 'in');
 
-                $funHash[$hash] = [
-                    'fun'   => $m['notIn'][$k] ? 'not_in' : 'in',
-                    'field' => self::deQuoteValue($m['field'][$k]),
-                    'arg'   => $arg,
-                ];
-
-                $where = str_replace($v, "{$hash} func 0 = 0", $where);
+                $where = str_replace($v, "{$hash} in 0 = 0", $where);
             }
         }
 
         # 预处理函数
-        if (preg_match_all('#(?<fun>[a-z_0-9]+)\((?<field>[a-z0-9_"\'` ])(?:(?>[ ]+)?,(?>[ ]+)?(?<arg>[^\)]+))?\)#Ui', $where, $m))
+        # Exp: from_unixtime(time, "%H") = 2016
+        $match  = '#(?<fun>[a-z_0-9]+)\((?<arg>[^\)]+)\)#Ui';
+        if (preg_match_all($match, $where, $m))
         {
             foreach ($m[0] as $k => $v)
             {
-                $hash = md5($v);
-
-                $funHash[$hash] = [
-                    'fun'   => strtolower($m['fun'][$k]),
-                    'field' => self::deQuoteValue($m['field'][$k]),
-                    'arg'   => self::deQuoteValue($m['arg'][$k]),
-                ];
+                $hash           = md5($v);
+                $funHash[$hash] = $parseFun('', '', explode(',', $m['arg'][$k]), strtolower($m['fun'][$k]));
 
                 if ('time_format' === $funHash[$hash]['fun'])
                 {
@@ -555,10 +1045,10 @@ class SQL
                         '%Z' => 'T',
                         '%s' => 'U',
                     ];
-                    $funHash[$hash]['arg'] = strtr($funHash[$hash]['arg'], $caracs);
+                    $funHash[$hash]['arg'][0] = strtr($funHash[$hash]['arg'][0], $caracs);
                 }
 
-                $where = str_replace($v, "{$hash} func 0 = 0", $where);
+                $where = str_replace($v, "__fun__.{$hash}", $where);
             }
         }
 
