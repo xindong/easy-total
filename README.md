@@ -53,14 +53,22 @@ ip          | 唯一IP数
 
 ## 快速使用
 
+进入根目录执行 `composer install` 安装依赖类库，然后执行 `bin/easy-total -c bin/easy-total.yaml` 即可启动
 
-### 依赖
+### 环境依赖
 
-程序需要 php 环境并安装 swoole、redis、msgpack 等php扩展，推荐 php7+, swoole 1.8.0+。需要安装并配置 redis 或 [ssdb](http://ssdb.io/) 服务器用于存储运算中的数据。
+php扩展：
 
-数据的汇入汇出使用 [Fluentd](http://fluentd.org/) 处理，推荐使用 Fluentd 来收集和分发日志，相比 flume 它没有 java 的那一套复杂的东西。
+ * swoole；
+ * redis；
+ * msgpack；
+ * yaml 
 
-### CentOS 里安装方法
+推荐 php7+, swoole 1.8.0+。需要安装 composer 并配置 redis 或 [ssdb](http://ssdb.io/) 服务器用于存储运算中的数据。
+
+数据的汇入汇出使用 [Fluentd](http://fluentd.org/) 处理，推荐使用 Fluentd 来收集和分发日志。
+
+### CentOS 里安装PHP方法
 
 php推荐使用 REMI 源，[http://mirror.innosol.asia/remi/](http://mirror.innosol.asia/remi/)，
 
@@ -78,25 +86,24 @@ yum install http://mirror.innosol.asia/remi/enterprise/remi-release-6.rpm
 
 然后执行
 ```bash
-yum install php php-swoole php-redis php-msgpack
+yum install php php-swoole php-redis php-msgpack php-yaml
 ```
 即可安装上 php 了。
 
+### 安装类库依赖
 
-### 加入连接
-
+在根目录中执行如下命令，若没有此命令请点击[此处查看](http://docs.phpcomposer.com/00-intro.html#Installation-*nix)
 ```
-ln -s ./easy-total /usr/local/bin/easy-total
-cp ./server.ini /etc/easy-total.conf
+composer install
 ```
 
 ### 更改配置
 
-请查看 server.ini 中有详细说明，其中 [server] 为服务器信息设置，运算中的临时数据将会存到 [redis] 配置的服务里，建议不要和其它服务混用
+请查看 bin/easy-total.yaml 中有详细说明，其中 [server] 为服务器信息设置，运算中的临时数据将会存到 [redis] 配置的服务里，建议不要和其它服务混用
 
 ### 启动服务
 
-直接运行 `easy-total` 即可，参数
+进入bin目录直接运行 `easy-total` 即可，参数
 
 参数     |  说明
 --------|---------------

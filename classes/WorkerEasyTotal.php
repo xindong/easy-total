@@ -1,25 +1,6 @@
 <?php
-class MainWorker
+class WorkerEasyTotal extends MyQEE\Server\WorkerTCP
 {
-    /**
-     * 当前进程ID
-     *
-     * @var int
-     */
-    public $workerId = 0;
-
-    /**
-     * @var swoole_server
-     */
-    public $server;
-
-    /**
-     * 是否多服务器
-     *
-     * @var bool
-     */
-    public $multipleServer = false;
-
     /**
      * 查询任务列表
      *
@@ -76,13 +57,6 @@ class MainWorker
      * @var SimpleSSDB
      */
     public $ssdb;
-
-    /**
-     * 当前进程启动时间
-     *
-     * @var int
-     */
-    protected $startTime;
 
     /**
      * 是否暂停接受数据
@@ -151,31 +125,27 @@ class MainWorker
      */
     public static $timed;
 
-    public static $serverName;
-
-    public function __construct(swoole_server $server, $id)
+    public function __construct($server)
     {
-        require_once __DIR__ .'/FlushData.php';
+        parent::__construct($server);
 
-        $this->server    = $server;
-        $this->workerId  = FlushData::$workerId = $id;
-        $this->dumpFile  = EtServer::$config['server']['dump_path'] .'total-dump-'. substr(md5(EtServer::$configFile), 16, 8) . '-'. $id .'.txt';
-        $this->flushData = new FlushData();
-
+        FlushData::$workerId = $this->id;
+        $this->dumpFile      = EtServer::$config['server']['dump_path'] .'total-dump-'. substr(md5(EtServer::$configFile), 16, 8) . '-'. $this->id .'.txt';
+        $this->flushData     = new FlushData();
         # 包数据的key
-        self::$packKey    = chr(146).chr(206);
-        self::$timed      = time();
-        $this->startTime  = time();
-        self::$serverName = EtServer::$config['server']['host'].':'. EtServer::$config['server']['port'];
+        self::$packKey       = chr(146) . chr(206);
 
     }
 
     /**
      * 初始化后会调用
      */
-    public function init()
+    public function onStart()
     {
         if ($this->isInit)return true;
+
+        $this->worker->redis =& $this->redis;
+        $this->worker->ssdb  =& $this->ssdb;
 
         if (!$this->reConnectRedis())
         {
@@ -244,7 +214,7 @@ class MainWorker
 
         # 按进程数为每个 worker 设定一个时间平均分散的定时器
         $limit  = intval(EtServer::$config['server']['merge_time_ms'] ?: 5000);
-        $aTime  = intval($limit * $this->workerId / $this->server->setting['worker_num']);
+        $aTime  = intval($limit * $this->id / $this->server->setting['worker_num']);
         $mTime  = intval(microtime(1) * 1000);
         $aTime += $limit * ceil($mTime / $limit) - $mTime;
 
@@ -292,7 +262,7 @@ class MainWorker
                 if ($this->redis)
                 {
                     # 更新监控内存
-                    $this->redis->hSet('server.memory', self::$serverName .'_'. $this->workerId, serialize([memory_get_usage(true), self::$timed, self::$serverName, $this->workerId]));
+                    $this->redis->hSet('server.memory', self::$serverName .'_'. $this->id, serialize([memory_get_usage(true), self::$timed, self::$serverName, $this->id]));
                 }
             });
 
@@ -308,7 +278,7 @@ class MainWorker
                         if (self::$timed - $this->bufferTime[$fd] > 300)
                         {
                             # 超过5分钟没有更新数据, 则移除
-                            info('clear expired data length: '. strlen($this->buffer[$fd]));
+                            $this->info('clear expired data length: '. strlen($this->buffer[$fd]));
 
                             $this->clearBuffer($fd);
                         }
@@ -324,14 +294,14 @@ class MainWorker
         # 进程定时重启, 避免数据没清理占用较大内存的情况
         swoole_timer_tick(mt_rand(1000 * 3600 * 2, 1000 * 3600 * 3), function()
         {
-            info('now restart worker#'. $this->workerId);
+            $this->info('now restart worker#'. $this->id);
             $this->flush();
             $this->shutdown();
             exit;
         });
 
         # 只有需要第一个进程处理
-        if ($this->workerId == 0)
+        if ($this->id == 0)
         {
             # 每3秒通知处理一次
             # 分散投递任务时间
@@ -356,7 +326,7 @@ class MainWorker
                         elseif ($rs['pid'] && self::$timed - $rs['time'] > 300)
                         {
                             # 5分钟还没反应, 避免极端情况下卡死, 发送一个重启信号, 这种情况下可能会丢失部分数据
-                            warn("task worker {$i} is dead, now restart it.");
+                            $this->warn("task worker {$i} is dead, now restart it.");
                             swoole_process::kill($rs['pid']);
                             EtServer::$taskWorkerStatus->del("task{$i}");
 
@@ -384,7 +354,7 @@ class MainWorker
             # 输出到控制台信息
             foreach ($this->queries as $key => $query)
             {
-                info("fork sql({$key}): {$query['sql']}");
+                $this->info("fork sql({$key}): {$query['sql']}");
             }
 
             # 数据清理
@@ -401,13 +371,13 @@ class MainWorker
     /**
      * 接受到数据
      *
-     * @param swoole_server $server
+     * @param \Swoole\Server $server
      * @param $fd
      * @param $fromId
      * @param $data
      * @return bool
      */
-    public function onReceive(swoole_server $server, $fd, $fromId, $data)
+    public function onReceive($server, $fd, $fromId, $data)
     {
         if (!$this->redis || $this->pause)
         {
@@ -441,7 +411,7 @@ class MainWorker
                     break;
 
                 default:
-                    warn("accept unknown data length: ". strlen($data). ', head ascii is: '. ord($data[0]));
+                    $this->warn("accept unknown data length: ". strlen($data). ', head ascii is: '. ord($data[0]));
                     return true;
             }
 
@@ -473,7 +443,7 @@ class MainWorker
                 # 超过50MB
                 $this->clearBuffer($fd);
 
-                warn("pack data is too long: {$len}byte. now close client.");
+                $this->warn("pack data is too long: {$len}byte. now close client.");
 
                 # 关闭连接
                 $this->closeConnect($fd);
@@ -538,7 +508,7 @@ class MainWorker
         $tag = $arr[0];
         if (!$tag || !is_string($tag))
         {
-            warn('error data, not found tag');
+            $this->warn('error data, not found tag');
 
             # 把客户端关闭了
             $this->closeConnect($fd);
@@ -550,7 +520,7 @@ class MainWorker
         if (false === $info)
         {
             # 连接已经关闭
-            warn("connection is closed. tag: {$tag}");
+            $this->warn("connection is closed. tag: {$tag}");
             $this->clearBuffer($fd);
             return false;
         }
@@ -558,7 +528,7 @@ class MainWorker
         {
             # 最后发送的时间距离现在已经超过 30 秒, 直接不处理, 避免 ack 确认超时的风险
             $this->closeConnect($fd);
-            info("connection wait timeout: " . (self::$timed - $info['last_time']) ."s. tag: $tag");
+            $this->info("connection wait timeout: " . (self::$timed - $info['last_time']) ."s. tag: $tag");
             return false;
         }
         unset($info);
@@ -650,7 +620,7 @@ class MainWorker
 
                     if (IS_DEBUG)
                     {
-                        debug("worker: $this->workerId, tag: $tag, records count: " . $count);
+                        $this->debug("worker: $this->id, tag: $tag, records count: " . $count);
                     }
 
                     # 统计用的当前时间的key
@@ -689,7 +659,7 @@ class MainWorker
                 catch (Exception $e)
                 {
                     # 执行中报错, 可能是redis出问题了
-                    warn($e->getMessage());
+                    $this->warn($e->getMessage());
 
                     # 重置临时数据
                     $this->flushData->restore();
@@ -723,7 +693,7 @@ class MainWorker
 
             if (IS_DEBUG && !$isSend)
             {
-                debug("send ack data fail. fd: $fd, data: $tmp");
+                $this->debug("send ack data fail. fd: $fd, data: $tmp");
             }
         }
 
@@ -786,7 +756,7 @@ class MainWorker
             $countArr = count($arr);
             if ($countArr < 3)
             {
-                warn("unknown data, array count mush be 3 or 4, unpack data count is: $countArr");
+                $this->warn("unknown data, array count mush be 3 or 4, unpack data count is: $countArr");
                 $this->closeConnect($fd);
 
                 return false;
@@ -834,7 +804,7 @@ class MainWorker
         unset($this->bufferIsJSON[$fd]);
     }
 
-    public function onConnect(swoole_server $server, $fd, $fromId)
+    public function onConnect($server, $fd, $fromId)
     {
         if (isset($this->buffer[$fd]))
         {
@@ -842,7 +812,7 @@ class MainWorker
         }
     }
 
-    public function onClose(swoole_server $server, $fd, $fromId)
+    public function onClose($server, $fd, $fromId)
     {
         if (isset($this->buffer[$fd]))
         {
@@ -850,35 +820,7 @@ class MainWorker
         }
     }
 
-    /**
-     * @param swoole_server $server
-     * @param $fromWorkerId
-     * @param $message
-     * @return null
-     */
-    public function onPipeMessage(swoole_server $server, $fromWorkerId, $message)
-    {
-        switch ($message)
-        {
-            case 'task.reload':
-                # 更新配置
-                $this->reloadSetting();
-                break;
-
-            case 'pause':
-                # 暂停接受任何数据
-                $this->pause();
-                break;
-
-            case 'continue':
-                # 继续接受数据
-                $this->stopPause();
-
-                break;
-        }
-    }
-
-    protected function pause()
+    public function pause()
     {
         $this->pause        = true;
         $this->buffer       = [];
@@ -886,7 +828,7 @@ class MainWorker
         $this->bufferTime   = [];
     }
 
-    protected function stopPause()
+    public function stopPause()
     {
         if ($this->delayCloseFd)
         {
@@ -903,11 +845,6 @@ class MainWorker
         }
 
         $this->pause = false;
-    }
-
-    public function onFinish($server, $task_id, $data)
-    {
-
     }
 
     protected function parseRecords(& $recordsData)
@@ -955,9 +892,9 @@ class MainWorker
         {
             if (EtServer::$config['redis']['hosts'] && count(EtServer::$config['redis']['hosts']) > 1)
             {
-                if (IS_DEBUG && $this->workerId == 0)
+                if (IS_DEBUG && $this->id == 0)
                 {
-                    debug('redis hosts: '. implode(', ', EtServer::$config['redis']['hosts']));
+                    $this->debug('redis hosts: '. implode(', ', EtServer::$config['redis']['hosts']));
                 }
 
                 $redis = new RedisCluster(null, EtServer::$config['redis']['hosts']);
@@ -968,7 +905,7 @@ class MainWorker
 
                 if (false === $redis->connect($host, $port))
                 {
-                    throw new Exception('connect redis error');
+                    throw new Exception("connect redis://$host:$port redis error");
                 }
             }
 
@@ -990,10 +927,10 @@ class MainWorker
         }
         catch (Exception $e)
         {
-            if ($this->workerId == 0 && time() % 10 == 0)
+            if ($this->id == 0 && time() % 10 == 0)
             {
-                debug($e->getMessage());
-                info('redis server is not start, wait start redis://' . (EtServer::$config['redis']['hosts'] ? implode(', ', EtServer::$config['redis']['hosts']) : $host .':'. $port));
+                $this->debug($e->getMessage());
+                $this->info('redis server is not start, wait start redis://' . (EtServer::$config['redis']['hosts'] ? implode(', ', EtServer::$config['redis']['hosts']) : $host .':'. $port));
             }
 
             return false;
@@ -1116,14 +1053,14 @@ class MainWorker
         $count = $this->loadDumpDataFromFile($this->dumpFile);
         if ($count)
         {
-            info("worker($this->workerId) load {$count} job(s) from file {$this->dumpFile}.");
+            $this->info("worker($this->id) load {$count} job(s) from file {$this->dumpFile}.");
         }
 
         # 只需要第一个进程执行
-        if ($this->workerId === 0)
+        if ($this->id === 0)
         {
             # 如果调小过 task worker num, 需要把之前的 dump 的数据重新 load 回来
-            $files = preg_replace('#\-'. $this->workerId .'\.txt$#', '-*.txt', $this->dumpFile);
+            $files = preg_replace('#\-'. $this->id .'\.txt$#', '-*.txt', $this->dumpFile);
 
             # 所有任务数减1则为最大任务数的序号
             $maxIndex = $this->server->setting['worker_num'] - 1;
@@ -1138,7 +1075,7 @@ class MainWorker
 
                         if ($count)
                         {
-                            info("worker($this->workerId) load {$count} job(s) from file {$file}.");
+                            $this->info("worker($this->id) load {$count} job(s) from file {$file}.");
                         }
                     }
                 }
@@ -1173,7 +1110,7 @@ class MainWorker
                 }
                 else
                 {
-                    warn("load data error: ". $item);
+                    $this->warn("load data error: ". $item);
                 }
             }
 
@@ -1211,7 +1148,7 @@ class MainWorker
      * @use $this->updateJob()
      * @return bool
      */
-    protected function reloadSetting()
+    public function reloadSetting()
     {
         if (!$this->redis)return false;
 
@@ -1271,9 +1208,9 @@ class MainWorker
         {
             if (!$opt['use'])
             {
-                if ($this->workerId == 0)
+                if ($this->id == 0)
                 {
-                    debug("query not use, key: {$opt['key']}, table: {$opt['table']}");
+                    $this->debug("query not use, key: {$opt['key']}, table: {$opt['table']}");
                 }
                 continue;
             }
@@ -1367,7 +1304,7 @@ class MainWorker
 
                 if (IS_DEBUG && ($count || $this->flushData->delayCount))
                 {
-                    debug('Worker#' . $this->workerId . " flush {$count} jobs, use time: {$useTime}s" . ($this->flushData->delayCount > 0 ? ", delay jobs: {$this->flushData->delayCount}." : '.'));
+                    $this->debug('Worker#' . $this->id . " flush {$count} jobs, use time: {$useTime}s" . ($this->flushData->delayCount > 0 ? ", delay jobs: {$this->flushData->delayCount}." : '.'));
                 }
 
                 $timeKey = date('H:i');
@@ -1386,7 +1323,7 @@ class MainWorker
                     $this->autoPause = true;
                     $this->pause();
 
-                    warn('Worker#' . $this->workerId . " is busy. delay jobs: {$this->flushData->delayCount}, now pause accept new data.");
+                    $this->warn('Worker#' . $this->id . " is busy. delay jobs: {$this->flushData->delayCount}, now pause accept new data.");
                 }
             }
             elseif ($this->pause && $this->autoPause && $this->flushData->delayCount < 20000)
@@ -1395,12 +1332,12 @@ class MainWorker
                 $this->autoPause  = false;
                 $this->stopPause();
 
-                info('Worker#'. $this->workerId .' re-accept new data.');
+                $this->info('Worker#'. $this->id .' re-accept new data.');
             }
         }
         catch (Exception $e)
         {
-            warn($e->getMessage());
+            $this->warn($e->getMessage());
 
             # 如果有错误则检查下
             $this->checkRedis();

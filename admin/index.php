@@ -85,17 +85,17 @@ if ($redis)
 }
 
 $allMemory     = [
-    MainWorker::$serverName => EtServer::$startUseMemory
+    WorkerEasyTotal::$serverName => EtServer::$startUseMemory
 ];
-$allMemoryTotal = $allMemory[MainWorker::$serverName];
+$allMemoryTotal = $allMemory[WorkerEasyTotal::$serverName];
 
 $allMemoryData = $this->worker->redis->hGetAll('server.memory');
 if ($allMemoryData)foreach ($allMemoryData as $key => $item)
 {
   list($mem, $time, $serv, $wid) = unserialize($item);
-  if (MainWorker::$timed - $time < 80)
+  if (WorkerEasyTotal::$timed - $time < 80)
   {
-    if ($serv == MainWorker::$serverName)
+    if ($serv == WorkerEasyTotal::$serverName)
     {
       $allMemory[$serv] += $mem;
       $allMemoryTotal   += $mem;

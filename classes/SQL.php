@@ -18,7 +18,7 @@ class SQL
         $preg .= "(?:[ ]+for[ ]+(?<for>[a-z0-9_,`'\"]+))?";
         $preg .= "(?:[ ]+";
         $preg .= "(?<leftJoin>left[ ]+)?join[ ]+(?<join>[a-z0-9,_` \)\(]+)";
-        $preg .= "[ ]+on (?<on>(?:(?! where| group[ ]+time | group[ ]+by | save[ ]+as ).)+)";
+        $preg .= "[ ]+on (?<on>(?:(?! where | group[ ]+time | group[ ]+by | save[ ]+as ).)+)";
         $preg .= ")?";
         $preg .= "(?:[ ]+where (?<where>(?:(?! group[ ]+time | group[ ]+by | save[ ]+as ).)+))?";
         $preg .= "(?:[ ]+group[ ]+by[ ]+(?<groupBy>[a-z0-9_\.,`]+))?";
@@ -558,7 +558,6 @@ class SQL
                         continue;
                     }
 
-                    $isJoinField = false;
                     if ($type === 'dist' && false !== strpos($field, ','))
                     {
                         # Dist支持多字段模式
@@ -643,7 +642,7 @@ class SQL
                         case 'count':
                             $option['fields'][$as] = [
                                 'type'  => $type,
-                                'field' => '*',
+                                'field' => strpos($field, '.') ? $field : '*',
                             ];
                             $option['function']['count']['*'] = true;
                             break;
@@ -940,7 +939,7 @@ class SQL
 
                         $space2      = self::deQuoteValue($space2);
                         $field2      = self::deQuoteValue($field2);
-                        $argString[] = "`$space2.$field2`";
+                        $argString[] = "`$space2`.`$field2`";
 
                         if (isset($joinOption['join'][$space2]))
                         {

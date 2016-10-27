@@ -1,36 +1,7 @@
 <?php
 
-require_once __DIR__ .'/DataDriver.php';
-require_once __DIR__ .'/TaskData.php';
-
-class TaskWorker
+class WorkerTask extends MyQEE\Server\WorkerTask
 {
-    /**
-     * 任务进程ID, 从0开始
-     *
-     * @var int
-     */
-    protected $taskId;
-
-    /**
-     * 进程ID, 序号接着work进程序号后
-     *
-     * @var
-     */
-    protected $workerId;
-
-    /**
-     * @var swoole_server
-     */
-    protected $server;
-
-    /**
-     * 当前进程启动时间
-     *
-     * @var int
-     */
-    protected $startTime;
-
     /**
      * 数据对象
      *
@@ -77,19 +48,13 @@ class TaskWorker
      */
     protected static $reloadDumpFile;
 
-    public function __construct(swoole_server $server, $taskId, $workerId)
+    public function onStart()
     {
-        $this->server     = $server;
-        $this->taskId     = $taskId;
-        $this->workerId   = $workerId;
-        $this->startTime  = time();
-        self::$serverName = EtServer::$config['server']['host'] . ':' . EtServer::$config['server']['port'];
-
         if ($this->taskId > 0)
         {
             $serverHash             = substr(md5(EtServer::$configFile), 16, 8);
-            self::$dumpFile         = EtServer::$config['server']['dump_path'] . 'easy-total-task-dump-' . $serverHash . '-' . $taskId . '.txt';
-            self::$reloadDumpFile   = EtServer::$config['conf']['task_tmpdir'] . 'easy-total-task-dump-' . $serverHash . '-' . $taskId . '.txt';
+            self::$dumpFile         = EtServer::$config['server']['dump_path'] . 'easy-total-task-dump-' . $serverHash . '-' . $this->taskId . '.txt';
+            self::$reloadDumpFile   = EtServer::$config['conf']['task_tmpdir'] . 'easy-total-task-dump-' . $serverHash . '-' . $this->taskId . '.txt';
             TaskData::$dataConfig   = EtServer::$config['data'];
             TaskData::$redisConfig  = EtServer::$config['redis'];
             TaskData::$outputConfig = EtServer::$config['output'];
@@ -99,19 +64,14 @@ class TaskWorker
         }
     }
 
-    public function init()
-    {
-
-    }
-
     /**
-     * @param swoole_server $server
+     * @param \Swoole\Server $server
      * @param $taskId
      * @param $fromId
      * @param $data
      * @return mixed
      */
-    public function onTask(swoole_server $server, $taskId, $fromId, $data)
+    public function onTask($server, $taskId, $fromId, $data, $fromServerId = -1)
     {
         try
         {
@@ -173,14 +133,14 @@ class TaskWorker
             $this->updateStatus(true);
 
             # 如果启动超过一定时间
-            if ($type === 'job' && self::$timed - $this->startTime > 10000)
+            if ($type === 'job' && self::$timed - self::$startTime > 10000)
             {
                 if (mt_rand(1, 300) === 1)
                 {
                     # 重启进程避免数据溢出、未清理数据占用超大内存
                     $this->dumpData(true);
 
-                    info("Task#$this->taskId now restart.");
+                    $this->info("Task#$this->taskId now restart.");
 
                     exit(0);
                 }
@@ -348,7 +308,7 @@ class TaskWorker
         }
         if (!$file)return;
 
-        info("Task#$this->taskId is dumping file.");
+        $this->info("Task#$this->taskId is dumping file.");
 
         $time = microtime(1);
         if (TaskData::$jobs)foreach (TaskData::$jobs as $jobs)
@@ -373,7 +333,7 @@ class TaskWorker
             file_put_contents($file, $tag .','. msgpack_pack($list) ."\r\n", FILE_APPEND);
         }
 
-        info("Task#$this->taskId dump job: ". TaskData::getJobCount() .". list: ". count(TaskData::$list) .", use time:". (microtime(1) - $time) ."s.");
+        $this->info("Task#$this->taskId dump job: ". TaskData::getJobCount() .". list: ". count(TaskData::$list) .", use time:". (microtime(1) - $time) ."s.");
     }
 
     /**
@@ -395,7 +355,7 @@ class TaskWorker
                 $this->loadDumpDataFromFile(self::$reloadDumpFile);
             }
 
-            info("Task#$this->taskId load " . TaskData::getJobCount() . " jobs, " . count(TaskData::$list) . ' list from dump file.');
+            $this->info("Task#$this->taskId load " . TaskData::getJobCount() . " jobs, " . count(TaskData::$list) . ' list from dump file.');
         }
 
         # 只需要在第一个任务进程执行
@@ -573,7 +533,7 @@ class TaskWorker
                 unset($queries[$key]);
 
                 $redis->hDel('queries', $key);
-                info("clean data, remove sql({$key}): {$query['sql']}");
+                $this->info("clean data, remove sql({$key}): {$query['sql']}");
             }
         }
 
@@ -723,11 +683,11 @@ class TaskWorker
                 /**
                  * @var Redis $redis
                  */
-                $redis->hSet('server.memory', self::$serverName .'_'. $this->workerId, serialize([$memoryUse, time(), self::$serverName, $this->workerId]));
+                $redis->hSet('server.memory', self::$serverName .'_'. $this->id, serialize([$memoryUse, time(), self::$serverName, $this->id]));
             }
             $this->doTime['updateMemory'] = time();
 
-            info("Task". str_pad('#'.$this->taskId, 4, ' ', STR_PAD_LEFT) ." total jobs: ". TaskData::getJobCount() .", memory: ". number_format($memoryUse/1024/1024, 2) ."MB.");
+            $this->info("Task". str_pad('#'.$this->taskId, 4, ' ', STR_PAD_LEFT) ." total jobs: ". TaskData::getJobCount() .", memory: ". number_format($memoryUse/1024/1024, 2) ."MB.");
         }
     }
 
@@ -767,7 +727,6 @@ class TaskWorker
 
             if (false === $redis->time(0))
             {
-                require_once __DIR__ . '/SSDB.php';
                 $ssdb = new SimpleSSDB($host, $port);
             }
 
