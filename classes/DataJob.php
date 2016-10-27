@@ -8,7 +8,7 @@ class DataJob
     /**
      * 统计系统分配的唯一ID
      *
-     * Exp: abcde123af32,1d,hsqj,2016001,123_abc
+     * Exp: abcde123af32,1d,app,2016001,123_abc
      *
      * @var string
      */
@@ -92,13 +92,6 @@ class DataJob
      * @var int
      */
     public $taskTime = 0;
-
-    /**
-     * 当前任务在任务进程中缓存时间
-     *
-     * @var int
-     */
-    public $cachedTime = 0;
 
     /**
      * 活跃时间
@@ -338,6 +331,15 @@ class DataJob
             $this->total->dist[$field] = max($this->total->dist[$field], $v);
         }
 
+        # 自定义函数的数据合并
+        foreach ($newTotal->func as $fun => $value)
+        {
+            foreach ($value as $field => $v)
+            {
+                $this->total->func[$fun][$field] = Func::callSelectMergeFun($fun, $this->total->func[$fun][$field], $v);
+            }
+        }
+
         # 更新时间
         if ($newTotal->all)
         {
@@ -384,149 +386,87 @@ class DataJob
      */
     protected static function totalData(DataTotalItem $total, $item, $fun, $time)
     {
-        if (isset($fun['sum']))
+        foreach ($fun as $k => $v)
         {
-            # 相加的数值
-            foreach ($fun['sum'] as $field => $t)
+            switch ($k)
             {
-                $total->sum[$field] += $item[$field];
-            }
-        }
+                case 'sum':
+                    # 相加的数值
+                    foreach ($v as $field => $t)
+                    {
+                        $total->sum[$field] += $item[$field];
+                    }
+                    break;
 
-        if (isset($fun['count']))
-        {
-            foreach ($fun['count'] as $field => $t)
-            {
-                $total->count[$field] += 1;
-            }
-        }
+                case 'count':
+                    foreach ($v as $field => $t)
+                    {
+                        $total->count[$field] += 1;
+                    }
+                    break;
 
-        if (isset($fun['last']))
-        {
-            foreach ($fun['last'] as $field => $t)
-            {
-                $tmp = $total->last[$field];
+                case 'last':
+                    foreach ($v as $field => $t)
+                    {
+                        $tmp = $total->last[$field];
 
-                if (!$tmp || $tmp[1] < $time)
-                {
-                    $total->last[$field] = [$item[$field], $time];
-                }
-            }
-        }
+                        if (!$tmp || $tmp[1] < $time)
+                        {
+                            $total->last[$field] = [$item[$field], $time];
+                        }
+                    }
+                    break;
 
-        if (isset($fun['first']))
-        {
-            foreach ($fun['first'] as $field => $t)
-            {
-                $tmp = $total->first[$field];
+                case 'first':
+                    foreach ($v as $field => $t)
+                    {
+                        $tmp = $total->first[$field];
 
-                if (!$tmp || $tmp[1] > $time)
-                {
-                    $total->first[$field] = [$item[$field], $time];
-                }
-            }
-        }
+                        if (!$tmp || $tmp[1] > $time)
+                        {
+                            $total->first[$field] = [$item[$field], $time];
+                        }
+                    }
+                    break;
 
-        if (isset($fun['min']))
-        {
-            foreach ($fun['min'] as $field => $t)
-            {
-                if (isset($total->min[$field]))
-                {
-                    $total->min[$field] = min($total->min[$field], $item[$field]);
-                }
-                else
-                {
-                    $total->min[$field] = $item[$field];
-                }
-            }
-        }
+                case 'min':
+                    foreach ($v as $field => $t)
+                    {
+                        if (isset($total->min[$field]))
+                        {
+                            $total->min[$field] = min($total->min[$field], $item[$field]);
+                        }
+                        else
+                        {
+                            $total->min[$field] = $item[$field];
+                        }
+                    }
+                    break;
 
-        if (isset($fun['max']))
-        {
-            foreach ($fun['max'] as $field => $t)
-            {
-                if (isset($total->max[$field]))
-                {
-                    $total->max[$field] = max($total->max[$field], $item[$field]);
-                }
-                else
-                {
-                    $total->max[$field] = $item[$field];
-                }
+                case 'max':
+                    foreach ($v as $field => $t)
+                    {
+                        if (isset($total->max[$field]))
+                        {
+                            $total->max[$field] = max($total->max[$field], $item[$field]);
+                        }
+                        else
+                        {
+                            $total->max[$field] = $item[$field];
+                        }
+                    }
+                    break;
+
+                default:
+                    foreach ($v as $field => $t)
+                    {
+                        $total->func[$k][$field] = Func::callSelectPushFun($k, $field, $total->func[$k][$field], $item, $time);
+                    }
+                    break;
+
             }
         }
 
         return $total;
-    }
-}
-
-
-
-/**
- * 统计数据对象
- */
-class DataTotalItem
-{
-    /**
-     * @var array
-     */
-    public $count = [];
-
-    /**
-     * @var array
-     */
-    public $dist = [];
-
-    /**
-     * @var array
-     */
-    public $sum = [];
-
-    /**
-     * @var array
-     */
-    public $min = [];
-
-    /**
-     * @var array
-     */
-    public $max = [];
-
-    /**
-     * @var array
-     */
-    public $first = [];
-
-    /**
-     * @var array
-     */
-    public $last = [];
-
-    /**
-     * 是否从db处加载的
-     *
-     * @var bool
-     */
-    public $all = false;
-
-    public function __sleep()
-    {
-        $rs = [];
-        foreach (['dist', 'count', 'sum', 'min', 'max', 'first', 'last'] as $item)
-        {
-            if (count($this->$item))
-            {
-                $rs[] = $item;
-            }
-        }
-        $rs[] = 'all';
-
-        return $rs;
-    }
-
-    public function __wakeup()
-    {
-
     }
 }

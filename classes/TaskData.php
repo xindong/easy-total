@@ -761,19 +761,13 @@ class TaskData
             {
                 $len += strlen($item);
                 $str .= $item . ',';
-
-                if (!is_string($item))
-                {
-                    echo "error data type: ";
-                    var_dump($item);
-                }
             }
 
             if ($len > $limitLen || $count === $num)
             {
                 # 每 3M 分开一次推送, 避免一次发送的数据包太大
                 $ack    = uniqid('f');
-                $buffer = '["' . $tag . '",[' . substr($str, 0, -1) . '],{"chunk":"' . $ack . '"}]' . "\r\n";
+                $buffer = '["' . $tag . '",[' . substr($str, 0, -1) . '],{"chunk":"' . $ack . '"}]' . "\n";
                 $len    = strlen($buffer);
                 $rs     = @fwrite($socket, $buffer, $len);
 
@@ -863,7 +857,7 @@ class TaskData
                 return 60;
 
             default:
-                # 其它的保存间隔为10分钟
+                # 间隔为10分钟
                 return 600;
         }
     }
@@ -935,10 +929,17 @@ class TaskData
                         break;
 
                     case 'value':
-                        if (isset($item[$field]))
+                        if (isset($job->data[$field]))
                         {
                             # 没设置的不需要赋值
-                            $data[$as] = $item[$field];
+                            $data[$as] = $job->data[$field];
+                        }
+                        break;
+
+                    default:
+                        if (isset($job->total->func[$type][$field]))
+                        {
+                            $data[$as] = Func::callSelectGetDataFun($type, $field, $job->total->func[$type][$field], $job);
                         }
                         break;
                 }

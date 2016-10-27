@@ -1,0 +1,82 @@
+#!/usr/bin/env php
+<?php
+error_reporting(7);
+date_default_timezone_set('PRC');
+
+
+$shortOpts = '';
+$shortOpts .= 'c:';     // -c /etc/php-total/server.ini
+$shortOpts .= 'l:';     // -l /var/log/php-total/php-total.log
+$shortOpts .= 't:';     // -t both
+$shortOpts .= 'vhd';    // -v debug模式.  -h : 帮助.  -d: 守护进程化
+
+$longOpts = [
+    'debug',        // --debug
+    'help',         // --help
+                    // 以下参数为内部调用task进程用, 无需设置
+];
+
+$options = getopt($shortOpts, $longOpts);
+
+# 开启了debug
+define('IS_DEBUG', isset($options['debug']) || isset($options['v']));
+
+if (isset($options['help']) || isset($options['h']))
+{
+    goto help;
+}
+
+define('LOG_PATH', $options['l'] ?: null);
+
+# 移除较大的log
+if (LOG_PATH && is_file(LOG_PATH) && filesize(LOG_PATH) > 1024 * 1024 * 30)
+{
+    if (is_file(LOG_PATH.'.bak'))unlink(LOG_PATH.'.bak');
+    rename(LOG_PATH, LOG_PATH.'.bak');
+}
+
+# 配置文件路径
+if (isset($options['c']) && $options['c'])
+{
+    if (!is_file($options['c']))
+    {
+        echo "指定的配置路径文件不存在: {$options['c']}";
+        exit;
+    }
+    $configFile = $options['c'];
+}
+else
+{
+    $configFile = '/etc/easy-total.yaml';
+    if (!is_file($configFile) && is_file(__DIR__.'/easy-total.yaml'))
+    {
+        $configFile = __DIR__.'/easy-total.yaml';
+    }
+}
+
+require "../vendor/autoload.php";
+
+$server = new EtServer($configFile);
+
+$server->start();
+
+return true;
+
+# 输出帮助内容
+help:
+$file = basename(__FILE__);
+echo <<<EOF
+Usage: {$file} [options]
+    -c PATH         config file path (default: /etc/easy-total.yaml)
+    -l PATH         log file path
+    -t type         log | job | both (default)
+    -v, --debug     open debug mode
+
+-t 参数在集群模式下可用
+   log  - 只作接收log的服务器启动;
+   job  - 只作处理任务数据的服务器启动;
+   both - 同时启动 log 和 job
+当使用 both 时, log 和 job 会同时启动, 需要关闭或重启时也会同时关闭或重启
+
+EOF;
+exit;

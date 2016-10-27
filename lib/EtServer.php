@@ -177,7 +177,7 @@ function getNextTimestampByTimeKey($timeKey, $limit, $type)
 }
 
 
-class EtServer
+class EtServer1
 {
     /**
      * @var array
@@ -215,6 +215,8 @@ class EtServer
      * @var TaskWorker
      */
     protected $taskWorker;
+
+    protected $serverMode = 'both';
 
     /**
      * 记录任务状态的表
@@ -259,10 +261,7 @@ class EtServer
      */
     public static $startUseMemory;
 
-    /**
-     * HttpServer constructor.
-     */
-    public function __construct($configFile, $daemonize = false, $logPath = null)
+    public function __construct($configFile, $daemonize = false, $logPath = null, $mode = 'both')
     {
         if (!defined('SWOOLE_VERSION'))
         {
@@ -276,7 +275,7 @@ class EtServer
             exit;
         }
 
-
+        $this->serverMode = $mode;
 
         if (!$configFile)
         {
@@ -319,10 +318,10 @@ class EtServer
             date_default_timezone_set($config['php']['timezone']);
         }
 
-        if (isset($config['server']['unixsock_buffer_size']) && $config['server']['unixsock_buffer_size'] > 1000)
+        if (isset($config['php']['unixsock_buffer_size']) && $config['php']['unixsock_buffer_size'] > 1000)
         {
             # 修改进程间通信的UnixSocket缓存区尺寸
-            ini_set('swoole.unixsock_buffer_size', $config['server']['unixsock_buffer_size']);
+            ini_set('swoole.unixsock_buffer_size', $config['php']['unixsock_buffer_size']);
         }
 
         if ($logPath && !$config['conf']['log_file'])
@@ -338,12 +337,18 @@ class EtServer
         # 更新配置
         self::formatConfig($config);
 
-
         $lightBlue = "\x1b[36m";
         $end       = "\x1b[39m";
         info("{$lightBlue}======= Swoole Config ========\n". json_encode($config['conf'], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE). "{$end}");
 
-        self::$config   = $config;
+        self::$config = $config;
+
+        if ($config['server']['cluster_mode'])
+        {
+            # 集群模式
+            $this->startForClusters();
+        }
+
         # 初始化计数器
         self::$counter  = new swoole_atomic();
         self::$counterX = new swoole_atomic();
@@ -569,6 +574,9 @@ class EtServer
     {
         global $argv;
 
+        # 加载自定义函数
+        Func::reload();
+
         # 实例化资源对象
         if ($server->taskworker)
         {
@@ -675,6 +683,23 @@ class EtServer
     public function onManagerStop($server)
     {
         debug('manager stopped');
+    }
+
+    /**
+     * 用集群模式启动
+     */
+    protected function startForClusters()
+    {
+        if ($this->serverMode === 'both')
+        {
+            $process = new swoole_process(function(swoole_process $worker)
+            {
+                # 这个里面
+                $this->startTaskServer();
+            });
+
+            $pid = $process->start();
+        }
     }
 
     /**
@@ -815,4 +840,11 @@ class EtServer
             }
         }
     }
+}
+
+
+
+class EtTaskServer extends swoole_server
+{
+
 }

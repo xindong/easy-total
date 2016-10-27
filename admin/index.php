@@ -3,60 +3,99 @@
 <script type="text/javascript" src="/assets/highcharts/modules/solid-gauge.js"></script>
 
 <?php
-if ($this->worker->isSSDB)
-{
-  $maxSize = 1000;
-  $info = [];
-  $type = 'SSDB磁盘';
 
-
-  # 得到ssdb占用的硬盘空间
-  $rs = $this->worker->ssdb->info();
-  end($rs);
-  $data = current($rs);
-  $size = 0;
-  foreach(explode("\n", trim($data)) as $item)
-  {
-    $arr = preg_split('#[ ]+#', trim($item));
-    if (is_numeric($arr[0]) && isset($arr[2]))
-    {
-      $size += $arr[2];
-    }
-  }
-  $info['used_memory'] = $size * 1024 * 1024;
-  unset($data, $rs, $size);
-}
-else
+$getConnect = function()
 {
-  $maxSize = 16;
-  $type = 'Redis内存';
-  if ($this->worker->redis instanceof Redis)
-  {
-    $info = $this->worker->redis->info();
-  }
-  else
-  {
-    $info = ['used_memory' => 0];
-    foreach (EtServer::$config['redis']['hosts'] as $i => $v)
+    try
     {
-      $tmp = $this->worker->redis->info($i);
-      $info['used_memory'] += $tmp['used_memory'];
+        $config = EtServer::$config['data'];
+        switch ($config['type'])
+        {
+            case 'mysql':
+                return null;
+
+            case 'redis':
+            default:
+                if (is_array($config['link']))
+                {
+                    $connection = new RedisCluster(null, $config['link']);
+                }
+                else
+                {
+                    list($host, $port) = explode(':', $config['link']);
+                    $connection = new Redis();
+                    $connection->connect($host, $port);
+                }
+                return $connection;
+        }
     }
-  }
+    catch (Exception $e)
+    {
+        warn($e->getMessage());
+        return false;
+    }
+};
+
+/**
+ * @var Redis $redis
+ */
+$redis = $getConnect();
+if ($redis)
+{
+    if (false === $redis->time(0))
+    {
+        $maxSize = 1000;
+        $info    = [];
+        $type    = 'SSDB磁盘';
+
+        # 得到ssdb占用的硬盘空间
+        $rs = $redis->info();
+        end($rs);
+        $data = current($rs);
+        $size = 0;
+        foreach (explode("\n", trim($data)) as $item)
+        {
+            $arr = preg_split('#[ ]+#', trim($item));
+            if (is_numeric($arr[0]) && isset($arr[2]))
+            {
+                $size += $arr[2];
+            }
+        }
+        $info['used_memory'] = $size * 1024 * 1024;
+        unset($data, $rs, $size);
+    }
+    else
+    {
+        $maxSize = 16;
+        $type    = 'Redis内存';
+        if ($redis instanceof Redis)
+        {
+            $info = $redis->info();
+        }
+        else
+        {
+            $info = ['used_memory' => 0];
+            foreach (EtServer::$config['redis']['hosts'] as $i => $v)
+            {
+                $tmp = $redis->info($i);
+                $info['used_memory'] += $tmp['used_memory'];
+            }
+        }
+    }
 }
 
 $allMemory     = [
-    MainWorker::$serverName => EtServer::$startUseMemory
+    WorkerEasyTotal::$serverName => EtServer::$startUseMemory
 ];
-$allMemoryTotal = $allMemory[MainWorker::$serverName];
+$allMemoryTotal = $allMemory[WorkerEasyTotal::$serverName];
 
 $allMemoryData = $this->worker->redis->hGetAll('server.memory');
 if ($allMemoryData)foreach ($allMemoryData as $key => $item)
 {
   list($mem, $time, $serv, $wid) = unserialize($item);
-  if (MainWorker::$timed - $time < 80)
+  if (WorkerEasyTotal::$timed - $time < 80)
   {
-    if ($serv == MainWorker::$serverName)
+    if ($serv == WorkerEasyTotal::$serverName)
     {
       $allMemory[$serv] += $mem;
       $allMemoryTotal   += $mem;

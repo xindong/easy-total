@@ -1,0 +1,18 @@
+{
+  "name": "EasyTotal",
+  "description": "一个可以对预先设定的sql语句进行实时数据统计并输出结果的服务",
+  "config": {
+    "bin-dir": "bin",
+    "data-dir": "data"
+  },
+  "autoload": {
+    "psr-0": {
+      "": [
+        "classes/"
+      ]
+    }
+  },
+  "require-dev": {
+    "myqee/server": "dev-master"
+  }
+}

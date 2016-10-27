@@ -1,150 +1,37 @@
 <?php
 
-class Manager
+class WorkerAPI extends MyQEE\Server\WorkerAPI
 {
     /**
-     * @var swoole_http_server
+     * @var WorkerEasyTotal
      */
-    protected $server;
+    public $worker;
 
-    /**
-     * @var MainWorker
-     */
-    protected $worker;
-
-    /**
-     * @var int
-     */
-    protected $workerId = 0;
-
-    /**
-     * @var swoole_http_request
-     */
-    protected $request;
-
-    /**
-     * @var swoole_http_response
-     */
-    protected $response;
-
-    /**
-     * Manager constructor.
-     */
-    public function __construct($server, $worker, $workerId)
+    public function onStart()
     {
-        $this->server   = $server;
-        $this->worker   = $worker;
-        $this->workerId = $workerId;
-
-        require_once __DIR__ .'/SQL.php';
+        $this->worker = EtServer::$workers['EasyTotal'];
     }
 
     /**
-     * @param swoole_http_request $request
-     * @param swoole_http_response $response
+     * @param \Swoole\Http\Request $request
+     * @param \Swoole\Http\Response $response
      * @return mixed
      */
-    public function onRequest(swoole_http_request $request, swoole_http_response $response)
+    public function onRequest($request, $response)
     {
         $this->request  = $request;
         $this->response = $response;
 
         $uri    = trim($request->server['request_uri'], ' /');
         $uriArr = explode('/', $uri);
-        $type   = array_shift($uriArr);
+        array_shift($uriArr);
 
-        switch ($type)
-        {
-            case 'api':
-                $this->api(implode('/', $uriArr));
-                break;
-
-            case 'admin':
-                $this->admin(implode('/', $uriArr));
-                break;
-
-            case 'assets':
-                $this->assets(implode('/', $uriArr));
-                break;
-
-            default:
-
-                $response->status(404);
-                $response->end('page not found');
-                break;
-        }
+        $this->api(implode('/', $uriArr));
 
         $this->request  = null;
         $this->response = null;
 
         return true;
-    }
-
-    /**
-     * webSocket协议收到消息
-     *
-     * @param swoole_server $server
-     * @param swoole_websocket_frame $frame
-     * @return mixed
-     */
-    public function onMessage(swoole_websocket_server $server, swoole_websocket_frame $frame)
-    {
-        # 给客户端发送消息
-        # $server->push($frame->fd, 'data');
-    }
-
-    /**
-     * webSocket端打开连接
-     *
-     * @param swoole_websocket_server $server
-     * @param swoole_http_request $request
-     * @return mixed
-     */
-    public function onOpen(swoole_websocket_server $server, swoole_http_request $request)
-    {
-        debug("server: handshake success with fd{$request->fd}");
-    }
-
-    protected function admin($uri)
-    {
-        if ($uri === '')
-        {
-            $uri = 'index';
-        }
-        else
-        {
-            $uri  = str_replace(['\\', '../'], ['/', '/'], $uri);
-        }
-
-        $file = __DIR__ .'/../admin/'. $uri .'.php';
-        debug($file);
-
-        if (!is_file($file))
-        {
-            $this->response->status(404);
-            $this->response->end('page not found');
-            return;
-        }
-
-        ob_start();
-        include __DIR__ .'/../admin/_header.php';
-        if (!$this->worker->redis)
-        {
-            echo '<div style="padding:0 15px;"><div class="alert alert-danger" role="alert">redis服务器没有启动</div></div>';
-            $rs = null;
-        }
-        else
-        {
-            $rs = include $file;
-        }
-
-        if ($rs !== 'noFooter')
-        {
-            include __DIR__ . '/../admin/_footer.php';
-        }
-        $html = ob_get_clean();
-
-        $this->response->end($html);
     }
 
     protected function api($uri)
@@ -269,8 +156,7 @@ class Manager
 
                     if (IS_DEBUG)
                     {
-                        echo "new option: ";
-                        print_r($option);
+                        $this->debug("new option: ". print_r($option, true));
                     }
 
                     $data['status'] = 'ok';
@@ -550,7 +436,7 @@ class Manager
                 # 重启所有进程
                 $data['status'] = 'ok';
 
-                debug('restart server by api from ip: '. $this->request->server['remote_addr']);
+                $this->debug('restart server by api from ip: '. $this->request->server['remote_addr']);
 
                 # 200 毫秒后重启
                 swoole_timer_after(200, function()
@@ -729,63 +615,6 @@ class Manager
         return null;
     }
 
-    /**
-     * 输出静态文件
-     *
-     * @param $uri
-     */
-    protected function assets($uri)
-    {
-        $uri  = str_replace(['\\', '../'], ['/', '/'], $uri);
-        $rPos = strrpos($uri, '.');
-        if (false === $rPos)
-        {
-            # 没有任何后缀
-            $this->response->status(404);
-            $this->response->end('page not found');
-            return;
-        }
-
-        $type = strtolower(substr($uri, $rPos + 1));
-
-        $header = [
-            'js'    => 'application/x-javascript',
-            'css'   => 'text/css',
-            'png'   => 'image/png',
-            'jpg'   => 'image/jpeg',
-            'jpeg'  => 'image/jpeg',
-            'gif'   => 'image/gif',
-            'json'  => 'application/json',
-            'svg'   => 'image/svg+xml',
-            'woff'  => 'application/font-woff',
-            'woff2' => 'application/font-woff2',
-            'ttf'   => 'application/x-font-ttf',
-            'eot'   => 'application/vnd.ms-fontobject',
-        ];
-
-        if (isset($header[$type]))
-        {
-            $this->response->header('Content-Type', $header[$type]);
-        }
-
-        $file = __DIR__ .'/../assets/'. $uri;
-        if (is_file($file))
-        {
-            # 设置缓存头信息
-            $time = 86400;
-            $this->response->header('Cache-Control', 'max-age='. $time);
-            $this->response->header('Last-Modified', date('D, d M Y H:i:s \G\M\T', filemtime($file)));
-            $this->response->header('Expires'      , date('D, d M Y H:i:s \G\M\T', time() + $time));
-            $this->response->header('Pragma'       , 'cache');
-
-            $this->response->end(file_get_contents($file));
-        }
-        else
-        {
-            $this->response->status(404);
-            $this->response->end('assets not found');
-        }
-    }
 
     /**
      * 创建一个序列设置, 如果存在则合并
@@ -873,18 +702,47 @@ class Manager
         return $seriesOption;
     }
 
+    /**
+     * @param Swoole\Server $server
+     * @param $fromWorkerId
+     * @param $message
+     * @return null
+     */
+    public function onPipeMessage($server, $fromWorkerId, $message, $serverId = -1)
+    {
+        switch ($message)
+        {
+            case 'task.reload':
+                # 更新配置
+                $this->worker->reloadSetting();
+                break;
+
+            case 'pause':
+                # 暂停接受任何数据
+                $this->worker->pause();
+                break;
+
+            case 'continue':
+                # 继续接受数据
+                $this->worker->stopPause();
+
+                break;
+        }
+    }
+
+
     protected function notifyAllWorker($data)
     {
         for ($i = 0; $i < $this->server->setting['worker_num']; $i++)
         {
             # 每个服务器通知更新
-            if ($i == $this->workerId)
+            if ($i == $this->id)
             {
-                $this->worker->onPipeMessage($this->server, $this->workerId, $data);
+                $this->onPipeMessage($this->server, $this->id, $data);
             }
             else
             {
-                $this->server->sendMessage($data, $i);
+                $this->sendMessage($data, $i);
             }
         }
     }
