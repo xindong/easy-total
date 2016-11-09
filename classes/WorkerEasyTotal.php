@@ -82,32 +82,18 @@ class WorkerEasyTotal extends MyQEE\Server\WorkerTCP
     protected $dumpFile = '';
 
     /**
-     * 记录数据的数组
-     *
-     * @var array
-     */
-    protected $buffer = [];
-
-    /**
-     * 记录数据的最后时间
-     *
-     * @var array
-     */
-    protected $bufferTime = [];
-
-    /**
-     * 数据包是否JSON格式
-     *
-     * @var array
-     */
-    protected $bufferIsJSON = [];
-
-    /**
      * 需要延时关闭的
      *
      * @var array
      */
     protected $delayCloseFd = [];
+
+    /**
+     * Fluent对象
+     *
+     * @var FluentInForward
+     */
+    protected $fluentInForward;
 
     /**
      * 是否完成了初始化
@@ -129,12 +115,12 @@ class WorkerEasyTotal extends MyQEE\Server\WorkerTCP
     {
         parent::__construct($server);
 
-        FlushData::$workerId = $this->id;
-        $this->dumpFile      = EtServer::$config['server']['dump_path'] .'total-dump-'. substr(md5(EtServer::$configFile), 16, 8) . '-'. $this->id .'.txt';
-        $this->flushData     = new FlushData();
+        FlushData::$workerId   = $this->id;
+        $this->dumpFile        = EtServer::$config['server']['dump_path'] .'total-dump-'. substr(md5(EtServer::$configFile), 16, 8) . '-'. $this->id .'.txt';
+        $this->flushData       = new FlushData();
         # 包数据的key
-        self::$packKey       = chr(146) . chr(206);
-
+        self::$packKey         = chr(146) . chr(206);
+        $this->fluentInForward = new FluentInForward($server);
     }
 
     /**
@@ -146,6 +132,11 @@ class WorkerEasyTotal extends MyQEE\Server\WorkerTCP
 
         $this->worker->redis =& $this->redis;
         $this->worker->ssdb  =& $this->ssdb;
+
+        # 设置Fluent的相关回调
+        $this->fluentInForward->on('checkTag', [$this, 'onCheckTag']);
+        $this->fluentInForward->on('each',     [$this, 'onEach']);
+        $this->fluentInForward->on('ack',      [$this, 'onAck']);
 
         if (!$this->reConnectRedis())
         {
@@ -249,10 +240,14 @@ class WorkerEasyTotal extends MyQEE\Server\WorkerTCP
                     {
                         try
                         {
-                            $this->closeConnect($fd);
+                            $this->fluentInForward->closeConnect($fd);
                         }
-                        catch (Exception $e){}
+                        catch (Exception $e)
+                        {
+
+                        }
                     }
+
                     $this->delayCloseFd = [];
                 }
 
@@ -269,22 +264,6 @@ class WorkerEasyTotal extends MyQEE\Server\WorkerTCP
             # 每10分钟处理1次
             swoole_timer_tick(1000 * 600, function()
             {
-                # 清理老数据
-                if ($this->buffer)
-                {
-                    self::$timed = time();
-                    foreach ($this->buffer as $fd)
-                    {
-                        if (self::$timed - $this->bufferTime[$fd] > 300)
-                        {
-                            # 超过5分钟没有更新数据, 则移除
-                            $this->info('clear expired data length: '. strlen($this->buffer[$fd]));
-
-                            $this->clearBuffer($fd);
-                        }
-                    }
-                }
-
                 # 更新配置
                 $this->reloadSetting();
             });
@@ -383,11 +362,7 @@ class WorkerEasyTotal extends MyQEE\Server\WorkerTCP
         {
             # 没有连接上redis, 或者是还存在没处理完的数据
             # 关闭连接, 不接受任何数据
-
-            if (isset($this->buffer[$fd]))
-            {
-                $this->clearBuffer($fd);
-            }
+            $this->fluentInForward->clearBuffer($fd);
 
             # 如果立即关闭的话, 推送数据的程序会立即重新连接上重新推送数据
             # 所以先放到延迟关闭的数组里, 系统会每1分钟处理1次关闭连接
@@ -396,143 +371,18 @@ class WorkerEasyTotal extends MyQEE\Server\WorkerTCP
             return false;
         }
 
-        if (!isset($this->buffer[$fd]))
-        {
-            # 包头
-            switch (ord($data[0]))
-            {
-                case 0x5b;      # json 格式的 [ 字符
-                    $this->bufferIsJSON[$fd] = true;
-                    break;
-
-                case 0x92:      # MsgPack 的3数组
-                case 0x93:      # MsgPack 的4数组
-                    $this->bufferIsJSON[$fd] = false;
-                    break;
-
-                default:
-                    $this->warn("accept unknown data length: ". strlen($data). ', head ascii is: '. ord($data[0]));
-                    return true;
-            }
-
-            $this->buffer[$fd]     = $data;
-            $this->bufferTime[$fd] = self::$timed;
-        }
-        else
-        {
-            $this->buffer[$fd]    .= $data;
-            $this->bufferTime[$fd] = self::$timed;
-        }
-
-        # 解开数据
-        if ($this->bufferIsJSON[$fd])
-        {
-            $arr       = $this->unpackByJson($fd);
-            $isMsgPack = false;
-        }
-        else
-        {
-            $arr       = $this->unpackByMsgPack($fd);
-            $isMsgPack = true;
-        }
-
-        if (!$arr || !is_array($arr))
-        {
-            if (($len = strlen(($this->buffer[$fd]))) > 52428800)
-            {
-                # 超过50MB
-                $this->clearBuffer($fd);
-
-                $this->warn("pack data is too long: {$len}byte. now close client.");
-
-                # 关闭连接
-                $this->closeConnect($fd);
-
-                return false;
-            }
-
-            return true;
-        }
-
-        # 处理数据
-        $this->execute($fd, $fromId, $arr, $isMsgPack);
-
-        if (!isset($this->buffer[$fd]))return true;
-
-        # 处理粘包的数据
-        while(true)
-        {
-            # 删除上一个引用地址
-            unset($arr);
-
-            if ($this->bufferIsJSON[$fd])
-            {
-                $arr       = $this->unpackByJson($fd);
-                $isMsgPack = false;
-            }
-            else
-            {
-                $arr       = $this->unpackByMsgPack($fd);
-                $isMsgPack = true;
-            }
-
-            if (!$arr || !is_array($arr))
-            {
-                break;
-            }
-
-            # 处理数据
-            $this->execute($fd, $fromId, $arr, $isMsgPack);
-
-            if (!isset($this->buffer[$fd]))
-            {
-                break;
-            }
-        }
-        unset($arr);
-
-        return true;
+        return $this->fluentInForward->onReceive($server, $fd, $fromId, $data);
     }
 
     /**
-     * 处理数据
+     * 检查tag是否要处理
      *
-     * @param $fd
-     * @param $fromId
-     * @param $arr
-     * @param $isMsgPack
+     * @param $tag
+     * @param $extra
      * @return bool
      */
-    protected function execute($fd, $fromId, & $arr, $isMsgPack)
+    public function onCheckTag(& $tag, & $extra)
     {
-        $tag = $arr[0];
-        if (!$tag || !is_string($tag))
-        {
-            $this->warn('error data, not found tag');
-
-            # 把客户端关闭了
-            $this->closeConnect($fd);
-            return false;
-        }
-
-        # 查看连接信息
-        $info = $this->server->connection_info($fd, $fromId);
-        if (false === $info)
-        {
-            # 连接已经关闭
-            $this->warn("connection is closed. tag: {$tag}");
-            $this->clearBuffer($fd);
-            return false;
-        }
-        elseif (self::$timed - $info['last_time'] > 30)
-        {
-            # 最后发送的时间距离现在已经超过 30 秒, 直接不处理, 避免 ack 确认超时的风险
-            $this->closeConnect($fd);
-            $this->info("connection wait timeout: " . (self::$timed - $info['last_time']) ."s. tag: $tag");
-            return false;
-        }
-        unset($info);
-
         # example: xd.game.hsqj.consume : $app = hsqj, $table = consume
         # example: consume: $app = '', $table = consume
         list($app, $table) = array_splice(explode('.', $tag), -2);
@@ -541,6 +391,8 @@ class WorkerEasyTotal extends MyQEE\Server\WorkerTCP
             $table = $app;
             $app   = 'default';
         }
+        $extra['table'] = $table;
+        $extra['app']   = $app;
 
         if (isset($this->jobsGroupByTable[$table]) && $this->jobsGroupByTable[$table])
         {
@@ -552,282 +404,156 @@ class WorkerEasyTotal extends MyQEE\Server\WorkerTCP
             $haveTask = false;
         }
 
-        # 是否需要再解析（Fluentd 会把数据通过 buffer 字符串直接传过来）
-        $delayParseRecords = $isMsgPack && is_string($arr[1]);
+        return $haveTask;
+    }
 
-        if ($delayParseRecords || is_array($arr[1]))
-        {
-            # 多条数据
-            # [tag, [[time,record], [time,record], ...], option]
-            $option  = $arr[2] ?: [];
-            $records = $arr[1];
-        }
-        else
-        {
-            # 单条数据
-            # [tag, time, record, option]
-            $option  = $arr[3] ?: [];
-            $records = [[$arr[1], $arr[2]]];
-        }
+    /**
+     * 遍历循环处理数据
+     *
+     * @param $tag
+     * @param $records
+     * @param $extra
+     * @return bool
+     */
+    public function onEach($tag, $records, & $extra)
+    {
+        # 这边的 job 是根据 sql 生成出的数据序列处理任务, 通常情况下是 1个 sql 对应1个序列任务
+        # 但2个相同 group by, from 和 where 条件的 sql 则共用一个序列任务, 例如:
+        # select count(*) from test group time 1h where id in (1,2,3)
+        # 和
+        # select sum(value) from test group time 1h where id in (1,2,3) save as test_sum
+        # 占用相同序列任务
+        #
+        # 这样设计的目的是共享相同序列减少数据运算,储存开销
 
-        if ($option && $option['chunk'])
-        {
-            $ackData = ['ack' => $option['chunk']];
-            $isSend  = false;
-        }
-        else
-        {
-            $ackData = null;
-            $isSend  = true;
-        }
+        # $extra 是在tag回调里解析出来的
+        $app   = $extra['app'];
+        $table = $extra['table'];
+        $jobs  = [];
 
-        if ($haveTask)
+        foreach ($this->jobsGroupByTable[$table] as $key => $job)
         {
-            # 有任务需要处理
-
-            if ($delayParseRecords)
+            if (!$job['allApp'] && ($job['for'] && !$job['for'][$app]))
             {
-                # 解析数据
-                $this->parseRecords($records);
+                # 这个任务是为某个APP定制的
+                continue;
             }
 
-            # 这边的 job 是根据 sql 生成出的数据序列处理任务, 通常情况下是 1个 sql 对应1个序列任务
-            # 但2个相同 group by, from 和 where 条件的 sql 则共用一个序列任务, 例如:
-            # select count(*) from test group time 1h where id in (1,2,3)
-            # 和
-            # select sum(value) from test group time 1h where id in (1,2,3) save as test_sum
-            # 占用相同序列任务
-            #
-            # 这样设计的目的是共享相同序列减少数据运算,储存开销
-
-            $jobs = [];
-            foreach ($this->jobsGroupByTable[$table] as $key => $job)
-            {
-                if (!$job['allApp'] && ($job['for'] && !$job['for'][$app]))
-                {
-                    # 这个任务是为某个APP定制的
-                    continue;
-                }
-
-                $jobs[$key] = $job;
-            }
-
-            if ($jobs)
-            {
-                try
-                {
-                    $count = count($records);
-
-                    if (IS_DEBUG)
-                    {
-                        $this->debug("worker: $this->id, tag: $tag, records count: " . $count);
-                    }
-
-                    # 统计用的当前时间的key
-                    $dayKey = date('Ymd,H:i');
-
-                    # 记录APP统计的起始时间
-                    $appBeginTime = microtime(1);
-
-                    foreach ($jobs as $key => $job)
-                    {
-                        if (!isset($this->jobAppList[$key][$app]))
-                        {
-                            # 增加app列表映射, 用于后期数据管理
-                            $this->flushData->apps[$key][$app] = $this->jobAppList[$key][$app] = self::$timed;
-                        }
-
-                        # 记录当前任务的起始时间
-                        $beginTime = microtime(1);
-                        foreach ($records as $record)
-                        {
-                            # 处理数据
-                            $time = isset($record[1]['time']) && $record[1]['time'] > 0 ? $record[1]['time'] : $record[0];
-
-                            $this->doJob($job, $app, $time, $record[1]);
-                        }
-
-                        # 序列的统计数据
-                        $this->flushData->counter[$key][$dayKey]['total'] += $count;
-                        $this->flushData->counter[$key][$dayKey]['time']  += 1000000 * (microtime(1) - $beginTime);
-                    }
-
-                    # APP的统计数据
-                    $this->flushData->counterApp[$app][$dayKey]['total'] += $count;
-                    $this->flushData->counterApp[$app][$dayKey]['time']  += 1000000 * (microtime(1) - $appBeginTime);
-                }
-                catch (Exception $e)
-                {
-                    # 执行中报错, 可能是redis出问题了
-                    $this->warn($e->getMessage());
-
-                    # 重置临时数据
-                    $this->flushData->restore();
-
-                    # 关闭连接
-                    $this->closeConnect($fd);
-
-                    # 检查连接
-                    $this->checkRedis();
-
-                    return false;
-                }
-            }
-        }
-        else
-        {
-            $jobs = null;
-        }
-
-        if ($ackData)
-        {
-            # ACK 确认
-            if ($isMsgPack)
-            {
-                $isSend = $this->server->send($fd, $tmp = msgpack_pack($ackData));
-            }
-            else
-            {
-                $isSend = $this->server->send($fd, $tmp = json_encode($ackData));
-            }
-
-            if (IS_DEBUG && !$isSend)
-            {
-                $this->debug("send ack data fail. fd: $fd, data: $tmp");
-            }
+            $jobs[$key] = $job;
         }
 
         if ($jobs)
         {
-            if ($isSend)
+            try
             {
-                # 发送成功
+                $count = $extra['count'] = count($records);
 
-                # 标记为任务完成
-                $this->flushData->commit();
-
-                # 计数器增加
-                $count = count($records);
-                if ($count > 0)
+                if (IS_DEBUG)
                 {
-                    EtServer::$counter->add($count);
+                    $this->debug("worker: $this->id, tag: $tag, records count: " . $count);
                 }
+
+                # 统计用的当前时间的key
+                $dayKey = date('Ymd,H:i');
+
+                # 记录APP统计的起始时间
+                $appBeginTime = microtime(1);
+
+                foreach ($jobs as $key => $job)
+                {
+                    if (!isset($this->jobAppList[$key][$app]))
+                    {
+                        # 增加app列表映射, 用于后期数据管理
+                        $this->flushData->apps[$key][$app] = $this->jobAppList[$key][$app] = self::$timed;
+                    }
+
+                    # 记录当前任务的起始时间
+                    $beginTime = microtime(1);
+                    foreach ($records as $record)
+                    {
+                        # 处理数据
+                        $time = isset($record[1]['time']) && $record[1]['time'] > 0 ? $record[1]['time'] : $record[0];
+
+                        $this->doJob($job, $app, $time, $record[1]);
+                    }
+
+                    # 序列的统计数据
+                    $this->flushData->counter[$key][$dayKey]['total'] += $count;
+                    $this->flushData->counter[$key][$dayKey]['time']  += 1000000 * (microtime(1) - $beginTime);
+                }
+
+                # APP的统计数据
+                $this->flushData->counterApp[$app][$dayKey]['total'] += $count;
+                $this->flushData->counterApp[$app][$dayKey]['time']  += 1000000 * (microtime(1) - $appBeginTime);
             }
-            else
+            catch (Exception $e)
             {
-                # 发送失败, 恢复数据
+                # 执行中报错, 可能是redis出问题了
+                $this->warn($e->getMessage());
+
+                # 重置临时数据
                 $this->flushData->restore();
+
+                # 检查连接
+                $this->checkRedis();
+
+                return false;
             }
         }
 
         return true;
     }
 
-    protected function unpackByJson($fd)
-    {
-        # JSON 格式数据结尾
-        $arr = @json_decode($this->buffer[$fd], true);
-        if (!$arr)
-        {
-            # 处理粘包的可能
-            $len = strlen($this->buffer[$fd]);
-            $tmp = '';
-            for ($i = 0; $i < $len; $i++)
-            {
-                $tmp .= $this->buffer[$fd][$i];
-                if ($this->buffer[$fd][$i] === ']')
-                {
-                    $arr = @json_decode($tmp, true);
-                    if (is_array($arr) && $arr)
-                    {
-                        $this->buffer[$fd] = substr($this->buffer[$fd], $i + 1);
-
-                        return $arr;
-                    }
-                }
-            }
-
-            return false;
-        }
-        else
-        {
-            $this->clearBuffer($fd);
-
-            $countArr = count($arr);
-            if ($countArr < 3)
-            {
-                $this->warn("unknown data, array count mush be 3 or 4, unpack data count is: $countArr");
-                $this->closeConnect($fd);
-
-                return false;
-            }
-
-            return $arr;
-        }
-    }
-
-    protected function unpackByMsgPack($fd)
-    {
-        $arr = @msgpack_unpack($this->buffer[$fd]);
-
-        if (!$arr || !is_array($arr))
-        {
-            return false;
-        }
-        else
-        {
-            if (count($arr) < 2)
-            {
-                return false;
-            }
-
-            $this->clearBuffer($fd);
-            return $arr;
-        }
-    }
-
     /**
-     * 关闭连接
+     * 当返回ACK确认后回调
      *
-     * @param $fd
+     * @param $status
+     * @param $extra
      */
-    protected function closeConnect($fd)
+    public function onAck($status, $extra)
     {
-        $this->clearBuffer($fd);
-        $this->server->close($fd);
-    }
+        if ($status)
+        {
+            # 发送成功
 
-    protected function clearBuffer($fd)
-    {
-        unset($this->buffer[$fd]);
-        unset($this->bufferTime[$fd]);
-        unset($this->bufferIsJSON[$fd]);
+            # 标记为任务完成
+            $this->flushData->commit();
+
+            # 计数器增加
+            if ($extra['count'] > 0)
+            {
+                EtServer::$counter->add($extra['count']);
+            }
+        }
+        else
+        {
+            # 发送失败, 恢复数据
+            $this->flushData->restore();
+        }
     }
 
     public function onConnect($server, $fd, $fromId)
     {
-        if (isset($this->buffer[$fd]))
-        {
-            $this->clearBuffer($fd);
-        }
+        $this->fluentInForward->onConnect($server, $fd, $fromId);
     }
 
     public function onClose($server, $fd, $fromId)
     {
-        if (isset($this->buffer[$fd]))
-        {
-            $this->clearBuffer($fd);
-        }
+        $this->fluentInForward->onClose($server, $fd, $fromId);
     }
 
+    /**
+     * 暂停服务器接受数据
+     */
     public function pause()
     {
-        $this->pause        = true;
-        $this->buffer       = [];
-        $this->bufferIsJSON = [];
-        $this->bufferTime   = [];
+        $this->pause = true;
+        $this->fluentInForward->cleanAll();
     }
 
+    /**
+     * 取消暂停
+     */
     public function stopPause()
     {
         if ($this->delayCloseFd)
@@ -837,7 +563,7 @@ class WorkerEasyTotal extends MyQEE\Server\WorkerTCP
             {
                 try
                 {
-                    $this->closeConnect($fd);
+                    $this->fluentInForward->closeConnect($fd);
                 }
                 catch(Exception $e){}
             }
@@ -847,35 +573,11 @@ class WorkerEasyTotal extends MyQEE\Server\WorkerTCP
         $this->pause = false;
     }
 
-    protected function parseRecords(& $recordsData)
-    {
-        if (is_string($recordsData))
-        {
-            # 解析里面的数据
-            $tmpArr = [];
-            $arr    = explode(self::$packKey, $recordsData);
-            $len    = count($arr);
-            $str    = '';
-
-            for ($i = 1; $i < $len; $i++)
-            {
-                $str .= self::$packKey . $arr[$i];
-
-                $tmpRecord = @msgpack_unpack($str);
-                if (false !== $tmpRecord && is_array($tmpRecord))
-                {
-                    $tmpArr[] = $tmpRecord;
-
-                    # 重置临时字符串
-                    $str = '';
-                }
-            }
-
-            $recordsData = $tmpArr;
-        }
-    }
-
-
+    /**
+     * 重新连接redis服务器
+     *
+     * @return bool
+     */
     protected function reConnectRedis()
     {
         if (EtServer::$config['redis'][0])
@@ -915,9 +617,7 @@ class WorkerEasyTotal extends MyQEE\Server\WorkerTCP
             {
                 # 大部分用redis的操作, 部分不兼容的用这个对象来处理
                 $this->isSSDB = true;
-                require_once __DIR__ . '/SSDB.php';
-
-                $this->ssdb = new SimpleSSDB($host, $port);
+                $this->ssdb   = new SimpleSSDB($host, $port);
             }
 
             $id = null;
@@ -1237,7 +937,7 @@ class WorkerEasyTotal extends MyQEE\Server\WorkerTCP
             if (!$this->series[$seriesKey])
             {
                 # 被意外删除? 动态更新序列
-                $this->series[$seriesKey] = Manager::createSeriesByQueryOption($opt, $this->queries);
+                $this->series[$seriesKey] = WorkerAPI::createSeriesByQueryOption($opt, $this->queries);
 
                 # 更新服务器的
                 $this->redis->hSet('series', $seriesKey, serialize($this->series[$seriesKey]));

@@ -54,7 +54,7 @@ else
             $this->worker->redis->hset('queries', $key, serialize($newOption));
             $this->worker->queries[$key] = $newOption;
 
-            $seriesOption = Manager::createSeriesByQueryOption($newOption, $this->worker->queries);
+            $seriesOption = WorkerAPI::createSeriesByQueryOption($newOption, $this->worker->queries);
             $this->worker->redis->hset('series', $seriesOption['key'], serialize($seriesOption));
         }
     }
