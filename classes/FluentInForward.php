@@ -365,7 +365,7 @@ class FluentInForward
         $extra = [];
 
         # 是否需要处理数据
-        if (call_user_func($this->event['checkTag'], $tag, $extra))
+        if (call_user_func_array($this->event['checkTag'], [&$tag, &$extra]))
         {
             $parse = true;
         }
@@ -385,7 +385,7 @@ class FluentInForward
                 }
 
                 # 处理数据
-                $rs = call_user_func($this->event['each'], $tag, $records, $extra);
+                $rs = call_user_func_array($this->event['each'], [$tag, $records, &$extra]);
                 if (!$rs)
                 {
                     # 返回错误
@@ -428,7 +428,7 @@ class FluentInForward
         }
 
         # 回调
-        call_user_func($this->event['ack'], $isSend, $extra);
+        call_user_func_array($this->event['ack'], [$isSend, $extra]);
 
         return true;
     }

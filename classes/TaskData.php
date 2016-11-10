@@ -162,7 +162,7 @@ class TaskData
             if (false === $reload)
             {
                 # 设置投递时间
-                $job->taskTime = TaskWorker::$timed + self::getDelayTime($job);
+                $job->taskTime = WorkerTask::$timed + self::getDelayTime($job);
             }
         }
     }
