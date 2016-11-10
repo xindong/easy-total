@@ -7,7 +7,7 @@ manager:
   port: 8000
 
   # 服务器Server名, 会发送在 header 的 Server 里
-  name: MQSRV
+  name: ESRV
 
   # 管理页面路径前缀
   manager_prefix: /admin/
@@ -26,7 +26,7 @@ data:
 
 redis:
   # 除支持 redis 还支持 ssdb（持久存储, 无内存容量限制), see http://ssdb.io/
-  # 支持集群
+  # 支持redis集群
   - 127.0.0.1:6379
 
 server:
