@@ -306,7 +306,7 @@ class WorkerEasyTotal extends MyQEE\Server\WorkerTCP
                         {
                             # 5分钟还没反应, 避免极端情况下卡死, 发送一个重启信号, 这种情况下可能会丢失部分数据
                             $this->warn("task worker {$i} is dead, now restart it.");
-                            swoole_process::kill($rs['pid']);
+                            \Swoole\Process::kill($rs['pid']);
                             EtServer::$taskWorkerStatus->del("task{$i}");
 
                             # 过5秒后处理
@@ -316,7 +316,7 @@ class WorkerEasyTotal extends MyQEE\Server\WorkerTCP
                                 if (in_array($pid, explode("\n", str_replace(' ', '', trim(`ps -eopid | grep {$pid}`)))))
                                 {
                                     # 如果还存在进程, 强制关闭
-                                    swoole_process::kill($pid, 9);
+                                    \Swoole\Process::kill($pid, 9);
                                 }
                             });
                         }
@@ -794,7 +794,7 @@ class WorkerEasyTotal extends MyQEE\Server\WorkerTCP
         if (is_file($file))
         {
             $count = 0;
-            foreach (explode("\r\n", file_get_contents($file)) as $item)
+            foreach (explode("\0\r\n", file_get_contents($file)) as $item)
             {
                 if (!$item)continue;
 
@@ -836,7 +836,7 @@ class WorkerEasyTotal extends MyQEE\Server\WorkerTCP
             {
                 foreach ($item as $job)
                 {
-                    file_put_contents($this->dumpFile, msgpack_pack($job) . "\r\n", FILE_APPEND);
+                    file_put_contents($this->dumpFile, msgpack_pack($job) . "\0\r\n", FILE_APPEND);
                 }
             }
         }

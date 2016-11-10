@@ -157,6 +157,8 @@ class WorkerTask extends MyQEE\Server\WorkerTask
     /**
      * 通过共享内存来读取数据
      *
+     * todo 还没有测试过可靠性如何
+     *
      * @param $shmKey
      */
     protected function loadDataByShmId($shmKey)
@@ -324,13 +326,13 @@ class WorkerTask extends MyQEE\Server\WorkerTask
                     # 尝试将数据保存到统计汇总里
                     $this->taskData->saveJob($job);
                 }
-                file_put_contents($file, 'jobs,' . msgpack_pack($job) . "\r\n", FILE_APPEND);
+                file_put_contents($file, 'jobs,' . msgpack_pack($job) . "\0\r\n", FILE_APPEND);
             }
         }
 
         if (TaskData::$list)foreach (TaskData::$list as $tag => $list)
         {
-            file_put_contents($file, $tag .','. msgpack_pack($list) ."\r\n", FILE_APPEND);
+            file_put_contents($file, $tag .','. msgpack_pack($list) ."\0\r\n", FILE_APPEND);
         }
 
         $this->info("Task#$this->taskId dump job: ". TaskData::getJobCount() .". list: ". count(TaskData::$list) .", use time:". (microtime(1) - $time) ."s.");
@@ -384,7 +386,7 @@ class WorkerTask extends MyQEE\Server\WorkerTask
     {
         if (is_file($file))
         {
-            foreach (explode("\r\n", file_get_contents($file)) as $item)
+            foreach (explode("\0\r\n", file_get_contents($file)) as $item)
             {
                 if (!$item)continue;
 

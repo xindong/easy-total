@@ -107,6 +107,8 @@ class DataJob
      */
     public $saved = false;
 
+    public $cachedTime;
+
     /**
      * 序列化后的字符
      *
