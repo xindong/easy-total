@@ -147,6 +147,8 @@ class FlushData
     /**
      * 通过共享内存方式投递数据
      *
+     * todo 可靠性赞没有验证
+     *
      * @return int
      */
     protected function flushByShm()

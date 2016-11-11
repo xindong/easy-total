@@ -61,7 +61,38 @@ class WorkerTask extends MyQEE\Server\WorkerTask
             $this->taskData         = new TaskData($this->taskId);
 
             $this->loadDumpData();
+
+            # 每3秒处理1次
+            $this->timeTick(3000, function()
+            {
+                self::$timed = time();
+                $this->taskData->run();
+            });
+
+            # 每分钟更新任务的信息
+            $this->timeTick(60000, function()
+            {
+                $this->updateTaskInfo();
+            });
         }
+        else
+        {
+            # 定时数据清理
+            swoole_timer_tick(1000 * 60 * 5, function()
+            {
+                $this->clean();
+            });
+        }
+
+        # 每1-2小时里重启进程避免数据溢出、未清理数据占用超大内存
+        swoole_timer_tick(mt_rand(1000 * 3600, 1000 * 3600 * 2), function()
+        {
+            $this->dumpData(true);
+
+            $this->info("Task#$this->taskId now auto restart.");
+
+            exit(0);
+        });
     }
 
     /**
@@ -96,12 +127,6 @@ class WorkerTask extends MyQEE\Server\WorkerTask
                      * @var DataJob $data;
                      */
                     $this->taskData->push($data);
-
-                    break;
-
-                case 'job':
-                    # 每3秒会被调用1次
-                    $this->taskData->run();
                     break;
 
                 case 'shm':
@@ -109,46 +134,20 @@ class WorkerTask extends MyQEE\Server\WorkerTask
                     $this->loadDataByShmId($data[1]);
                     break;
 
-                case 'clean':
-                    # 清理数据, 只有 taskId = 0 的进程会被调用
-                    $this->clean();
-                    break;
-
                 case 'total':
                     # 获取指定任务实时统计数据
                     list($queryKey, $uniqueId) = explode('|', $data[1], 3);
 
                     return $this->taskData->getRealTimeData($uniqueId, $queryKey);
-                case 'exit':
-                    # 得到进程通知结束
-                    $this->shutdown();
-                    exit;
+
+                default:
+                    $this->warn("unknown task type $type");
                     break;
-            }
-
-            # 更新任务信息
-            $this->updateTaskInfo();
-
-            # 标记状态为成功
-            $this->updateStatus(true);
-
-            # 如果启动超过一定时间
-            if ($type === 'job' && self::$timed - self::$startTime > 10000)
-            {
-                if (mt_rand(1, 300) === 1)
-                {
-                    # 重启进程避免数据溢出、未清理数据占用超大内存
-                    $this->dumpData(true);
-
-                    $this->info("Task#$this->taskId now restart.");
-
-                    exit(0);
-                }
             }
         }
         catch (Exception $e)
         {
-            warn($e->getMessage());
+            $this->warn($e->getMessage());
         }
 
         return null;
@@ -256,7 +255,7 @@ class WorkerTask extends MyQEE\Server\WorkerTask
         }
         else
         {
-            warn("can not open shm, shm key is : $shmKey");
+            $this->warn("can not open shm, shm key is : $shmKey");
         }
     }
 
@@ -595,9 +594,6 @@ class WorkerTask extends MyQEE\Server\WorkerTask
                         # 移除任务
                         $redis->hDel('series', $key);
                     }
-
-                    # 更新状态
-                    $this->updateStatus(false);
                 }
             }
         }
@@ -665,32 +661,21 @@ class WorkerTask extends MyQEE\Server\WorkerTask
         return true;
     }
 
-    /**
-     * 更新状态
-     */
-    public function updateStatus($done = false)
-    {
-        EtServer::$taskWorkerStatus->set("task{$this->taskId}", ['time' => time(), 'status' => $done ? 0 : 1, 'pid' => $this->server->worker_pid]);
-    }
-
     protected function updateTaskInfo()
     {
         # 更新内存占用
-        if (!isset($this->doTime['updateMemory']) || self::$timed - $this->doTime['updateMemory'] >= 60)
+        list($redis) = self::getRedis();
+        $memoryUse   = memory_get_usage(true);
+        if ($redis)
         {
-            list($redis) = self::getRedis();
-            $memoryUse   = memory_get_usage(true);
-            if ($redis)
-            {
-                /**
-                 * @var Redis $redis
-                 */
-                $redis->hSet('server.memory', self::$serverName .'_'. $this->id, serialize([$memoryUse, time(), self::$serverName, $this->id]));
-            }
-            $this->doTime['updateMemory'] = time();
-
-            $this->info("Task". str_pad('#'.$this->taskId, 4, ' ', STR_PAD_LEFT) ." total jobs: ". TaskData::getJobCount() .", memory: ". number_format($memoryUse/1024/1024, 2) ."MB.");
+            /**
+             * @var Redis $redis
+             */
+            $redis->hSet('server.memory', self::$serverName .'_'. $this->id, serialize([$memoryUse, time(), self::$serverName, $this->id]));
         }
+        $this->doTime['updateMemory'] = time();
+
+        $this->info("Task". str_pad('#'.$this->taskId, 4, ' ', STR_PAD_LEFT) ." total jobs: ". TaskData::getJobCount() .", memory: ". number_format($memoryUse/1024/1024, 2) ."MB.");
     }
 
     /**

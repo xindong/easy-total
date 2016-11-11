@@ -225,13 +225,6 @@ class EtServer extends MyQEE\Server\Server
      */
     public static $startUseMemory;
 
-    /**
-     * 记录任务状态的表
-     *
-     * @var \Swoole\Table
-     */
-    public static $taskWorkerStatus;
-
     public static $configFile;
 
     public function __construct($configFile = 'server.yaml')
@@ -245,6 +238,12 @@ class EtServer extends MyQEE\Server\Server
         }
 
         self::$configFile = $configFile;
+
+        if (!is_file($configFile))
+        {
+            self::warn('指定的配置文件 "'.$configFile.'" 不存在');
+            exit;
+        }
 
         # 解析配置
         $conf = yaml_parse_file($configFile);
@@ -295,7 +294,6 @@ class EtServer extends MyQEE\Server\Server
             'output'   => $conf['output'],
         ];
 
-
         # 是否使用共享内存模式
         define('SHMOP_MODE', $conf['server']['shmop_mode'] ? true : false);
 
@@ -332,13 +330,6 @@ class EtServer extends MyQEE\Server\Server
                 }
             }
         }
-
-        # 任务进程状态, 必须是2的指数
-        self::$taskWorkerStatus = new \Swoole\Table(bindec(str_pad(1, strlen(decbin(self::$config['conf']['task_worker_num'])), 0)) * 16);
-        self::$taskWorkerStatus->column('status', \Swoole\Table::TYPE_INT, 1);
-        self::$taskWorkerStatus->column('time',   \Swoole\Table::TYPE_INT, 10);
-        self::$taskWorkerStatus->column('pid',    \Swoole\Table::TYPE_INT, 10);
-        self::$taskWorkerStatus->create();
 
         # 列出当前任务的内存
         $memory2 = $memory1;

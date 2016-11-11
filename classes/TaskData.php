@@ -168,14 +168,6 @@ class TaskData
     }
 
     /**
-     * 更新状态
-     */
-    public function updateStatus()
-    {
-        EtServer::$taskWorkerStatus->set("task{$this->taskId}", ['time' => time(), 'status' => 1]);
-    }
-
-    /**
      * 导出数据
      */
     protected function export()
@@ -310,11 +302,6 @@ class TaskData
             else
             {
                 $fail++;
-            }
-
-            if ($success % 1000 === 0)
-            {
-                $this->updateStatus();
             }
         }
     }
@@ -486,8 +473,6 @@ class TaskData
                 {
                     warn("push data {$tag} fail. fluent server: " . self::$outputConfig['type'] . ': ' . self::$outputConfig['link']);
                 }
-
-                $this->updateStatus();
             }
         }
         catch (Exception $e)
@@ -557,7 +542,6 @@ class TaskData
      */
     protected function checkAck()
     {
-        $i    = 0;
         $time = microtime(1);
 
         if (IS_DEBUG)
@@ -573,14 +557,6 @@ class TaskData
 
         foreach (self::$sendEvents as $k => & $event)
         {
-            $i++;
-
-            if ($i % 100 === 0)
-            {
-                # 更新状态
-                $this->updateStatus();
-            }
-
             $rs = self::checkAckByEvent($event);
 
             if ($rs)

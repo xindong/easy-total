@@ -159,7 +159,7 @@ class WorkerEasyTotal extends MyQEE\Server\WorkerTCP
         $this->clusterServers[self::$serverName] = $this->getCurrentServerData() + ['isSelf' => true];
 
         # 每3秒执行1次
-        swoole_timer_tick(3000, function()
+        $this->timeTick(3000, function()
         {
             # 更新时间戳
             self::$timed = time();
@@ -182,7 +182,7 @@ class WorkerEasyTotal extends MyQEE\Server\WorkerTCP
             # 注册服务器
             $this->updateServerStatus();
 
-            # 加载task
+            # 加载设置
             $this->reloadSetting();
         }
         else
@@ -203,72 +203,62 @@ class WorkerEasyTotal extends MyQEE\Server\WorkerTCP
             unset($id);
         }
 
-        # 按进程数为每个 worker 设定一个时间平均分散的定时器
-        $limit  = intval(EtServer::$config['server']['merge_time_ms'] ?: 5000);
-        $aTime  = intval($limit * $this->id / $this->server->setting['worker_num']);
-        $mTime  = intval(microtime(1) * 1000);
-        $aTime += $limit * ceil($mTime / $limit) - $mTime;
-
-        swoole_timer_after($aTime, function() use ($limit)
+        # 定时推送
+        $this->timeTick(intval(EtServer::$config['server']['merge_time_ms'] ?: 5000), function()
         {
-            # 推送到task进行数据汇总处理
-            swoole_timer_tick($limit, function()
+            try
             {
-                try
-                {
-                    $this->flush();
-                }
-                catch (Exception $e)
-                {
-                    # 避免正好在处理数据时redis连接失败抛错导致程序终止, 系统会自动重连
-                    $this->checkRedis();
-                }
-            });
-
-            # 每分钟处理1次
-            swoole_timer_tick(60000, function()
+                $this->flush();
+            }
+            catch (Exception $e)
             {
-                self::$timed = time();
-
-                # 清空AppList列表
-                $this->jobAppList = [];
-
-                # 清理延迟关闭的连接
-                if ($this->delayCloseFd)
-                {
-                    foreach ($this->delayCloseFd as $fd)
-                    {
-                        try
-                        {
-                            $this->fluentInForward->closeConnect($fd);
-                        }
-                        catch (Exception $e)
-                        {
-
-                        }
-                    }
-
-                    $this->delayCloseFd = [];
-                }
-
-                # 更新任务
-                $this->updateJob();
-
-                if ($this->redis)
-                {
-                    # 更新监控内存
-                    $this->redis->hSet('server.memory', self::$serverName .'_'. $this->id, serialize([memory_get_usage(true), self::$timed, self::$serverName, $this->id]));
-                }
-            });
-
-            # 每10分钟处理1次
-            swoole_timer_tick(1000 * 600, function()
-            {
-                # 更新配置
-                $this->reloadSetting();
-            });
+                # 避免正好在处理数据时redis连接失败抛错导致程序终止, 系统会自动重连
+                $this->checkRedis();
+            }
         });
 
+        # 每分钟处理1次
+        $this->timeTick(60000, function()
+        {
+            self::$timed = time();
+
+            # 清空AppList列表
+            $this->jobAppList = [];
+
+            # 清理延迟关闭的连接
+            if ($this->delayCloseFd)
+            {
+                foreach ($this->delayCloseFd as $fd)
+                {
+                    try
+                    {
+                        $this->fluentInForward->closeConnect($fd);
+                    }
+                    catch (Exception $e)
+                    {
+
+                    }
+                }
+
+                $this->delayCloseFd = [];
+            }
+
+            # 更新任务
+            $this->updateJob();
+
+            if ($this->redis)
+            {
+                # 更新监控内存
+                $this->redis->hSet('server.memory', self::$serverName .'_'. $this->id, serialize([memory_get_usage(true), self::$timed, self::$serverName, $this->id]));
+            }
+        });
+
+        # 每10分钟处理1次
+        $this->timeTick(1000 * 600, function()
+        {
+            # 更新配置
+            $this->reloadSetting();
+        });
 
         # 进程定时重启, 避免数据没清理占用较大内存的情况
         swoole_timer_tick(mt_rand(1000 * 3600 * 2, 1000 * 3600 * 3), function()
@@ -279,51 +269,10 @@ class WorkerEasyTotal extends MyQEE\Server\WorkerTCP
             exit;
         });
 
+
         # 只有需要第一个进程处理
         if ($this->id == 0)
         {
-            # 每3秒通知处理一次
-            # 分散投递任务时间
-            for ($i = 1; $i < $this->server->setting['task_worker_num']; $i++)
-            {
-                swoole_timer_after(intval(3000 * $i / $this->server->setting['task_worker_num']), function() use ($i)
-                {
-                    swoole_timer_tick(3000, function() use ($i)
-                    {
-                        self::$timed = time();
-
-                        $rs = EtServer::$taskWorkerStatus->get("task{$i}");
-                        # $rs['status'] 1表示忙碌, 0表示空闲
-                        if (!$rs || !$rs['status'])
-                        {
-                            # 更新状态
-                            EtServer::$taskWorkerStatus->set("task{$i}", ['status' => 1, 'time' => self::$timed]);
-
-                            # 调用任务
-                            $this->server->task('job', $i);
-                        }
-                        elseif ($rs['pid'] && self::$timed - $rs['time'] > 300)
-                        {
-                            # 5分钟还没反应, 避免极端情况下卡死, 发送一个重启信号, 这种情况下可能会丢失部分数据
-                            $this->warn("task worker {$i} is dead, now restart it.");
-                            \Swoole\Process::kill($rs['pid']);
-                            EtServer::$taskWorkerStatus->del("task{$i}");
-
-                            # 过5秒后处理
-                            $pid = $rs['pid'];
-                            swoole_timer_after(5000, function() use ($pid)
-                            {
-                                if (in_array($pid, explode("\n", str_replace(' ', '', trim(`ps -eopid | grep {$pid}`)))))
-                                {
-                                    # 如果还存在进程, 强制关闭
-                                    \Swoole\Process::kill($pid, 9);
-                                }
-                            });
-                        }
-                    });
-                });
-            }
-
             swoole_timer_tick(1000 * 30, function()
             {
                 # 更新服务器信息
@@ -335,12 +284,6 @@ class WorkerEasyTotal extends MyQEE\Server\WorkerTCP
             {
                 $this->info("fork sql({$key}): {$query['sql']}");
             }
-
-            # 数据清理
-            swoole_timer_tick(1000 * 60 * 5, function()
-            {
-                $this->server->task('clean', 0);
-            });
         }
 
         return true;
