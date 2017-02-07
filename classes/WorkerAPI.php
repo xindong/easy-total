@@ -15,27 +15,14 @@ class WorkerAPI extends MyQEE\Server\WorkerAPI
     /**
      * @param \Swoole\Http\Request $request
      * @param \Swoole\Http\Response $response
-     * @return mixed
      */
     public function onRequest($request, $response)
     {
-        $this->request  = $request;
-        $this->response = $response;
-
         $uri    = trim($request->server['request_uri'], ' /');
         $uriArr = explode('/', $uri);
         array_shift($uriArr);
 
-        $this->api(implode('/', $uriArr));
-
-        $this->request  = null;
-        $this->response = null;
-
-        return true;
-    }
-
-    protected function api($uri)
-    {
+        $uri  = implode('/', $uriArr);
         $data = [];
 
         switch ($uri)
@@ -51,7 +38,7 @@ class WorkerAPI extends MyQEE\Server\WorkerAPI
                     goto send;
                 }
 
-                $sql = $this->request->post['sql'];
+                $sql = $request->post['sql'];
                 if (!$sql)
                 {
                     $data['status']  = 'error';
@@ -61,10 +48,10 @@ class WorkerAPI extends MyQEE\Server\WorkerAPI
 
                 if ($option = SQL::parseSql($sql))
                 {
-                    if (isset($this->request->post['key']) && $this->request->post['key'])
+                    if (isset($request->post['key']) && $request->post['key'])
                     {
                         # 指定任务key, 适用于更新任务
-                        $old = $this->worker->redis->hGet('queries', $this->request->post['key']);
+                        $old = $this->worker->redis->hGet('queries', $request->post['key']);
                         if ($old && $old = @unserialize($old))
                         {
                             $seriesKey = $old['seriesKey'];
@@ -80,7 +67,7 @@ class WorkerAPI extends MyQEE\Server\WorkerAPI
                             $option['createTime'] = $old['createTime'];
                             $option['editTime']   = time();
                         }
-                        $key = $option['key'] = $this->request->post['key'];
+                        $key = $option['key'] = $request->post['key'];
                     }
                     else
                     {
@@ -88,29 +75,29 @@ class WorkerAPI extends MyQEE\Server\WorkerAPI
                         $key = $option['key'];
                     }
 
-                    if ($this->request->post['name'])
+                    if ($request->post['name'])
                     {
-                        $option['name'] = trim($this->request->post['name']);
+                        $option['name'] = trim($request->post['name']);
                     }
                     elseif ($old['name'])
                     {
                         $option['name'] = $old['name'];
                     }
 
-                    if ($this->request->post['start'] > time())
+                    if ($request->post['start'] > time())
                     {
                         # 开始时间
-                        $option['start'] = (int)$this->request->post['start'];
+                        $option['start'] = (int)$request->post['start'];
                     }
                     elseif ($old['start'])
                     {
                         $option['start'] = $old['start'];
                     }
 
-                    if ($this->request->post['end'] > time())
+                    if ($request->post['end'] > time())
                     {
                         # 结束时间
-                        $option['end'] = (int)$this->request->post['start'];
+                        $option['end'] = (int)$request->post['start'];
                     }
                     elseif ($old['end'])
                     {
@@ -179,9 +166,9 @@ class WorkerAPI extends MyQEE\Server\WorkerAPI
             case 'task/start':
                 # 移除, 恢复, 暂停一个任务
                 $option = null;
-                if (isset($this->request->post['sql']))
+                if (isset($request->post['sql']))
                 {
-                    $sql    = $this->request->post['sql'];
+                    $sql    = $request->post['sql'];
                     $option = SQL::parseSql($sql);
                     if (!$option)
                     {
@@ -209,13 +196,13 @@ class WorkerAPI extends MyQEE\Server\WorkerAPI
                         goto send;
                     }
                 }
-                elseif (isset($this->request->post['key']))
+                elseif (isset($request->post['key']))
                 {
-                    $key = $this->request->post['key'];
+                    $key = $request->post['key'];
                 }
-                elseif (isset($this->request->get['key']))
+                elseif (isset($request->get['key']))
                 {
-                    $key = $this->request->get['key'];
+                    $key = $request->get['key'];
                 }
                 else
                 {
@@ -336,10 +323,10 @@ class WorkerAPI extends MyQEE\Server\WorkerAPI
                 try
                 {
                     $limit         = 100;
-                    $page_type     = $this->request->get['page_type'];
-                    $firstItem     = $this->request->get['first_item'];
-                    $lastItem      = $this->request->get['last_item'];
-                    $nextIterator  = (int)$this->request->get['next_iterator'];
+                    $page_type     = $request->get['page_type'];
+                    $firstItem     = $request->get['first_item'];
+                    $lastItem      = $request->get['last_item'];
+                    $nextIterator  = (int)$request->get['next_iterator'];
 
                     if (!$this->worker->redis && !$this->worker->ssdb)
                     {
@@ -436,7 +423,7 @@ class WorkerAPI extends MyQEE\Server\WorkerAPI
                 # 重启所有进程
                 $data['status'] = 'ok';
 
-                $this->debug('restart server by api from ip: '. $this->request->server['remote_addr']);
+                $this->debug('restart server by api from ip: '. $request->server['remote_addr']);
 
                 # 200 毫秒后重启
                 swoole_timer_after(200, function()
@@ -448,11 +435,11 @@ class WorkerAPI extends MyQEE\Server\WorkerAPI
             case 'series/edit':
                 try
                 {
-                    $seriesKey = $this->request->post['key'];
-                    $use       = $this->request->post['use']?true:false;
-                    $allApp    = $this->request->post['allApp']?true:false;
-                    $start     = $this->request->post['start'];
-                    $end       = $this->request->post['end'];
+                    $seriesKey = $request->post['key'];
+                    $use       = $request->post['use']?true:false;
+                    $allApp    = $request->post['allApp']?true:false;
+                    $start     = $request->post['start'];
+                    $end       = $request->post['end'];
 
                     if (!$seriesKey)
                     {
@@ -506,13 +493,13 @@ class WorkerAPI extends MyQEE\Server\WorkerAPI
                 # EXP: http://127.0.0.1:8000/api/data?key=fa76f679d916c270&app=test&type=1h&group=groupValue1,groupValue2
                 try
                 {
-                    $queryKey = $this->request->get['key'];
+                    $queryKey = $request->get['key'];
                     if (!$queryKey)
                     {
                         throw new Exception('missing parameter key');
                     }
 
-                    $app = $this->request->get['app'];
+                    $app = $request->get['app'];
                     if (!$app)
                     {
                         $app = 'default';
@@ -529,7 +516,7 @@ class WorkerAPI extends MyQEE\Server\WorkerAPI
                         throw new Exception("query $queryKey data unserialize error");
                     }
 
-                    $groupValue = $this->request->get['group'];
+                    $groupValue = $request->get['group'];
                     if ($groupValue)
                     {
                         $groupValue = str_replace(',', '_', $groupValue);
@@ -545,15 +532,15 @@ class WorkerAPI extends MyQEE\Server\WorkerAPI
                         $groupValue = '';
                     }
 
-                    if ($this->request->get['type'])
+                    if ($request->get['type'])
                     {
-                        $timeOpt = $queryOption['groupTime'][$this->request->get['type']];
+                        $timeOpt = $queryOption['groupTime'][$request->get['type']];
                         if (!$timeOpt)
                         {
-                            throw new Exception('can not found group time: '. $this->request->get['type']);
+                            throw new Exception('can not found group time: '. $request->get['type']);
                         }
 
-                        $timeOptKey = $this->request->get['type'];
+                        $timeOptKey = $request->get['type'];
                     }
                     else
                     {
@@ -706,7 +693,6 @@ class WorkerAPI extends MyQEE\Server\WorkerAPI
      * @param Swoole\Server $server
      * @param $fromWorkerId
      * @param $message
-     * @return null
      */
     public function onPipeMessage($server, $fromWorkerId, $message, $serverId = -1)
     {

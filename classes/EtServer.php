@@ -227,7 +227,7 @@ class EtServer extends MyQEE\Server\Server
 
     public static $configFile;
 
-    public function __construct($configFile = 'server.yaml')
+    public function __construct($configFile = 'server.yal')
     {
         $this->checkSystem();
 
@@ -256,29 +256,24 @@ class EtServer extends MyQEE\Server\Server
         # 整合成系统需要的配置格式
         $config = [
             'server' => [
-                'host' => $conf['manager']['host'],
-                'port' => $conf['manager']['port'],
-                'http' => [
-                    'use'            => true,
-                    'name'           => $conf['manager']['name'],
-                    'manager'        => true,
-                    'manager_prefix' => $conf['manager']['manager_prefix'],
-                    'api'            => true,
-                    'api_prefix'     => $conf['manager']['api_prefix'],
-                    'websocket'      => false,
-                ],
-                'shmop_mode'               => $conf['server']['shmop_mode'],
                 'mode'                     => 'process',
-                'sock_type'                => 1,
+                'shmop_mode'               => $conf['server']['shmop_mode'],
                 'worker_memory_limit'      => $conf['server']['worker_memory_limit'],
                 'task_worker_memory_limit' => $conf['server']['task_worker_memory_limit'],
                 'unixsock_buffer_size'     => $conf['server']['unixsock_buffer_size'],
                 'socket_block'             => $conf['server']['socket_block'],
-                'log'                      => $conf['server']['log'],
             ],
-            'sockets' => [
+            'hosts' => [
+                'Main' => [
+                    'type' => 'http',
+                    'host' => $conf['manager']['host'],
+                    'port' => $conf['manager']['port'],
+                    'name' => $conf['manager']['name'],
+                ],
                 'EasyTotal' => [
-                    'link' => "tcp://{$conf['server']['host']}:{$conf['server']['port']}/",
+                    'type' => 'tcp',
+                    'host' => $conf['listen']['host'],
+                    'port' => $conf['listen']['port'],
                     'conf' => [
                         'open_eof_check' => true,
                         'open_eof_split' => false,
@@ -286,6 +281,7 @@ class EtServer extends MyQEE\Server\Server
                     ],
                 ],
             ],
+            'log'      => $conf['log'],
             'swoole'   => $conf['swoole'],
             'clusters' => $conf['clusters'],
             'php'      => $conf['php'],

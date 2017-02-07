@@ -48,13 +48,13 @@ if (isset($options['c']) && $options['c'])
 else
 {
     $configFile = '/etc/easy-total.yaml';
-    if (!is_file($configFile) && is_file(__DIR__.'/easy-total.yaml'))
+    if (!is_file($configFile) && is_file(__DIR__.'/easy-total.yal'))
     {
-        $configFile = __DIR__.'/easy-total.yaml';
+        $configFile = __DIR__.'/easy-total.yal';
     }
 }
 
-require "../vendor/autoload.php";
+require __DIR__. '/../vendor/autoload.php';
 
 $server = new EtServer($configFile);
 
@@ -67,7 +67,7 @@ help:
 $file = basename(__FILE__);
 echo <<<EOF
 Usage: {$file} [options]
-    -c PATH         config file path (default: /etc/easy-total.yaml)
+    -c PATH         config file path (default: /etc/easy-total.yal)
     -l PATH         log file path
     -t type         log | job | both (default)
     -v, --debug     open debug mode

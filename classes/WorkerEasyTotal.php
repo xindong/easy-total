@@ -130,9 +130,6 @@ class WorkerEasyTotal extends MyQEE\Server\WorkerTCP
     {
         if ($this->isInit)return true;
 
-        $this->worker->redis =& $this->redis;
-        $this->worker->ssdb  =& $this->ssdb;
-
         # 设置Fluent的相关回调
         $this->fluentInForward->on('checkTag', [$this, 'onCheckTag']);
         $this->fluentInForward->on('each',     [$this, 'onEach']);

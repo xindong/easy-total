@@ -3,16 +3,14 @@
 class WorkerMain extends MyQEE\Server\WorkerHttp
 {
     /**
-     * @var redis
+     * @var WorkerManager
      */
-    public $redis;
+    protected $manager;
 
     /**
-     * SimpleSSDB 对象
-     *
-     * @var SimpleSSDB
+     * @var WorkerAPI
      */
-    public $ssdb;
+    protected $api;
 
     public function onStart()
     {
@@ -28,6 +26,40 @@ class WorkerMain extends MyQEE\Server\WorkerHttp
                     EtServer::$counterX->add(intval($count / 100000000));
                 }
             });
+        }
+
+        # 管理进程
+        $manger        = new WorkerManager($this->server);
+        $manger->name  = 'Manager';
+        $this->manager = $manger;
+        \MyQEE\Server\Server::$workers[$manger->name] = $manger;
+
+        # API进程
+        $api       = new WorkerAPI($this->server);
+        $api->name = 'Manager';
+        $this->api = $api;
+        \MyQEE\Server\Server::$workers[$api->name] = $api;
+    }
+
+    /**
+     * @param \Swoole\Http\Request $request
+     * @param \Swoole\Http\Response $response
+     */
+    public function onRequest($request, $response)
+    {
+        if ($this->api->isApi($request))
+        {
+            # API
+            $this->api->onRequest($request, $response);
+        }
+        elseif ($this->manager->isManager($request))
+        {
+            # ADMIN
+            $this->manager->onRequest($request, $response);
+        }
+        else
+        {
+            $response->end('page not found');
         }
     }
 }

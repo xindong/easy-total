@@ -1,6 +1,13 @@
 <?php
 class WorkerManager extends MyQEE\Server\WorkerManager
 {
+    /**
+     * 主进程
+     *
+     * @var WorkerEasyTotal
+     */
+    public $worker;
+
     public function onStart()
     {
         $this->worker = EtServer::$workers['EasyTotal'];
@@ -9,52 +16,15 @@ class WorkerManager extends MyQEE\Server\WorkerManager
     /**
      * @param \Swoole\Http\Request $request
      * @param \Swoole\Http\Response $response
-     * @return mixed
      */
     public function onRequest($request, $response)
     {
-        $this->request  = $request;
-        $this->response = $response;
-
         $uri    = trim($request->server['request_uri'], ' /');
         $uriArr = explode('/', $uri);
         array_shift($uriArr);
 
-        $this->admin(implode('/', $uriArr));
+        $uri = implode('/', $uriArr);
 
-        $this->request  = null;
-        $this->response = null;
-
-        return true;
-    }
-
-    /**
-     * webSocket协议收到消息
-     *
-     * @param swoole_server $server
-     * @param swoole_websocket_frame $frame
-     * @return mixed
-     */
-    public function onMessage($server, $frame)
-    {
-        # 给客户端发送消息
-        # $server->push($frame->fd, 'data');
-    }
-
-    /**
-     * webSocket端打开连接
-     *
-     * @param swoole_websocket_server $server
-     * @param swoole_http_request $request
-     * @return mixed
-     */
-    public function onOpen($server, $request)
-    {
-        $this->debug("server: handshake success with fd{$request->fd}");
-    }
-
-    protected function admin($uri)
-    {
         if ($uri === '')
         {
             $uri = 'index';
@@ -69,8 +39,8 @@ class WorkerManager extends MyQEE\Server\WorkerManager
 
         if (!is_file($file))
         {
-            $this->response->status(404);
-            $this->response->end('page not found');
+            $response->status(404);
+            $response->end('page not found');
             return;
         }
 
@@ -92,6 +62,6 @@ class WorkerManager extends MyQEE\Server\WorkerManager
         }
         $html = ob_get_clean();
 
-        $this->response->end($html);
+        $response->end($html);
     }
 }

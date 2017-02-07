@@ -1,6 +1,12 @@
 ---
-# 服务器配置
+# 服务器接受数据端口配置
+listen:
+  # 监听IP或路径
+  host: 0.0.0.0
+  # 端口
+  port: 8100
 
+# 后台管理和api设置
 manager:
   host: 127.0.0.1
 
@@ -15,6 +21,7 @@ manager:
   # API路径前缀
   api_prefix: /api/
 
+# 数据设置
 data:
   # 统计中间数据存放的地方, 可以和上面的 redis 使用同一个
   # 存储引擎, 支持 sqlite, leveldb, redis (ssdb),
@@ -29,56 +36,21 @@ redis:
   # 支持redis集群
   - 127.0.0.1:6379
 
-server:
-  # 监听IP或路径
-  host: 0.0.0.0
+# 服务器的log
+log:
+  # 需要输出的log类型, 没设置的则丢弃
+  # 可以任意自定义类型, 然后在 worker 或 task 对象中用 $this->log('test', 'myType'); 输出
+  # 系统默认的有 warn, info, debug, trace
+  level:
+    - warn
+    - info
 
-  # 端口
-  port: 8100
+  # 日志存放目录, 其中 $type 为日志类型
+  # 注意:swoole 的 log 路径在 $type = swoole 里
+  # path: /var/log/myqee.$type.log
 
-  # 启动模式, 可选:
-  # base : 按 SWOOLE_BASE 模式启动;
-  # process: 按 SWOOLE_PROCESS 模式启动;
-  # 一般情况下用 process 模式启动即可
-  # see http://wiki.swoole.com/wiki/page/14.html
-  #mode: process
-
-  # 主服务连接模式
-  # 1: TCP, 2: UDP, 3: TCP6, 4: UDP6, 5: UNIX_DGRAM, 6: UNIX_STREAM
-  # 如果前端有代理服务器并且在本机（比如类似 nginx + php-fpm 这种情况）, 你可以设置 UNIX_DGRAM 模式, 这些性能比 tcp 高很多
-  #sock_type: 1
-
-  # 单个worker进程内存限制, 默认2G
-  worker_memory_limit: 2G
-
-  # 单个任务进程内存限制, 默认4G
-  task_worker_memory_limit: 4G
-
-  # 进程间通信的 UnixSocket 缓存区尺寸, 不设置则使用系统默认值
-  # see http://wiki.swoole.com/wiki/page/352.html
-  unixsock_buffer_size: 104857600
-
-  # 若任务投递缓冲区塞满, 是否阻塞, 0: 直接返回 false, 1: 阻塞等待
-  socket_block: 0
-
-  # 自定义 WorkerMain, WorkerTask 等的命名空间, 默认 \
-  #namespace: "\\"
-
-  # 服务器的log
-  log:
-    # 需要输出的log类型, 没设置的则丢弃
-    # 可以任意自定义类型, 然后在 worker 或 task 对象中用 $this->log('test', 'myType'); 输出
-    # 系统默认的有 warn, info, debug, trace
-    level:
-      - warn
-      - info
-
-    # 日志存放目录, 其中 $type 为日志类型
-    # 注意:swoole 的 log 路径在 $type = swoole 里
-    # path: /var/log/myqee.$type.log
-
-    # 日志最大大小, 0 则不自动清理. 超过后将移动到 .bak 文件后重新创建新log
-    size: 10240000
+  # 日志最大大小, 0 则不自动清理. 超过后将移动到 .bak 文件后重新创建新log
+  size: 10240000
 
 output:
   # 输出设置, 支持 fluent(mysql, mongo 待支持)
@@ -88,7 +60,8 @@ output:
   # 输出的表,tag前缀
   prefix: merged.
 
-# 集群配置
+
+# 集群相关配置
 clusters:
   # 集群模式
   # none     - 单机或无状态服务器(默认)
@@ -132,6 +105,41 @@ clusters:
     # 当前服务器是否是注册服务器
     # 注册服务器推荐用 bin/register-server 单独启动, 也可以用当前任意一台服务器启动作为注册服务器
     is_register: false
+
+
+
+
+
+# ================= 下面一般不怎么需要设置 ======================
+
+server:
+  # 启动模式, 可选:
+  # base : 按 SWOOLE_BASE 模式启动;
+  # process: 按 SWOOLE_PROCESS 模式启动;
+  # 一般情况下用 process 模式启动即可
+  # see http://wiki.swoole.com/wiki/page/14.html
+  #mode: process
+
+  # 主服务连接模式
+  # 1: TCP, 2: UDP, 3: TCP6, 4: UDP6, 5: UNIX_DGRAM, 6: UNIX_STREAM
+  # 如果前端有代理服务器并且在本机（比如类似 nginx + php-fpm 这种情况）, 你可以设置 UNIX_DGRAM 模式, 这些性能比 tcp 高很多
+  #sock_type: 1
+
+  # 单个worker进程内存限制, 默认2G
+  worker_memory_limit: 2G
+
+  # 单个任务进程内存限制, 默认4G
+  task_worker_memory_limit: 4G
+
+  # 进程间通信的 UnixSocket 缓存区尺寸, 不设置则使用系统默认值
+  # see http://wiki.swoole.com/wiki/page/352.html
+  unixsock_buffer_size: 104857600
+
+  # 若任务投递缓冲区塞满, 是否阻塞, 0: 直接返回 false, 1: 阻塞等待
+  socket_block: 0
+
+  # 自定义 WorkerMain, WorkerTask 等的命名空间, 默认 \
+  #namespace: "\\"
 
 # swoole 相关配置
 swoole:
