@@ -167,10 +167,6 @@ swoole:
   # 值必须小余 ulimit -n 的值
   # max_conn: 10000
 
-  # 关闭 fopen('php://input') 数据的解析
-  # see http://wiki.swoole.com/wiki/page/375.html
-  http_parse_post: 0
-
   # 启用心跳检测，此选项表示每隔多久轮循一次，单位为秒
   #heartbeat_check_interval: 30
 

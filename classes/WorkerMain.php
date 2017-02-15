@@ -29,13 +29,12 @@ class WorkerMain extends MyQEE\Server\WorkerHttp
         }
 
         # 管理进程
-        $manger        = new WorkerManager($this->server);
-        $manger->name  = 'Manager';
+        $manger        = new WorkerManager($this->server, 'Manager', $this->id);
         $this->manager = $manger;
         \MyQEE\Server\Server::$workers[$manger->name] = $manger;
 
         # API进程
-        $api       = new WorkerAPI($this->server);
+        $api       = new WorkerAPI($this->server, 'Manager', $this->id);
         $api->name = 'Manager';
         $this->api = $api;
         \MyQEE\Server\Server::$workers[$api->name] = $api;

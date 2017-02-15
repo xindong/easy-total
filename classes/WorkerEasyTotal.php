@@ -111,24 +111,19 @@ class WorkerEasyTotal extends MyQEE\Server\WorkerTCP
      */
     public static $timed;
 
-    public function __construct($server)
-    {
-        parent::__construct($server);
-
-        FlushData::$workerId   = $this->id;
-        $this->dumpFile        = EtServer::$config['server']['dump_path'] .'total-dump-'. substr(md5(EtServer::$configFile), 16, 8) . '-'. $this->id .'.txt';
-        $this->flushData       = new FlushData();
-        # 包数据的key
-        self::$packKey         = chr(146) . chr(206);
-        $this->fluentInForward = new FluentInForward($server);
-    }
-
     /**
      * 初始化后会调用
      */
     public function onStart()
     {
         if ($this->isInit)return true;
+
+        FlushData::$workerId   = $this->id;
+        $this->dumpFile        = EtServer::$config['server']['dump_path'] .'total-dump-'. substr(md5(EtServer::$configFile), 16, 8) . '-'. $this->id .'.txt';
+        $this->flushData       = new FlushData();
+        # 包数据的key
+        self::$packKey         = chr(146) . chr(206);
+        $this->fluentInForward = new FluentInForward($this->server);
 
         # 设置Fluent的相关回调
         $this->fluentInForward->on('checkTag', [$this, 'onCheckTag']);

@@ -47,7 +47,7 @@ if (isset($options['c']) && $options['c'])
 }
 else
 {
-    $configFile = '/etc/easy-total.yaml';
+    $configFile = '/etc/easy-total.yal';
     if (!is_file($configFile) && is_file(__DIR__.'/easy-total.yal'))
     {
         $configFile = __DIR__.'/easy-total.yal';
