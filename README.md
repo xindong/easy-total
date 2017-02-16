@@ -53,7 +53,16 @@ ip          | 唯一IP数
 
 ## 快速使用
 
-进入根目录执行 `composer install` 安装依赖类库，然后执行 `bin/easy-total -c bin/easy-total.yaml` 即可启动
+运行 `git clone https://github.com/xindong/easy-total` 将代码更新到本地。
+
+进入 `easy-total` 目录执行 `composer install` 安装依赖类库，然后执行 `bin/easy-total -c bin/easy-total.yal` 即可启动（推荐将 `/etc/easy-total.yal` 文件复制到 `/etc/easy-total.yal`）
+
+以后更新代码执行以下代码即可：
+
+```bash
+git pull
+composer update
+```
 
 ### 环境依赖
 
@@ -82,7 +91,7 @@ yum install http://mirror.innosol.asia/remi/enterprise/remi-release-6.rpm
 ```
 
 安装成功后，修改 `vim /etc/yum.repos.d/remi-php70.repo` 文件，将
-`[remi-php70]`标签下的 `enabled=0` 改成 `enabled=1`，这样就默认用php7了。
+`[remi-php70]`标签下的 `enabled=0` 改成 `enabled=1`，这样就默认用php7了(修改 remi-php71.repo 对应参数可启用 php7.1)。
 
 然后执行
 ```bash
@@ -99,7 +108,7 @@ composer install
 
 ### 更改配置
 
-请查看 bin/easy-total.yaml 中有详细说明，其中 [server] 为服务器信息设置，运算中的临时数据将会存到 [redis] 配置的服务里，建议不要和其它服务混用
+请查看 `bin/easy-total.yal` 中有详细说明，运算中的临时数据将会存到 [redis] 配置的服务里，建议不要和其它服务混用。
 
 ### 启动服务
 
@@ -107,7 +116,7 @@ composer install
 
 参数     |  说明
 --------|---------------
--c path | 配置文件路径，默认 /etc/easy-total.conf
+-c path | 配置文件路径，默认 /etc/easy-total.yal
 -l path | 日志路径
 -d      | 守护进程化方式启动
 --debug | 开启debug
