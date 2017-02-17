@@ -31,6 +31,14 @@ data:
   #如果是 leveldb 或 sqlite 填写目录, 如果是 redis 或 ssdb 填写 ip:port, 如果 redis 是集群请用逗号（,）隔开
   link: 127.0.0.1:6379
 
+output:
+  # 输出设置, 支持 fluent(mysql, mongo 待支持)
+  type: fluent
+  link: tcp://127.0.0.1:12101
+
+  # 输出的表,tag前缀
+  prefix: merged.
+
 redis:
   # 除支持 redis 还支持 ssdb（持久存储, 无内存容量限制), see http://ssdb.io/
   # 支持redis集群
@@ -51,15 +59,6 @@ log:
 
   # 日志最大大小, 0 则不自动清理. 超过后将移动到 .bak 文件后重新创建新log
   size: 10240000
-
-output:
-  # 输出设置, 支持 fluent(mysql, mongo 待支持)
-  type: fluent
-  link: tcp://127.0.0.1:12101
-
-  # 输出的表,tag前缀
-  prefix: merged.
-
 
 # 集群相关配置
 clusters:
