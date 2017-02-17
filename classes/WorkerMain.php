@@ -58,7 +58,7 @@ class WorkerMain extends MyQEE\Server\WorkerHttp
         }
         else
         {
-            $response->end('page not found');
+            parent::onRequest($request, $response);
         }
     }
 }
