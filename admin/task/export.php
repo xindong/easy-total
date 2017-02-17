@@ -1,4 +1,7 @@
 <?php
+/**
+ * @var Swoole\Http\Response $response
+ */
 ob_clean();
 
 
@@ -6,7 +9,7 @@ $queries = array_map('unserialize', $this->worker->redis->hGetAll('queries') ?: 
 
 if (!$queries)
 {
-    $this->response->header("Location", '/admin/task/list/');
+    $response->header("Location", '/admin/task/list/');
     return;
 }
 
@@ -21,8 +24,8 @@ echo $str = json_encode(['version' => '1.0', 'queries' => $queries], JSON_UNESCA
 $size = strlen($str);
 $name = 'easy-total-' .date('Ymd,Hi') . '.json';
 
-$this->response->header("Content-type", "application/octet-stream");
-$this->response->header('Content-Disposition', 'attachment; filename="' . $name . '"');
-$this->response->header("Content-Length", $size);
+$response->header("Content-type", "application/octet-stream");
+$response->header('Content-Disposition', 'attachment; filename="' . $name . '"');
+$response->header("Content-Length", $size);
 
 return 'noFooter';

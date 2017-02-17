@@ -132,7 +132,7 @@ class WorkerAPI extends MyQEE\Server\WorkerAPI
                         }
 
                         # 通知所有worker进程更新SQL
-                        $this->notifyAllWorker('task.reload');
+                        $this->sendMessageToAllWorker('task.reload', 1);
                     }
                     else
                     {
@@ -266,7 +266,7 @@ class WorkerAPI extends MyQEE\Server\WorkerAPI
                     $data['status'] = 'ok';
 
                     # 通知所有进程
-                    $this->notifyAllWorker('task.reload');
+                    $this->sendMessageToAllWorker('task.reload', 1);
 
                     if (isset($sql))
                     {
@@ -713,23 +713,6 @@ class WorkerAPI extends MyQEE\Server\WorkerAPI
                 $this->worker->stopPause();
 
                 break;
-        }
-    }
-
-
-    protected function notifyAllWorker($data)
-    {
-        for ($i = 0; $i < $this->server->setting['worker_num']; $i++)
-        {
-            # 每个服务器通知更新
-            if ($i == $this->id)
-            {
-                $this->onPipeMessage($this->server, $this->id, $data);
-            }
-            else
-            {
-                $this->sendMessage($data, $i);
-            }
         }
     }
 }
