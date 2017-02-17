@@ -102,14 +102,19 @@ class WorkerEasyTotal extends MyQEE\Server\WorkerTCP
      */
     private $isInit = false;
 
-    protected static $packKey;
-    
+    /**
+     * @var EtServer
+     */
+    public static $Server;
+
     /**
      * 当前时间, 会一直更新
      *
      * @var int
      */
     public static $timed;
+
+    protected static $packKey;
 
     /**
      * 初始化后会调用
@@ -119,7 +124,7 @@ class WorkerEasyTotal extends MyQEE\Server\WorkerTCP
         if ($this->isInit)return true;
 
         FlushData::$workerId   = $this->id;
-        $this->dumpFile        = EtServer::$config['server']['dump_path'] .'total-dump-'. substr(md5(EtServer::$configFile), 16, 8) . '-'. $this->id .'.txt';
+        $this->dumpFile        = self::$Server->config['server']['dump_path'] .'total-dump-'. substr(md5(self::$Server->configFile), 16, 8) . '-'. $this->id .'.txt';
         $this->flushData       = new FlushData();
         # 包数据的key
         self::$packKey         = chr(146) . chr(206);
@@ -196,7 +201,7 @@ class WorkerEasyTotal extends MyQEE\Server\WorkerTCP
         }
 
         # 定时推送
-        $this->timeTick(intval(EtServer::$config['server']['merge_time_ms'] ?: 5000), function()
+        $this->timeTick(intval(self::$Server->config['server']['merge_time_ms'] ?: 5000), function()
         {
             try
             {
@@ -457,7 +462,7 @@ class WorkerEasyTotal extends MyQEE\Server\WorkerTCP
             # 计数器增加
             if ($extra['count'] > 0)
             {
-                EtServer::$counter->add($extra['count']);
+                self::$Server->counter->add($extra['count']);
             }
         }
         else
@@ -515,26 +520,26 @@ class WorkerEasyTotal extends MyQEE\Server\WorkerTCP
      */
     protected function reConnectRedis()
     {
-        if (EtServer::$config['redis'][0])
+        if (self::$Server->config['redis'][0])
         {
-            list ($host, $port) = explode(':', EtServer::$config['redis'][0]);
+            list ($host, $port) = explode(':', self::$Server->config['redis'][0]);
         }
         else
         {
-            $host = EtServer::$config['redis']['host'];
-            $port = EtServer::$config['redis']['port'];
+            $host = self::$Server->config['redis']['host'];
+            $port = self::$Server->config['redis']['port'];
         }
 
         try
         {
-            if (EtServer::$config['redis']['hosts'] && count(EtServer::$config['redis']['hosts']) > 1)
+            if (self::$Server->config['redis']['hosts'] && count(self::$Server->config['redis']['hosts']) > 1)
             {
                 if (IS_DEBUG && $this->id == 0)
                 {
-                    $this->debug('redis hosts: '. implode(', ', EtServer::$config['redis']['hosts']));
+                    $this->debug('redis hosts: '. implode(', ', self::$Server->config['redis']['hosts']));
                 }
 
-                $redis = new RedisCluster(null, EtServer::$config['redis']['hosts']);
+                $redis = new RedisCluster(null, self::$Server->config['redis']['hosts']);
             }
             else
             {
@@ -565,7 +570,7 @@ class WorkerEasyTotal extends MyQEE\Server\WorkerTCP
             if ($this->id == 0 && time() % 10 == 0)
             {
                 $this->debug($e->getMessage());
-                $this->info('redis server is not start, wait start redis://' . (EtServer::$config['redis']['hosts'] ? implode(', ', EtServer::$config['redis']['hosts']) : $host .':'. $port));
+                $this->info('redis server is not start, wait start redis://' . (self::$Server->config['redis']['hosts'] ? implode(', ', self::$Server->config['redis']['hosts']) : $host .':'. $port));
             }
 
             return false;
@@ -654,7 +659,7 @@ class WorkerEasyTotal extends MyQEE\Server\WorkerTCP
             }
             else
             {
-                $dataJob = new DataJob($uniqueId);
+                $dataJob              = new DataJob($uniqueId);
                 $dataJob->seriesKey   = $key;
                 $dataJob->dataId      = $id;
                 $dataJob->timeOpLimit = $timeOpt[0];
@@ -918,7 +923,7 @@ class WorkerEasyTotal extends MyQEE\Server\WorkerTCP
         return [
             'stats'      => $this->server->stats(),
             'updateTime' => self::$timed,
-            'api'        => 'http://'. EtServer::$config['manager']['host'] .':'. EtServer::$config['manager']['port'] .'/api/',
+            'api'        => 'http://'. self::$Server->config['manager']['host'] .':'. self::$Server->config['manager']['port'] .'/api/',
         ];
     }
 

@@ -10,7 +10,7 @@ class WorkerManager extends MyQEE\Server\WorkerManager
 
     public function onStart()
     {
-        $this->worker = EtServer::$workers['EasyTotal'];
+        $this->worker = self::$Server->workers['EasyTotal'];
     }
 
     /**

@@ -12,6 +12,11 @@ class WorkerMain extends MyQEE\Server\WorkerHttp
      */
     protected $api;
 
+    /**
+     * @var EtServer
+     */
+    public static $Server;
+
     public function onStart()
     {
         if ($this->id == 0)
@@ -19,11 +24,11 @@ class WorkerMain extends MyQEE\Server\WorkerHttp
             # 计数器只支持42亿的计数, 所以每小时检查计数器是否快溢出
             swoole_timer_tick(1000 * 60 * 60, function()
             {
-                if (($count = EtServer::$counter->get()) > 100000000)
+                if (($count = self::$Server->counter->get()) > 100000000)
                 {
                     # 将1亿的余数记录下来
-                    EtServer::$counter->set($count % 100000000);
-                    EtServer::$counterX->add(intval($count / 100000000));
+                    self::$Server->counter->set($count % 100000000);
+                    self::$Server->counterX->add(intval($count / 100000000));
                 }
             });
         }
@@ -31,13 +36,13 @@ class WorkerMain extends MyQEE\Server\WorkerHttp
         # 管理进程
         $manger        = new WorkerManager($this->server, 'Manager', $this->id);
         $this->manager = $manger;
-        \MyQEE\Server\Server::$workers[$manger->name] = $manger;
+        self::$Server->workers[$manger->name] = $manger;
 
         # API进程
         $api       = new WorkerAPI($this->server, 'Manager', $this->id);
         $api->name = 'Manager';
         $this->api = $api;
-        \MyQEE\Server\Server::$workers[$api->name] = $api;
+        self::$Server->workers[$api->name] = $api;
     }
 
     /**

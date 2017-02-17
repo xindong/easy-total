@@ -52,12 +52,12 @@ class WorkerTask extends MyQEE\Server\WorkerTask
     {
         if ($this->taskId > 0)
         {
-            $serverHash             = substr(md5(EtServer::$configFile), 16, 8);
-            self::$dumpFile         = EtServer::$config['server']['dump_path'] . 'easy-total-task-dump-' . $serverHash . '-' . $this->taskId . '.txt';
-            self::$reloadDumpFile   = EtServer::$config['conf']['task_tmpdir'] . 'easy-total-task-dump-' . $serverHash . '-' . $this->taskId . '.txt';
-            TaskData::$dataConfig   = EtServer::$config['data'];
-            TaskData::$redisConfig  = EtServer::$config['redis'];
-            TaskData::$outputConfig = EtServer::$config['output'];
+            $serverHash             = substr(md5(self::$Server->configFile), 16, 8);
+            self::$dumpFile         = self::$Server->config['server']['dump_path'] . 'easy-total-task-dump-' . $serverHash . '-' . $this->taskId . '.txt';
+            self::$reloadDumpFile   = self::$Server->config['conf']['task_tmpdir'] . 'easy-total-task-dump-' . $serverHash . '-' . $this->taskId . '.txt';
+            TaskData::$dataConfig   = self::$Server->config['data'];
+            TaskData::$redisConfig  = self::$Server->config['redis'];
+            TaskData::$outputConfig = self::$Server->config['output'];
             $this->taskData         = new TaskData($this->taskId);
 
             $this->loadDumpData();
@@ -688,19 +688,19 @@ class WorkerTask extends MyQEE\Server\WorkerTask
         try
         {
             $ssdb  = null;
-            if (EtServer::$config['redis'][0])
+            if (self::$Server->config['redis'][0])
             {
-                list ($host, $port) = explode(':', EtServer::$config['redis'][0]);
+                list ($host, $port) = explode(':', self::$Server->config['redis'][0]);
             }
             else
             {
-                $host = EtServer::$config['redis']['host'];
-                $port = EtServer::$config['redis']['port'];
+                $host = self::$Server->config['redis']['host'];
+                $port = self::$Server->config['redis']['port'];
             }
 
-            if (EtServer::$config['redis']['hosts'] && count(EtServer::$config['redis']['hosts']) > 1)
+            if (self::$Server->config['redis']['hosts'] && count(self::$Server->config['redis']['hosts']) > 1)
             {
-                $redis = new RedisCluster(null, EtServer::$config['redis']['hosts']);
+                $redis = new RedisCluster(null, self::$Server->config['redis']['hosts']);
             }
             else
             {

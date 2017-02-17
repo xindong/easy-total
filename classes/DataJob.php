@@ -372,7 +372,7 @@ class DataJob
      */
     public static function getTaskId($uniqueId)
     {
-        $taskNum = EtServer::$server->setting['task_worker_num'] - 1;
+        $taskNum = EtServer::$instance->server->setting['task_worker_num'] - 1;
 
         return (crc32($uniqueId) % $taskNum) + 1;
     }

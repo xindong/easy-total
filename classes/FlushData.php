@@ -74,7 +74,6 @@ class FlushData
      *
      * @param $taskId
      * @param $uniqueId
-     * @return DataJob
      */
     public function setBackup($taskId, $uniqueId)
     {

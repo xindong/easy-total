@@ -8,7 +8,7 @@ $getConnect = function()
 {
     try
     {
-        $config = EtServer::$config['data'];
+        $config = EtServer::$instance->config['data'];
         switch ($config['type'])
         {
             case 'mysql':
@@ -75,7 +75,7 @@ if ($redis)
         else
         {
             $info = ['used_memory' => 0];
-            foreach (EtServer::$config['redis']['hosts'] as $i => $v)
+            foreach (EtServer::$instance->config['redis']['hosts'] as $i => $v)
             {
                 $tmp = $redis->info($i);
                 $info['used_memory'] += $tmp['used_memory'];
@@ -85,7 +85,7 @@ if ($redis)
 }
 
 $allMemory     = [
-    WorkerEasyTotal::$serverName => EtServer::$startUseMemory
+    WorkerEasyTotal::$serverName => EtServer::$instance->startUseMemory
 ];
 $allMemoryTotal = $allMemory[WorkerEasyTotal::$serverName];
 
@@ -254,7 +254,7 @@ unset($item);
           </li>
           <li class="list-group-item">
             <span class="badge" style="background:#f0ad4e"><?php
-              echo number_format(EtServer::getCount(), 0, '.', ',');
+              echo number_format(EtServer::$instance->getCount(), 0, '.', ',');
             ?></span>
             启动后处理数据数
           </li>

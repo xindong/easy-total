@@ -206,7 +206,7 @@ class EtServer extends MyQEE\Server\Server
      *
      * @var Swoole\Atomic
      */
-    public static $counter;
+    public $counter;
 
     /**
      * 计数器重置次数
@@ -216,16 +216,14 @@ class EtServer extends MyQEE\Server\Server
      *
      * @var Swoole\Atomic
      */
-    public static $counterX;
+    public $counterX;
 
     /**
      * 启动时共享内存占用字节
      *
      * @var int
      */
-    public static $startUseMemory;
-
-    public static $configFile;
+    public $startUseMemory;
 
     public function __construct($configFile = 'server.yal')
     {
@@ -233,15 +231,15 @@ class EtServer extends MyQEE\Server\Server
 
         if (!function_exists('\\yaml_parse_file'))
         {
-            self::warn('必须安装 yaml 插件');
+            $this->warn('必须安装 yaml 插件');
             exit;
         }
 
-        self::$configFile = $configFile;
+        $this->configFile = $configFile;
 
         if (!is_file($configFile))
         {
-            self::warn('指定的配置文件 "'.$configFile.'" 不存在');
+            $this->warn('指定的配置文件 "'.$configFile.'" 不存在');
             exit;
         }
 
@@ -250,7 +248,7 @@ class EtServer extends MyQEE\Server\Server
 
         if (!$conf)
         {
-            self::warn("配置解析失败");
+            $this->warn("配置解析失败");
         }
 
         # 整合成系统需要的配置格式
@@ -309,8 +307,8 @@ class EtServer extends MyQEE\Server\Server
     public function onBeforeStart()
     {
         # 初始化计数器
-        self::$counter  = new \Swoole\Atomic();
-        self::$counterX = new \Swoole\Atomic();
+        $this->counter  = new \Swoole\Atomic();
+        $this->counterX = new \Swoole\Atomic();
 
         # 当前进程的pid
         $pid     = getmypid();
@@ -339,7 +337,7 @@ class EtServer extends MyQEE\Server\Server
                 }
             }
         }
-        self::$startUseMemory = ($memory2 - $memory1) * 1024;
+        $this->startUseMemory = ($memory2 - $memory1) * 1024;
     }
 
 
@@ -348,8 +346,8 @@ class EtServer extends MyQEE\Server\Server
      *
      * @return int
      */
-    public static function getCount()
+    public function getCount()
     {
-        return self::$counterX->get() * 100000000 + self::$counter->get();
+        return $this->counterX->get() * 100000000 + $this->counter->get();
     }
 }

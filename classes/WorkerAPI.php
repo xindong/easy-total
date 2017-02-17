@@ -9,7 +9,7 @@ class WorkerAPI extends MyQEE\Server\WorkerAPI
 
     public function onStart()
     {
-        $this->worker = EtServer::$workers['EasyTotal'];
+        $this->worker = self::$Server->workers['EasyTotal'];
     }
 
     /**
@@ -319,6 +319,7 @@ class WorkerAPI extends MyQEE\Server\WorkerAPI
                 }
 
                 break;
+            /*
             case 'task/series':
                 try
                 {
@@ -413,6 +414,7 @@ class WorkerAPI extends MyQEE\Server\WorkerAPI
                     $data['message'] = $e->getMessage();
                 }
                 break;
+            */
             case 'server/stats':
                 $data['status'] = 'ok';
                 $data['data']   = $this->server->stats();
@@ -432,6 +434,7 @@ class WorkerAPI extends MyQEE\Server\WorkerAPI
                 });
 
                 break;
+            /*
             case 'series/edit':
                 try
                 {
@@ -448,24 +451,24 @@ class WorkerAPI extends MyQEE\Server\WorkerAPI
 
                     if ($this->worker->isSSDB)
                     {
-                        $serieDetail = unserialize($this->worker->ssdb->hget('series', $seriesKey));
+                        $seriesDetail = unserialize($this->worker->ssdb->hget('series', $seriesKey));
                     }
                     else
                     {
-                        $serieDetail = unserialize($this->worker->redis->hget('series', $seriesKey));
+                        $seriesDetail = unserialize($this->worker->redis->hget('series', $seriesKey));
                     }
 
-                    if (!$serieDetail)
+                    if (!$seriesDetail)
                     {
                         throw new Exception("无此序列信息详情!");
                     }
 
-                    $serieDetail['use']    = $use;
-                    $serieDetail['allApp'] = $allApp;
-                    $serieDetail['start']  = $start;
-                    $serieDetail['end']    = $end;
+                    $seriesDetail['use']    = $use;
+                    $seriesDetail['allApp'] = $allApp;
+                    $seriesDetail['start']  = $start;
+                    $seriesDetail['end']    = $end;
 
-                    $doSet = $this->worker->redis->hSet('series', $seriesKey, serialize($serieDetail));
+                    $doSet = $this->worker->redis->hSet('series', $seriesKey, serialize($seriesDetail));
 
                     $data['status'] = 'ok';
                     $data['data']   = $doSet;
@@ -487,6 +490,7 @@ class WorkerAPI extends MyQEE\Server\WorkerAPI
                     $data['message'] = $e->getMessage();
                 }
                 break;
+            */
             case 'data':
                 # 获取指定统计的实时统计数据
                 # 分组时间超过10分钟的数据每10分钟才会导出一次数据, 如果业务有需求当前实时的统计数据, 可以通过这个接口获取到
@@ -596,8 +600,8 @@ class WorkerAPI extends MyQEE\Server\WorkerAPI
         }
 
         send:
-        $this->response->header('Content-Type', 'application/json');
-        $this->response->end(json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)."\n");
+        $response->header('Content-Type', 'application/json');
+        $response->end(json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)."\n");
 
         return null;
     }
