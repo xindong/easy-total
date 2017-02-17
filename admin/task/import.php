@@ -1,21 +1,27 @@
 <?php
+/**
+ * @var Swoole\Http\Request $request
+ * @var Swoole\Http\Response $response
+ * @var WorkerManager $this
+ */
 
-$this->response->header("Content-type", "text/json");
+
+$response->header("Content-type", "text/json");
 
 $rs = [];
-if (!$this->request->post['data'])
+if (!$request->post['data'])
 {
     $rs['status'] = 'error';
     $rs['message'] = '没有获取到导入的数据';
 }
 else
 {
-    $arr = @json_decode(trim($this->request->post['data']), true);
+    $arr = @json_decode(trim($request->post['data']), true);
     if (!$arr)
     {
         $rs['status']  = 'error';
         $rs['message'] = '解析数据失败, 无法导入';
-        echo trim($this->request->post['data']);
+        echo trim($request->post['data']);
     }
     elseif (!isset($arr['version']) || !$arr['version'] || version_compare($arr['version'], '1.0', '<'))
     {
@@ -60,7 +66,7 @@ else
     }
 
     # 重新加载任务
-    $this->notifyAllWorker('task.reload');
+    $this->sendMessageToAllWorker('task.reload', 1);
 }
 
 ob_clean();

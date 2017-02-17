@@ -1,3 +1,8 @@
+<?php
+/**
+ * @var Swoole\Http\Request $request
+ */
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -46,7 +51,7 @@
             </ul>
             <form class="navbar-form navbar-left" action="/admin/task/list/" method="get" role="search">
                 <div class="form-group">
-                    <input type="text" name="keyword" value="<?php if ($uri === 'task/list')echo htmlentities($this->request->get['keyword']);?>" class="form-control" placeholder="关键字">
+                    <input type="text" name="keyword" value="<?php if ($uri === 'task/list')echo htmlentities($request->get['keyword']);?>" class="form-control" placeholder="关键字">
                 </div>
                 <button type="submit" class="btn btn-primary">搜索任务</button>
             </form>

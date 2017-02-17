@@ -1,5 +1,8 @@
 <?php
-$key = $this->request->get['key'];
+/**
+ * @var Swoole\Http\Request $request
+ */
+$key = $request->get['key'];
 
 if (!$key)
 {

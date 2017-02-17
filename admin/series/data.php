@@ -1,7 +1,10 @@
 <?php
+/**
+ * @var Swoole\Http\Request $request
+ */
     try
     {
-        $seriesKey = $this->request->get['key'];
+        $seriesKey = $request->get['key'];
 
         if (!$seriesKey)
         {

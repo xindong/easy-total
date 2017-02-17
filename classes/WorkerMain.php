@@ -43,6 +43,9 @@ class WorkerMain extends MyQEE\Server\WorkerHttp
         $api->name = 'Manager';
         $this->api = $api;
         self::$Server->workers[$api->name] = $api;
+
+        $manger->onStart();
+        $api->onStart();
     }
 
     /**
