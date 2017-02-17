@@ -12,6 +12,9 @@
       ]
     }
   },
+  "require": {
+    "myqee/server": "v1.0.2"
+  },
   "require-dev": {
     "myqee/server": "dev-master"
   }
